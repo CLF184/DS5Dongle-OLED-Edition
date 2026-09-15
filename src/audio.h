@@ -12,6 +12,12 @@ void audio_loop();
 void core1_entry();
 void set_headset(bool state);
 
+// Host-gate for the mic IN stream. Called from tud_audio_set_itf_cb (main.cpp)
+// when the host opens/closes the mic IN interface (alt != 0). Mirrors upstream
+// PR #160: the DS5 only streams mic audio while something is recording.
+void set_mic_active(bool active);
+bool audio_mic_active();
+
 // Accessors used by the optional OLED add-on (diag + VU meter screens).
 uint32_t audio_fifo_drops();
 uint32_t opus_fifo_drops();
@@ -26,11 +32,12 @@ int32_t  audio_mic_last_decoded(); // last opus_decode return — neg = error, 4
 uint16_t audio_mic_last_want();    // bytes asked of tud_audio_write
 uint16_t audio_mic_last_wrote();   // bytes TinyUSB FIFO actually accepted
 uint8_t  audio_mic_last_toc();     // first byte of last Opus packet (frame config)
-uint32_t audio_mic_plc_frames();   // count of packet-loss-concealment frames generated
+uint32_t audio_mic_plc_frames();   // PLC removed (upstream parity) — always 0
 
 // Called from on_bt_data() in main.cpp when the DS5 sends a mic-tagged
-// 0x31 input report. Buffer must point at MIC_OPUS_SIZE (71) bytes of
-// Opus payload.
-void mic_add_queue(const uint8_t *data);
+// 0x31 input report. data points at the Opus payload, len is the bytes
+// available there (upstream PR #160 signature: the function validates
+// len >= MIC_OPUS_SIZE itself).
+void mic_add_queue(uint8_t *data, uint16_t len);
 
 #endif //DS5_BRIDGE_AUDIO_H
