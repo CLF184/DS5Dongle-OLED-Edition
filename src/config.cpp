@@ -10,12 +10,17 @@
 #include "utils.h"
 #include "hardware/flash.h"
 #include "hardware/sync.h"
+#include "pico/btstack_flash_bank.h"
 #include "pico/cyw43_arch.h"
 #include "pico/flash.h"
 
 constexpr uint32_t CONFIG_MAGIC = 0x66ccff00;
 constexpr uint16_t CONFIG_VERSION = 1;
-constexpr uint32_t CONFIG_FLASH_OFFSET = PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE;
+// Upstream dbf2a71 parity: keep config one sector *below* the btstack flash
+// bank. On RP2350 the very last flash sector is reserved for the RP2350-E10
+// errata workaround — the old position (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
+// sat exactly there and could collide with chip-errata flash handling.
+constexpr uint32_t CONFIG_FLASH_OFFSET = PICO_FLASH_BANK_STORAGE_OFFSET - FLASH_SECTOR_SIZE;
 static Config config{};
 bool is_dse = false;
 
@@ -25,12 +30,12 @@ static_assert(sizeof(Config) <= FLASH_PAGE_SIZE);
 // 配置区起始地址必须按 flash sector 对齐。
 static_assert(CONFIG_FLASH_OFFSET % FLASH_SECTOR_SIZE == 0);
 
-uint32_t calc_config_crc(const Config &con) {
+static uint32_t calc_config_crc(const Config &con) {
     return crc32(reinterpret_cast<const uint8_t *>(&con.body), sizeof(Config_body));
 }
 
-const Config *flash_config() {
-    return reinterpret_cast<const Config *>(XIP_BASE + CONFIG_FLASH_OFFSET);
+static const Config *get_xip_addr(uint32_t offset) {
+    return reinterpret_cast<const Config *>(XIP_BASE + offset);
 }
 
 void config_valid() {
@@ -129,7 +134,7 @@ void config_valid() {
 }
 
 void config_load() {
-    memcpy(&config, flash_config(), sizeof(Config));
+    memcpy(&config, get_xip_addr(CONFIG_FLASH_OFFSET), sizeof(Config));
 
     config_valid();
 }
@@ -167,7 +172,7 @@ bool config_save() {
     }
 
     Config verify{};
-    memcpy(&verify, flash_config(), sizeof(verify));
+    memcpy(&verify, get_xip_addr(CONFIG_FLASH_OFFSET), sizeof(verify));
     const auto verify_crc32 = calc_config_crc(verify);
     if (verify_crc32 == config.crc32) {
         printf("[Config] Config write flash verify success\n");
