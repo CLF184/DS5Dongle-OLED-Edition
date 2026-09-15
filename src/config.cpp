@@ -11,6 +11,7 @@
 #include "hardware/flash.h"
 #include "hardware/sync.h"
 #include "pico/cyw43_arch.h"
+#include "pico/flash.h"
 
 constexpr uint32_t CONFIG_MAGIC = 0x66ccff00;
 constexpr uint16_t CONFIG_VERSION = 1;
@@ -142,16 +143,28 @@ void config_default() {
     config_valid();
 }
 
+// Runs with core1 parked (flash_safe_execute) and core0 interrupts disabled, so
+// neither core touches XIP flash while the sector is erased/programmed. Without
+// the core1 park this races the audio core and corrupts audio (buzzing).
+static void config_save_flash_op(void *param) {
+    const uint8_t *page = static_cast<const uint8_t *>(param);
+    const uint32_t interrupts = save_and_disable_interrupts();
+    flash_range_erase(CONFIG_FLASH_OFFSET, FLASH_SECTOR_SIZE);
+    flash_range_program(CONFIG_FLASH_OFFSET, page, FLASH_PAGE_SIZE);
+    restore_interrupts(interrupts);
+}
+
 bool config_save() {
     config.crc32 = calc_config_crc(config);
     alignas(4) uint8_t page[FLASH_PAGE_SIZE];
     memset(page, 0xff, sizeof(page));
     memcpy(page, &config, sizeof(Config));
 
-    const uint32_t interrupts = save_and_disable_interrupts();
-    flash_range_erase(CONFIG_FLASH_OFFSET, FLASH_SECTOR_SIZE);
-    flash_range_program(CONFIG_FLASH_OFFSET, page, sizeof(page));
-    restore_interrupts(interrupts);
+    const int rc = flash_safe_execute(config_save_flash_op, page, 1000);
+    if (rc != PICO_OK) {
+        printf("[Config] config_save flash_safe_execute failed: %d\n", rc);
+        return false;
+    }
 
     Config verify{};
     memcpy(&verify, flash_config(), sizeof(verify));

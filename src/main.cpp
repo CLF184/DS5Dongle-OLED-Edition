@@ -12,6 +12,7 @@
 #include "hardware/vreg.h"
 #include "hardware/watchdog.h"
 #include "pico/cyw43_arch.h"
+#include "pico/platform.h"
 #include "state_mgr.h"
 #if ENABLE_SERIAL
 #include "pico/stdio_usb.h"
@@ -97,7 +98,7 @@ uint8_t interrupt_in_data[63] = {
 critical_section_t report_cs;
 volatile bool report_dirty = false;
 
-void interrupt_loop() {
+void __not_in_flash_func(interrupt_loop)() {
     // OLED Edition: hold PS + Mute for 2 seconds to soft-reboot the dongle.
     // Works whether or not the OLED add-on is present. PS+Mute is uncommon
     // during gameplay and the long hold avoids accidental triggers.
@@ -160,7 +161,7 @@ void interrupt_loop() {
     }
 }
 
-void on_bt_data(CHANNEL_TYPE channel, uint8_t *data, uint16_t len) {
+void __not_in_flash_func(on_bt_data)(CHANNEL_TYPE channel, uint8_t *data, uint16_t len) {
     // printf("[Main] BT data callback: channel=%u len=%u\n", channel, len);
     // Track ALL INTERRUPT input reports, not just 0x31. The mic stream
     // may live on a different report ID — confirmed 2026-05-19 that data[2]
