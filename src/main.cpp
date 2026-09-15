@@ -23,7 +23,6 @@
 #include "battery_led.h"
 #endif
 #include "oled.h"
-// [REMAP-DISABLED] #include "remap.h" // button remapping disabled — subsystem fully removed from build
 
 // Pico SDK speciifically for waiting on conditions
 #include "pico/critical_section.h"
@@ -44,7 +43,6 @@ volatile uint8_t  g_last_31_b2 = 0;
 volatile uint8_t  g_31_b2_or = 0;
 volatile uint16_t g_31_len_min = 0xFFFF;
 volatile uint16_t g_31_len_max = 0;
-volatile uint8_t  g_mic_prefix[6] = {0};
 volatile uint8_t  g_last_other_prefix[8] = {0};
 volatile uint8_t  g_last_any_prefix[16] = {0};
 volatile uint16_t g_longest_len = 0;
@@ -54,9 +52,6 @@ uint8_t  bt_31_last_byte2()  { return g_last_31_b2; }
 uint8_t  bt_31_b2_or_mask()  { return g_31_b2_or; }
 uint16_t bt_31_len_min()     { return g_31_len_min == 0xFFFF ? 0 : g_31_len_min; }
 uint16_t bt_31_len_max()     { return g_31_len_max; }
-void bt_31_mic_prefix(uint8_t out[6]) {
-    for (int i = 0; i < 6; i++) out[i] = g_mic_prefix[i];
-}
 
 // Trigger-flow diagnostics. Counts host → dongle → BT path for adaptive
 // trigger effects. Lets us tell which link in the chain breaks when games
@@ -120,11 +115,8 @@ void __not_in_flash_func(interrupt_loop)() {
 
     // TODO: Refactor for better code reuse
     if (get_config().polling_rate_mode != 2) {
-        // Remap acts on the OUTGOING copy only — interrupt_in_data stays raw so
-        // the reboot combo above and every OLED screen keep seeing physical input.
         uint8_t out[63];
         memcpy(out, interrupt_in_data, 63);
-        // [REMAP-DISABLED] remap_apply(out); // button remapping disabled (was causing host-side button corruption)
         if (!tud_hid_report(0x01, out, 63)) {
             printf("[USBHID] tud_hid_report error\n");
         }
@@ -143,9 +135,6 @@ void __not_in_flash_func(interrupt_loop)() {
         should_send = true;
     }
     critical_section_exit(&report_cs);
-
-    // Remap the snapshot, not interrupt_in_data (outgoing copy only — see above).
-    // [REMAP-DISABLED] if (should_send) remap_apply(safe_report); // disabled (was causing host-side button corruption)
 
     // Only send to TinyUSB if we actually grabbed fresh data
     if (should_send) {
@@ -432,7 +421,6 @@ int main() {
     critical_section_init(&report_cs);
 
     config_load();
-    // [REMAP-DISABLED] remap_load(); // button remapping disabled — don't read/write the remap flash sector at all
 
     bt_init();
     bt_register_data_callback(on_bt_data);

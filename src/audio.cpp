@@ -76,7 +76,27 @@ uint32_t audio_mic_decode_failures() { return g_mic_decode_failures; }
 // opens the mic IN interface (alt != 0). Mirrors upstream PR #160 — the
 // controller only streams mic audio while something is actually recording.
 static bool mic_active = false;
-void set_mic_active(bool active) { mic_active = active; }
+
+// Upstream PR #160 parity: immediately tell the controller to start/stop
+// streaming its mic via a 0x32 status report (pkt[4] bit 0 = mic-enable).
+// Without this, closing the mic IN interface leaves the sticky mic-enable
+// asserted and the controller keeps pushing Opus over BT forever (wasted
+// bandwidth + battery).
+void update_mic_status() {
+    uint8_t pkt[142]{};
+    pkt[0] = 0x32;
+    pkt[1] = reportSeqCounter << 4;
+    reportSeqCounter = (reportSeqCounter + 1) & 0x0F;
+    pkt[2] = 0x11 | 0 << 6 | 1 << 7;
+    pkt[3] = 1;
+    pkt[4] = (mic_active && get_config().bt_mic_enable) ? 0b00000011 : 0b00000010;
+    bt_write(pkt, sizeof(pkt));
+}
+
+void set_mic_active(bool active) {
+    mic_active = active;
+    update_mic_status();
+}
 bool audio_mic_active() { return mic_active; }
 
 struct audio_raw_element {

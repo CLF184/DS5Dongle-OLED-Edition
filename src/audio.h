@@ -17,6 +17,10 @@ void set_headset(bool state);
 // PR #160: the DS5 only streams mic audio while something is recording.
 void set_mic_active(bool active);
 bool audio_mic_active();
+// Upstream PR #160 parity: send a 0x32 status report to the controller so it
+// starts/stops streaming its mic immediately when the host opens/closes the
+// mic IN interface. Called by set_mic_active().
+void update_mic_status();
 
 // Accessors used by the optional OLED add-on (diag + VU meter screens).
 uint32_t audio_fifo_drops();

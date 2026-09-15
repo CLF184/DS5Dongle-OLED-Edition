@@ -17,6 +17,7 @@
 #include "bsp/board_api.h"
 #include "classic/sdp_server.h"
 #include "config.h"
+#include "audio.h" // update_mic_status (re-arm mic streaming on reconnect)
 #include "state_mgr.h"
 #include "pico/util/queue.h"
 #include "slots.h"
@@ -636,6 +637,14 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
                     report32[3] = 0x3f; // 63 bytes
                     state_set(report32 + 4,sizeof(SetStateData));
                     bt_write(report32, sizeof(report32));
+
+                    // Re-arm controller mic streaming for the new link (upstream
+                    // PR #242 parity). The 0x32 mic-status packet is otherwise
+                    // only sent when the host opens or closes the USB mic
+                    // interface, so a controller that reconnects while the host
+                    // still holds that interface open never gets told to stream
+                    // and the mic stays silent.
+                    update_mic_status();
 
                     const auto mtu = l2cap_get_remote_mtu_for_local_cid(hid_interrupt_cid);
                     printf("[L2CAP] Remote Interrupt MTU: %d\n",mtu);
