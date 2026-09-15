@@ -124,7 +124,7 @@ void __not_in_flash_func(interrupt_loop)() {
         // the reboot combo above and every OLED screen keep seeing physical input.
         uint8_t out[63];
         memcpy(out, interrupt_in_data, 63);
-        remap_apply(out);
+        // [VERIFY-1] remap_apply(out); // TEMP disabled for button diagnosis
         if (!tud_hid_report(0x01, out, 63)) {
             printf("[USBHID] tud_hid_report error\n");
         }
@@ -145,7 +145,7 @@ void __not_in_flash_func(interrupt_loop)() {
     critical_section_exit(&report_cs);
 
     // Remap the snapshot, not interrupt_in_data (outgoing copy only — see above).
-    if (should_send) remap_apply(safe_report);
+    // [VERIFY-1] remap_apply(safe_report); // TEMP disabled for button diagnosis
 
     // Only send to TinyUSB if we actually grabbed fresh data
     if (should_send) {
