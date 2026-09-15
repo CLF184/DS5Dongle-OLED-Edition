@@ -69,8 +69,8 @@ uint32_t audio_mic_frames() { return g_mic_frames; }
 int32_t  audio_mic_last_decoded() { return g_mic_last_decoded; }
 uint16_t audio_mic_last_want()    { return g_mic_last_want; }
 uint16_t audio_mic_last_wrote()   { return g_mic_last_wrote; }
-static volatile uint32_t g_mic_plc_frames = 0;        // PLC removed (upstream parity) — stays 0
-uint32_t audio_mic_plc_frames() { return g_mic_plc_frames; }
+static volatile uint32_t g_mic_decode_failures = 0;  // opus_decode returns <= 0 (bad/missing packets)
+uint32_t audio_mic_decode_failures() { return g_mic_decode_failures; }
 
 // Host-gate for the mic: set by tud_audio_set_itf_cb (main.cpp) when the host
 // opens the mic IN interface (alt != 0). Mirrors upstream PR #160 — the
@@ -128,6 +128,11 @@ uint8_t audio_mic_last_toc() { return g_mic_toc; }
 // malformed report can't over-read past the packet buffer, and drops the
 // oldest queued packet if the FIFO is full — preferring fresh audio.
 void __not_in_flash_func(mic_add_queue)(uint8_t *data, uint16_t len) {
+    // Host-gate: only queue mic audio while the host has the mic IN interface
+    // open (alt != 0). Mirrors upstream PR #160's mic_add_queue — without this,
+    // a sticky DS5 mic keeps streaming into the USB IN endpoint after Windows
+    // releases the device (alt=0) and the mic "never turns off".
+    if (!mic_active) return;
     if (len < MIC_OPUS_SIZE) return;
     static mic_element packet{};
     memcpy(packet.data, data, MIC_OPUS_SIZE);
@@ -443,6 +448,7 @@ static void __not_in_flash_func(mic_proc)() {
                               decoded_data, MIC_FRAMES, 0);
     g_mic_last_decoded = n;
     if (n <= 0) {
+        g_mic_decode_failures++;  // bad/missing Opus packet — surfaced on the OLED Diag screen
         return;
     }
     static mic_decoded_element decode_element{};

@@ -28,7 +28,6 @@ extern uint8_t  bt_31_last_byte2();
 extern uint8_t  bt_31_b2_or_mask();
 extern uint16_t bt_31_len_min();
 extern uint16_t bt_31_len_max();
-extern void     bt_31_mic_prefix(uint8_t out[6]);
 extern bool     spk_active; // main.cpp: true while host USB speaker stream is open
 
 // Global (not in the anon namespace below) so state_mgr.cpp can extern it:
@@ -870,7 +869,7 @@ void sample_diag_rates() {
 
 // Row list ordered by relevance: always-useful at top, parked-mic-investigation
 // data at bottom. To add a row, bump kNumDiagRows and add a case.
-constexpr int kNumDiagRows = 12;
+constexpr int kNumDiagRows = 11;
 __attribute__((noinline))
 void format_diag_row(int idx, char* line, size_t n) {
     switch (idx) {
@@ -916,14 +915,8 @@ void format_diag_row(int idx, char* line, size_t n) {
                      (unsigned)audio_mic_last_wrote());
             break;
         case 10:
-            snprintf(line, n, "Mic PLC: %lu", (unsigned long)audio_mic_plc_frames());
+            snprintf(line, n, "Mic fail: %lu", (unsigned long)audio_mic_decode_failures());
             break;
-        case 11: {
-            uint8_t pfx[6]; bt_31_mic_prefix(pfx);
-            snprintf(line, n, "%02X %02X %02X %02X %02X %02X",
-                     pfx[0], pfx[1], pfx[2], pfx[3], pfx[4], pfx[5]);
-            break;
-        }
         default:
             line[0] = '\0';
             break;

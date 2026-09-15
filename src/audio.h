@@ -32,7 +32,7 @@ int32_t  audio_mic_last_decoded(); // last opus_decode return — neg = error, 4
 uint16_t audio_mic_last_want();    // bytes asked of tud_audio_write
 uint16_t audio_mic_last_wrote();   // bytes TinyUSB FIFO actually accepted
 uint8_t  audio_mic_last_toc();     // first byte of last Opus packet (frame config)
-uint32_t audio_mic_plc_frames();   // PLC removed (upstream parity) — always 0
+uint32_t audio_mic_decode_failures(); // opus_decode <= 0 count (bad/missing packets)
 
 // Called from on_bt_data() in main.cpp when the DS5 sends a mic-tagged
 // 0x31 input report. data points at the Opus payload, len is the bytes
