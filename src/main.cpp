@@ -23,7 +23,7 @@
 #include "battery_led.h"
 #endif
 #include "oled.h"
-#include "remap.h"
+// [REMAP-DISABLED] #include "remap.h" // button remapping disabled — subsystem fully removed from build
 
 // Pico SDK speciifically for waiting on conditions
 #include "pico/critical_section.h"
@@ -124,7 +124,7 @@ void __not_in_flash_func(interrupt_loop)() {
         // the reboot combo above and every OLED screen keep seeing physical input.
         uint8_t out[63];
         memcpy(out, interrupt_in_data, 63);
-        // [VERIFY-1] remap_apply(out); // TEMP disabled for button diagnosis
+        // [REMAP-DISABLED] remap_apply(out); // button remapping disabled (was causing host-side button corruption)
         if (!tud_hid_report(0x01, out, 63)) {
             printf("[USBHID] tud_hid_report error\n");
         }
@@ -145,7 +145,7 @@ void __not_in_flash_func(interrupt_loop)() {
     critical_section_exit(&report_cs);
 
     // Remap the snapshot, not interrupt_in_data (outgoing copy only — see above).
-    // [VERIFY-1] remap_apply(safe_report); // TEMP disabled for button diagnosis
+    // [REMAP-DISABLED] if (should_send) remap_apply(safe_report); // disabled (was causing host-side button corruption)
 
     // Only send to TinyUSB if we actually grabbed fresh data
     if (should_send) {
@@ -432,7 +432,7 @@ int main() {
     critical_section_init(&report_cs);
 
     config_load();
-    remap_load();
+    // [REMAP-DISABLED] remap_load(); // button remapping disabled — don't read/write the remap flash sector at all
 
     bt_init();
     bt_register_data_callback(on_bt_data);

@@ -90,7 +90,7 @@ add_executable(ds5-bridge
         src/state_mgr.cpp
         src/oled.cpp
         src/slots.cpp
-        src/remap.cpp
+        # [REMAP-DISABLED] src/remap.cpp // button remapping disabled — not compiled (see main.cpp REMAP-DISABLED comments)
         src/ram_mem.c
 )
 
