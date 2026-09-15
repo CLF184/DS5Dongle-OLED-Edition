@@ -1795,7 +1795,10 @@ void boot_splash() {
         return (128 - (n * 6 - 1)) / 2;
     };
     const char* l1 = "DS5 Bridge";
-    const char* l2 = "v0.6.0";
+    // Follow the build version (-DVERSION from release.yml tag) instead of a
+    // hard-coded string — the splash previously showed a stale "v0.6.0" even
+    // on newer releases. Local builds without -DVERSION show "dev".
+    const char* l2 = FIRMWARE_VERSION;
     const char* l3 = "Pico2W + OLED";
     draw_text(cx_for(l1), 16, l1);
     draw_text(cx_for(l2), 30, l2);
