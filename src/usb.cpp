@@ -7,7 +7,7 @@
 #include "config.h"
 
 uint8_t mute[2]; // 0: SPEAKER(0x02) 1: MIC(0x05)
-float volume[2] = {0.0f, 48.0f}; // 0: SPEAKER(0x02) 1: MIC(0x05) — MIC +48dB aligns with upstream (Windows mic level = 65)
+float volume[2] = {-100.0f,0.0f}; // 0: SPEAKER(0x02) 1: MIC(0x05)
 
 #define UAC1_ENTITY_SPK_FEATURE_UNIT    0x02
 #define UAC1_ENTITY_MIC_FEATURE_UNIT    0x05
