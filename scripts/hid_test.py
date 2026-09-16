@@ -288,9 +288,10 @@ def main():
     target.set_raw_data_handler(on_data)
 
     print(f"\n抓取 {args.seconds} 秒（手柄静止，勿操作）...")
-    print(f"{'时间':<6} {'原始报告(前8字节)':<28} {'LX':>3} {'LY':>3} {'RX':>3} "
-          f"{'RY':>3} {'L2':>3} {'R2':>3}   WGI(LT/RT/RX/RY)")
-    print("-" * 110)
+    print(f"{'时间':<6} {'原始报告(前8字节)':<28} "
+          f"{'LX':>3} {'LY':>3} {'RX':>3} {'RY':>3} {'L2':>3} {'R2':>3}   "
+          f"WGI(LT/RT/LX/LY/RX/RY)")
+    print("-" * 130)
 
     start = time.time()
     last_line_t = 0
@@ -310,7 +311,9 @@ def main():
                     if wgi:
                         wgi_samples.append(wgi)
                         r = wgi[0]
-                        w = f"  WGI LT={r['LT']} RT={r['RT']} RX={r['RX']} RY={r['RY']}"
+                        w = (f"  WGI LT={r['LT']} RT={r['RT']} "
+                             f"LX={r['LX']} LY={r['LY']} "
+                             f"RX={r['RX']} RY={r['RY']}")
                 if parsed:
                     print(
                         f"{int(now-start):<6} {parsed['head']:<28} "
