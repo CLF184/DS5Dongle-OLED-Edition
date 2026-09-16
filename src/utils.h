@@ -356,8 +356,8 @@ struct __attribute__((packed)) SetStateData { // 47
 /*32  */ uint32_t HostTimestamp; // mirrored into report read
 /*    */
 /*    */ // MotorPowerLevel
-/*36.0*/ uint8_t TriggerMotorPowerReduction : 4; // 0x0-0x7 (no 0x8?) Applied in 12.5% reductions
-/*36.4*/ uint8_t RumbleMotorPowerReduction : 4;  // 0x0-0x7 (no 0x8?) Applied in 12.5% reductions
+/*36.0*/ uint8_t RumbleMotorPowerReduction : 4; // 0x0-0x7 (no 0x8?) Applied in 12.5% reductions
+/*36.4*/ uint8_t TriggerMotorPowerReduction : 4;  // 0x0-0xA
 /*    */
 /*    */ // AudioControl2
 /*37.0*/ uint8_t SpeakerCompPreGain: 3; // additional speaker volume boost
@@ -369,7 +369,8 @@ struct __attribute__((packed)) SetStateData { // 47
 /*38.2*/ uint8_t EnableImprovedRumbleEmulation: 1; // Use instead of EnableRumbleEmulation
                                                    // requires FW >= 0x0224
                                                    // No need to halve rumble strength
-/*38.3*/ uint8_t UNKBITC: 5; // unused
+/*38.3*/ uint8_t UseRumbleNotHaptics2: 1; // 在 NinjaGaiden4 出现，与 UseRumbleNotHaptics 工作效果相同
+/*38.3*/ uint8_t UNKBITC: 4; // unused
 /*    */
 /*39.0*/ uint8_t HapticLowPassFilter: 1;
 /*39.1*/ uint8_t UNKBIT: 7;

@@ -59,7 +59,12 @@ critical_section_t opus_cs;
 queue_t mic_fifo;
 queue_t mic_decode_fifo;
 struct mic_element { uint8_t data[MIC_OPUS_SIZE]; };
-struct mic_decoded_element { int16_t mono[MIC_FRAMES]; };
+// Upstream PR #160 parity: decoded frame carries a len field (opus_decode may
+// return fewer than MIC_FRAMES); the hardware-throttled USB drain reads it.
+struct mic_decode_element {
+    int16_t data[MIC_FRAMES * MIC_CHANNELS];
+    uint16_t len;
+};
 static OpusDecoder *mic_decoder = nullptr; // created + owned by core1 (mic_proc)
 static volatile uint32_t g_mic_frames = 0;
 static volatile int32_t  g_mic_last_decoded = 0;  // opus_decode return value (core1)
@@ -206,25 +211,68 @@ static void mic_enable_keepalive() {
 }
 
 void __not_in_flash_func(audio_loop)() {
-    // Mic playback (upstream PR #160 parity): drain one decoded frame from
-    // core1 and push it to the USB IN endpoint. No 10 ms cadence, no jitter
-    // pre-buffer, no PLC — decoding happens on core1, this side just drains
-    // and plays. A dropped frame is a one-frame gap (inaudible); the host's
-    // USB IN software buffer was widened (tusb_config.h 4x→16x) to absorb
-    // bursts, exactly like upstream.
-    {
-        static mic_decoded_element mic_pb{};
-        if (queue_try_remove(&mic_decode_fifo, &mic_pb)) {
-            static int16_t stereo[MIC_FRAMES * 2];
-            for (int i = 0; i < MIC_FRAMES; i++) {
-                stereo[i * 2]     = mic_pb.mono[i];
-                stereo[i * 2 + 1] = mic_pb.mono[i];
+    // --- BUGFIX: HARDWARE-THROTTLED DIRECT SLICE DRAINING (upstream parity) ---
+    // Slaves the microphone transmission speed to the USB host clock.
+    // Instead of pushing entire decoded frames at once (which causes buffer
+    // overflows and digital echo on strict OS stacks like macOS CoreAudio),
+    // we query TinyUSB's transmit FIFO capacity and feed it 1ms slices (192
+    // bytes) precisely when the host is ready to consume them.
+    const bool mic_enabled = mic_active && get_config().bt_mic_enable;
+
+    // Streaming state for hardware-throttled USB microphone transmission
+    static mic_decode_element active_mic_frame{};
+    static uint32_t active_frame_offset = 0;
+    static bool has_active_frame = false;
+
+    if (mic_enabled) {
+        tu_fifo_t* tx_fifo = tud_audio_get_ep_in_ff();
+
+        while (tx_fifo && tu_fifo_remaining(tx_fifo) >= 192) {
+            if (!has_active_frame) {
+                if (queue_try_remove(&mic_decode_fifo, &active_mic_frame)) {
+                    has_active_frame = true;
+                    active_frame_offset = 0;
+                } else {
+                    // Buffer Underrun Safety: If the decode queue runs dry, we MUST
+                    // feed the USB interface with silence to keep the stream alive.
+                    // This prevents macOS CoreAudio from resetting the driver.
+                    int16_t silence[96] = {0};
+                    tud_audio_write(silence, sizeof(silence));
+                    break;
+                }
             }
-            const uint16_t want = (uint16_t)(MIC_FRAMES * 2 * sizeof(int16_t));
-            g_mic_last_wrote = tud_audio_write(stereo, want);
-            g_mic_last_want  = want;
-            g_mic_frames++;
+
+            if (has_active_frame) {
+                int16_t usb_tx_buf[96]; // 48 Stereo-Frames (192 Bytes)
+                const int16_t* src = active_mic_frame.data;
+                const uint32_t total_samples = active_mic_frame.len / sizeof(int16_t);
+                const uint32_t samples_needed = 48;
+
+                for (uint32_t i = 0; i < samples_needed; i++) {
+                    uint32_t src_idx = active_frame_offset + i;
+                    if (src_idx < total_samples) {
+                        int16_t sample = src[src_idx];
+                        usb_tx_buf[i * 2] = sample;     // Duplicate mono to Left
+                        usb_tx_buf[i * 2 + 1] = sample; // Duplicate mono to Right
+                    } else {
+                        usb_tx_buf[i * 2] = 0;
+                        usb_tx_buf[i * 2 + 1] = 0;
+                    }
+                }
+
+                const uint16_t wrote = tud_audio_write(usb_tx_buf, sizeof(usb_tx_buf));
+                g_mic_last_want  = (uint16_t)sizeof(usb_tx_buf);
+                g_mic_last_wrote = wrote;
+                active_frame_offset += samples_needed;
+
+                if (active_frame_offset >= total_samples) {
+                    has_active_frame = false; // Current frame completely drained
+                    g_mic_frames++;
+                }
+            }
         }
+    } else {
+        has_active_frame = false;
     }
 
     // 1. 读取 USB 音频数据
@@ -416,10 +464,11 @@ void audio_init() {
     resampler.SetFeedMode(true);
     resampler.Prealloc(2, 24, 6);
     // Mic queues are consumed by core1's mic_proc from the moment core1 starts,
-    // so they must be initialized BEFORE multicore_launch_core1 below. Depth 2
-    // with drop-oldest, matching upstream PR #160.
-    queue_init(&mic_fifo, sizeof(mic_element), 2);
-    queue_init(&mic_decode_fifo, sizeof(mic_decoded_element), 2);
+    // so they must be initialized BEFORE multicore_launch_core1 below.
+    // BUGFIX (upstream parity): depth 8 elastic buffer — absorbs initial Opus
+    // encoder/decoder warm-up delays and mitigates startup crackling/stuttering.
+    queue_init(&mic_fifo, sizeof(mic_element), 8);
+    queue_init(&mic_decode_fifo, sizeof(mic_decode_element), 8);
  #if !DISABLE_SPEAKER_PROC
     queue_init(&audio_fifo, sizeof(audio_raw_element), 2);
     critical_section_init(&opus_cs);
@@ -463,16 +512,15 @@ static void __not_in_flash_func(mic_proc)() {
     if (!queue_try_remove(&mic_fifo, &mic_packet)) {
         return;
     }
-    static int16_t decoded_data[MIC_FRAMES * MIC_CHANNELS];
+    static mic_decode_element decode_element{};
     const int n = opus_decode(mic_decoder, mic_packet.data, MIC_OPUS_SIZE,
-                              decoded_data, MIC_FRAMES, 0);
+                              decode_element.data, MIC_FRAMES, 0);
     g_mic_last_decoded = n;
     if (n <= 0) {
         g_mic_decode_failures++;  // bad/missing Opus packet — surfaced on the OLED Diag screen
         return;
     }
-    static mic_decoded_element decode_element{};
-    memcpy(decode_element.mono, decoded_data, MIC_FRAMES * sizeof(int16_t));
+    decode_element.len = (uint16_t)(n * MIC_CHANNELS * sizeof(int16_t));
     if (queue_is_full(&mic_decode_fifo)) {
         queue_try_remove(&mic_decode_fifo, NULL);
     }
@@ -484,6 +532,11 @@ void __not_in_flash_func(core1_entry)() {
     // (config_save) actually parks this core while flash is erased/programmed,
     // instead of letting it fault on XIP. Requires PICO_FLASH_ASSUME_CORE1_SAFE=0.
     flash_safe_execute_core_init();
+
+    // Allow Core 0 to fully initialize Bluetooth and USB stacks before Core 1
+    // starts processing — otherwise the dongle could shut down at initialization.
+    sleep_ms(300);
+
     int error = 0;
     encoder = opus_encoder_create(48000, 2,OPUS_APPLICATION_AUDIO, &error);
     if (error != 0) {
@@ -505,7 +558,24 @@ void __not_in_flash_func(core1_entry)() {
     }
 
     while (true) {
-        speaker_proc();
-        mic_proc();
+        bool work_done = false;
+
+        // Only enter processing if data is actually waiting.
+        // This avoids constantly acquiring queue locks (spinlocks) when idle,
+        // which would otherwise thrash the RP2350 system bus and starve Core 0.
+        if (queue_get_level(&audio_fifo) > 0) {
+            speaker_proc();
+            work_done = true;
+        }
+        if (queue_get_level(&mic_fifo) > 0) {
+            mic_proc();
+            work_done = true;
+        }
+
+        // If both queues are empty, we can safely sleep.
+        // This prevents 100% CPU usage while maintaining sub-millisecond response times.
+        if (!work_done) {
+            sleep_us(10);
+        }
     }
 }

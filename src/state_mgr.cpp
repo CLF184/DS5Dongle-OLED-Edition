@@ -83,8 +83,13 @@ void state_update(const uint8_t *data, const uint8_t size) {
     set_bit(state[0], 0, update.EnableRumbleEmulation);
     set_bit(state[0], 1, update.UseRumbleNotHaptics);
     set_bit(state[38], 2, update.EnableImprovedRumbleEmulation);
+    // Upstream 8d8255c parity: UseRumbleNotHaptics2 (38.3) is the second
+    // "this report carries rumble" marker (used by NinjaGaiden 4). The copy
+    // gate only trusts the two per-frame rumble markers — EnableRumbleEmulation
+    // is a mode toggle ("suggest halving"), not a data marker.
+    set_bit(state[38], 3, update.UseRumbleNotHaptics2);
     copy_if_allowed(
-        update.UseRumbleNotHaptics || update.EnableRumbleEmulation,
+        update.UseRumbleNotHaptics || update.UseRumbleNotHaptics2,
         offsetof(SetStateData, RumbleEmulationRight),
         2
     );
