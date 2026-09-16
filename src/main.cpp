@@ -366,7 +366,19 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
         report_id == 0x60 ||
         report_id == 0x62 ||
         report_id == 0x61) {
-        set_feature_data(report_id, const_cast<uint8_t *>(buffer), bufsize);
+        // TinyUSB 的 buffer[0] 就是 report_id 本身，而 set_feature_data() 打包时
+        // 会在 [0x53][report_id] 之后再原样带一份 data —— 直接传整个 buffer
+        // 会把 report_id 重复两次：BT 上发出去是 53 80 80 01 13...，手柄把
+        // 第二个 0x80 当作命令字节，导致 0x80 命令（读序列号/固件）解析错位，
+        // feature_data[0x80] 得不到正确缓存 → 网页 GET_REPORT 0x80 返回空 →
+        // ds.evua.cc 序列号空 + 判盗版。原版 DSE 内部调用
+        // (set_feature_data(0x80, unlock, ...)) 传的就是不含 report id 的纯数据。
+        // 这里跳过 buffer[0]，与直连 USB SET_REPORT 格式（80 01 13...）完全一致。
+        if (bufsize > 1) {
+            set_feature_data(report_id, const_cast<uint8_t *>(buffer) + 1, bufsize - 1);
+        } else {
+            set_feature_data(report_id, const_cast<uint8_t *>(buffer), bufsize);
+        }
         return;
     }
 }
