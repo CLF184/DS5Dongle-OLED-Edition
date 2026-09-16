@@ -7,6 +7,7 @@
 
 #include "utils.h"
 #include "state_mgr.h"
+#include "config.h"
 
 // Set by the OLED lightbar service (src/oled.cpp). While true, the firmware
 // owns the lightbar (an OLED mode or the charging pulse) and the host's
@@ -15,11 +16,8 @@ extern bool g_lightbar_override;
 
 namespace {
     constexpr size_t kAudioControlOffset = offsetof(SetStateData, MuteLightMode) - sizeof(uint8_t);
-    constexpr size_t kMuteControlOffset = offsetof(SetStateData, RightTriggerFFB) - sizeof(uint8_t);
     constexpr size_t kMotorPowerLevelOffset = offsetof(SetStateData, HostTimestamp) + sizeof(uint32_t);
     constexpr size_t kAudioControl2Offset = kMotorPowerLevelOffset + sizeof(uint8_t);
-    constexpr size_t kHapticLowPassFilterOffset = offsetof(SetStateData, LightFadeAnimation) - 2 * sizeof(uint8_t);
-    constexpr size_t kPlayerIndicatorsOffset = offsetof(SetStateData, LedRed) - sizeof(uint8_t);
 }
 
 static constexpr uint8_t state_init_data[63] = {
@@ -68,110 +66,49 @@ void state_update(const uint8_t *data, const uint8_t size) {
         return;
     }
 
-    SetStateData update{};
-    memcpy(&update, data, sizeof(update));
+    // Full host passthrough (upstream memcpy semantics): the 0x02 report
+    // replaces the whole state block — allow bits included — so the controller
+    // applies exactly what the host asked for.
+    uint8_t saved_led[3];
+    const bool lb_override = g_lightbar_override;
+    if (lb_override) {
+        memcpy(saved_led, state + offsetof(SetStateData, LedRed), sizeof(saved_led));
+    }
+    memcpy(state, data, sizeof(SetStateData));
+    if (lb_override) {
+        // OLED owns the lightbar: keep our color and clear AllowLedColor so the
+        // controller ignores the host's LED bytes.
+        memcpy(state + offsetof(SetStateData, LedRed), saved_led, sizeof(saved_led));
+        state[1] &= ~(1 << 2); // AllowLedColor = 0
+    }
 
-    const auto copy_if_allowed = [&](const bool allowed, const size_t offset, const size_t length) {
-        if (allowed) {
-            memcpy(state + offset, data + offset, length);
-        }
-    };
+    // Host-passthrough overrides (upstream a7824d9 parity): only applied when
+    // the matching OLED config is non-auto (0 = auto = host value wins).
+    const auto &cfg = get_config();
     auto set_bit = [](uint8_t &byte, const int bit, const bool value) {
         byte = (byte & ~(1 << bit)) | (value << bit);
     };
-
-    set_bit(state[0], 0, update.EnableRumbleEmulation);
-    set_bit(state[0], 1, update.UseRumbleNotHaptics);
-    set_bit(state[38], 2, update.EnableImprovedRumbleEmulation);
-    // Upstream 8d8255c parity: UseRumbleNotHaptics2 (38.3) is the second
-    // "this report carries rumble" marker (used by NinjaGaiden 4). The copy
-    // gate only trusts the two per-frame rumble markers — EnableRumbleEmulation
-    // is a mode toggle ("suggest halving"), not a data marker.
-    set_bit(state[38], 3, update.UseRumbleNotHaptics2);
-    copy_if_allowed(
-        update.UseRumbleNotHaptics || update.UseRumbleNotHaptics2,
-        offsetof(SetStateData, RumbleEmulationRight),
-        2
-    );
-
-    /*copy_if_allowed(
-        update.AllowHeadphoneVolume,
-        offsetof(SetStateData, VolumeHeadphones),
-        sizeof(update.VolumeHeadphones)
-    );*/
-    /*copy_if_allowed(
-        update.AllowSpeakerVolume,
-        offsetof(SetStateData, VolumeSpeaker),
-        sizeof(update.VolumeSpeaker)
-    );*/
-    /*copy_if_allowed(
-        update.AllowMicVolume,
-        offsetof(SetStateData, VolumeMic),
-        sizeof(update.VolumeMic)
-    );*/
-    /*copy_if_allowed(
-        update.AllowAudioControl,
-        kAudioControlOffset,
-        sizeof(uint8_t)
-    );*/
-
-    copy_if_allowed(
-        update.AllowMuteLight,
-        offsetof(SetStateData, MuteLightMode),
-        sizeof(update.MuteLightMode)
-    );
-
-    /*copy_if_allowed(
-        update.AllowAudioMute,
-        kMuteControlOffset,
-        sizeof(uint8_t)
-    );*/
-
-    copy_if_allowed(
-        update.AllowRightTriggerFFB,
-        offsetof(SetStateData, RightTriggerFFB),
-        sizeof(update.RightTriggerFFB)
-    );
-    copy_if_allowed(
-        update.AllowLeftTriggerFFB,
-        offsetof(SetStateData, LeftTriggerFFB),
-        sizeof(update.LeftTriggerFFB)
-    );
-
-    /*copy_if_allowed(
-        update.AllowMotorPowerLevel,
-        kMotorPowerLevelOffset,
-        sizeof(uint8_t)
-    );*/
-    /*copy_if_allowed(
-        update.AllowAudioControl2,
-        kAudioControl2Offset,
-        sizeof(uint8_t)
-    );*/
-    /*copy_if_allowed(
-        update.AllowHapticLowPassFilter,
-        kHapticLowPassFilterOffset,
-        sizeof(uint8_t)
-    );*/
-
-    copy_if_allowed(
-        update.AllowColorLightFadeAnimation,
-        offsetof(SetStateData, LightFadeAnimation),
-        sizeof(update.LightFadeAnimation)
-    );
-    copy_if_allowed(
-        update.AllowLightBrightnessChange,
-        offsetof(SetStateData, LightBrightness),
-        sizeof(update.LightBrightness)
-    );
-    copy_if_allowed(
-        update.AllowPlayerIndicators,
-        kPlayerIndicatorsOffset,
-        sizeof(uint8_t)
-    );
-    copy_if_allowed(
-        update.AllowLedColor && !g_lightbar_override,
-        offsetof(SetStateData, LedRed),
-        sizeof(update.LedRed) * 3
-    );
+    if (cfg.trigger_reduce > 0) {
+        set_bit(state[1], 6, true);  // AllowMotorPowerLevel
+        state[kMotorPowerLevelOffset] = (state[kMotorPowerLevelOffset] & 0x0F) |
+                                        ((cfg.trigger_reduce & 0x0F) << 4);
+    }
+    if (cfg.speaker_gain > 0) {
+        set_bit(state[1], 7, true);  // AllowAudioControl2
+        state[kAudioControl2Offset] = (state[kAudioControl2Offset] & ~0x07) |
+                                      (cfg.speaker_gain & 0x07);
+    }
+    if (cfg.mic_select != 0) {
+        set_bit(state[0], 7, true);  // AllowAudioControl
+        state[kAudioControlOffset] = (state[kAudioControlOffset] & ~0x03) |
+                                     (cfg.mic_select & 0x03);
+        set_bit(state[kAudioControlOffset], 3, true);  // NoiseCancelEnable
+    }
+    if (cfg.lock_volume) {
+        set_bit(state[0], 4, false);  // AllowHeadphoneVolume
+        set_bit(state[0], 5, false);  // AllowSpeakerVolume
+        set_bit(state[0], 6, false);  // AllowMicVolume
+        set_bit(state[1], 0, false);  // AllowMuteLight
+        set_bit(state[1], 1, false);  // AllowAudioMute
+    }
 }

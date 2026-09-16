@@ -127,6 +127,24 @@ void config_valid() {
         body->controller_wakes_display = 1;
         printf("[Config] controller_wakes_display invalid, defaulting to 1 (on)\n");
     }
+    // Host 0x02 passthrough overrides: 0 = auto (no override). Erased flash
+    // (0xFF) and any out-of-range value fall back to auto.
+    if (body->trigger_reduce > 10) {
+        body->trigger_reduce = 0; // auto
+        printf("[Config] trigger_reduce invalid, defaulting to 0 (auto)\n");
+    }
+    if (body->speaker_gain > 7) {
+        body->speaker_gain = 0; // auto
+        printf("[Config] speaker_gain invalid, defaulting to 0 (auto)\n");
+    }
+    if (body->mic_select > 3) {
+        body->mic_select = 0; // auto
+        printf("[Config] mic_select invalid, defaulting to 0 (auto)\n");
+    }
+    if (body->lock_volume > 1) {
+        body->lock_volume = 0; // unlocked
+        printf("[Config] lock_volume invalid, defaulting to 0 (off)\n");
+    }
     if (body->config_version != CONFIG_VERSION) {
         body->config_version = CONFIG_VERSION;
         printf("[Config] Warning: Config may breaking change\n");

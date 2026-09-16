@@ -789,3 +789,16 @@ void init_feature() {
     check_dse = true;
     get_feature_data(0x70, 64);
 }
+
+// Upstream parity (bt.cpp:917): USB audio SET_CUR (mute/volume) pushes a
+// standalone SetStateData packet (0x32) straight to the controller, so host
+// audio controls reach the DS5 exactly like a wired pad.
+void update_state(const SetStateData &state) {
+    uint8_t pkt[142]{};
+    pkt[0] = 0x32;
+    pkt[1] = 0x10;
+    pkt[2] = 0x90;
+    pkt[3] = 0x3f;
+    memcpy(pkt + 4, &state, sizeof(SetStateData));
+    bt_write(pkt, sizeof(pkt));
+}

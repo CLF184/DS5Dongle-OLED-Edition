@@ -5,9 +5,11 @@
 #include "tusb.h"
 #include "bsp/board_api.h"
 #include "config.h"
+#include "utils.h" // SetStateData (no include guard in utils.h — include first)
+#include "bt.h"    // update_state
 
 uint8_t mute[2]; // 0: SPEAKER(0x02) 1: MIC(0x05)
-float volume[2] = {-100.0f,0.0f}; // 0: SPEAKER(0x02) 1: MIC(0x05)
+float volume[2] = {-100.0f, 0.0f}; // 0: SPEAKER(0x02) 1: MIC(0x05) — OLED factory value; upstream releases are also 0dB (48dB only exists on master since a7824d9 2026-07-08, causes Windows level=100 + mic clipping)
 
 #define UAC1_ENTITY_SPK_FEATURE_UNIT    0x02
 #define UAC1_ENTITY_MIC_FEATURE_UNIT    0x05
@@ -47,14 +49,25 @@ static bool audio10_set_req_entity(tusb_control_request_t const *p_request, uint
         switch (ctrlSel) {
             case AUDIO10_FU_CTRL_MUTE:
                 switch (p_request->bRequest) {
-                    case AUDIO10_CS_REQ_SET_CUR:
+                    case AUDIO10_CS_REQ_SET_CUR: {
                         // Only 1st form is supported
                         TU_VERIFY(p_request->wLength == 1);
 
                         mute[index] = pBuff[0];
 
+                        // Upstream parity: push mute state straight to the
+                        // controller via a standalone 0x32 SetStateData packet.
+                        SetStateData state = {
+                            .AllowAudioMute = 1,
+                            .MicMute = mute[1],
+                            .SpeakerMute = mute[0],
+                            .HeadphoneMute = mute[0],
+                        };
+                        update_state(state);
+
                         TU_LOG2("    Set Mute: %d of entity: %u\r\n", mute[index], entityID);
                         return true;
+                    }
 
                     default:
                         return false; // not supported
@@ -72,7 +85,26 @@ static bool audio10_set_req_entity(tusb_control_request_t const *p_request, uint
                         // its last-known UAC1 volume on every device reconnect, which
                         // would silently override the user's saved speaker_volume.
                         // Fix borrowed from loteran/DS5Dongle commit 03fa1e4.
-                        (void)entityID;
+                        // (update_state below pushes it to the controller but does
+                        // not touch flash config — same as upstream.)
+
+                        // Upstream parity: push volume straight to the controller.
+                        if (entityID == UAC1_ENTITY_SPK_FEATURE_UNIT) {
+                            SetStateData state = {
+                                .AllowHeadphoneVolume = 1,
+                                .AllowSpeakerVolume = 1,
+                                .VolumeHeadphones = static_cast<uint8_t>(100.0f + volume[index]),
+                                .VolumeSpeaker = static_cast<uint8_t>(100.0f + volume[index]),
+                            };
+                            update_state(state);
+                        }
+                        if (entityID == UAC1_ENTITY_MIC_FEATURE_UNIT) {
+                            SetStateData state = {
+                                .AllowMicVolume = 1,
+                                .VolumeMic = static_cast<uint8_t>(volume[index]),
+                            };
+                            update_state(state);
+                        }
 
                         TU_LOG2("    Set Volume: %d dB of entity: %u\r\n", volume[index], entityID);
                         return true;

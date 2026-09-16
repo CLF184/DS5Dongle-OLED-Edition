@@ -13,6 +13,10 @@ enum CHANNEL_TYPE {
     CONTROL
 };
 
+// utils.h has no include guard, so only forward-declare SetStateData here.
+// Callers that construct one must include utils.h themselves.
+struct SetStateData;
+
 typedef void (*bt_data_callback_t)(CHANNEL_TYPE channel, uint8_t *data, uint16_t len);
 
 int bt_init();
@@ -28,6 +32,11 @@ std::vector<uint8_t> get_feature_data(uint8_t reportId,uint16_t len);
 std::vector<uint8_t> bt_peek_feature(uint8_t reportId);
 void init_feature();
 void set_feature_data(uint8_t reportId, uint8_t* data,uint16_t len);
+
+// Upstream parity (bt.cpp:917): send an out-of-band SetStateData packet (0x32)
+// straight to the controller. Used by USB audio SET_CUR (mute/volume) so host
+// audio controls reach the DS5 exactly like a wired pad.
+void update_state(const SetStateData& state);
 
 // Connection-attempt watchdog: call once per main-loop iteration. Recovers a
 // stalled connection (auto re-inquiry) so a transient RF glitch — e.g. USB 3.0

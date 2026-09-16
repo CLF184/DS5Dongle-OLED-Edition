@@ -125,7 +125,7 @@ constexpr int kLbModeHost = 8;
 constexpr int kNumLbModes = 9;
 
 // Settings screen state
-constexpr int kNumSettingsItems = 17; // 8 fields + 3 auto-haptic + 2 screen-timeout + BT mic + Ctrl-wake + Reset + Wipe
+constexpr int kNumSettingsItems = 21; // 8 fields + 3 auto-haptic + 2 screen-timeout + BT mic + Ctrl-wake + 4 passthrough + Reset + Wipe
 constexpr int kSettingsAutoHapEnaIdx  = 8;
 constexpr int kSettingsAutoHapGainIdx = 9;
 constexpr int kSettingsAutoHapLpIdx   = 10;
@@ -133,8 +133,12 @@ constexpr int kSettingsScrDimIdx      = 11;
 constexpr int kSettingsScrOffIdx      = 12;
 constexpr int kSettingsBtMicIdx       = 13;
 constexpr int kSettingsCtrlWakeIdx    = 14;
-constexpr int kSettingsResetIdx       = 15;
-constexpr int kSettingsWipeSlotsIdx   = 16;
+constexpr int kSettingsTrigReduceIdx  = 15;
+constexpr int kSettingsSpkGainIdx     = 16;
+constexpr int kSettingsMicSelIdx      = 17;
+constexpr int kSettingsLockVolIdx     = 18;
+constexpr int kSettingsResetIdx       = 19;
+constexpr int kSettingsWipeSlotsIdx   = 20;
 Config_body settings_local{};
 int settings_sel = 0;
 bool settings_dirty = false;
@@ -1550,6 +1554,25 @@ void settings_adjust(int delta) {
         }
         case 13: c.bt_mic_enable ^= 1; break; // BT mic on/off
         case 14: c.controller_wakes_display ^= 1; break; // controller activity wakes OLED on/off
+        case 15: { // trigger_reduce  [0,10] step 1, 0 = auto (host passthrough)
+            int v = (int)c.trigger_reduce + delta;
+            if (v < 0) v = 10; if (v > 10) v = 0;
+            c.trigger_reduce = (uint8_t)v;
+            break;
+        }
+        case 16: { // speaker_gain  [0,7] step 1, 0 = auto (host passthrough)
+            int v = (int)c.speaker_gain + delta;
+            if (v < 0) v = 7; if (v > 7) v = 0;
+            c.speaker_gain = (uint8_t)v;
+            break;
+        }
+        case 17: { // mic_select  [0,3] step 1, 0 = auto (host passthrough)
+            int v = (int)c.mic_select + delta;
+            if (v < 0) v = 3; if (v > 3) v = 0;
+            c.mic_select = (uint8_t)v;
+            break;
+        }
+        case 18: c.lock_volume ^= 1; break; // lock host volumes/mute on/off
     }
 }
 
@@ -1653,8 +1676,22 @@ __attribute__((noinline)) void format_settings_item(int idx, char* line, size_t 
             break;
         case 13: snprintf(line, n, "%s BT Mic %s", cur, c.bt_mic_enable ? "on" : "off"); break;
         case 14: snprintf(line, n, "%s CtrlWake %s", cur, c.controller_wakes_display ? "on" : "off"); break;
-        case 15: snprintf(line, n, "%s Reset to defaults", cur); break;
-        case 16: snprintf(line, n, "%s Wipe all slots", cur); break;
+        case 15:
+            if (c.trigger_reduce == 0) snprintf(line, n, "%s TrigRdc auto", cur);
+            else snprintf(line, n, "%s TrigRdc %u", cur, c.trigger_reduce);
+            break;
+        case 16:
+            if (c.speaker_gain == 0) snprintf(line, n, "%s SpkGain auto", cur);
+            else snprintf(line, n, "%s SpkGain %u", cur, c.speaker_gain);
+            break;
+        case 17: {
+            const char* names[4] = {"auto", "Int", "Ext", "Mix?"};
+            snprintf(line, n, "%s MicSel %s", cur, names[c.mic_select & 3]);
+            break;
+        }
+        case 18: snprintf(line, n, "%s LockVol %s", cur, c.lock_volume ? "on" : "off"); break;
+        case 19: snprintf(line, n, "%s Reset to defaults", cur); break;
+        case 20: snprintf(line, n, "%s Wipe all slots", cur); break;
     }
 }
 

@@ -54,6 +54,14 @@ struct __attribute__((packed)) Config_body {
     // preserves the original "any controller activity wakes the screen"
     // behavior. Issues #8 (dim timeout never fired during play) and #9.
     uint8_t controller_wakes_display;
+    // Host 0x02 passthrough overrides (upstream a7824d9 parity). 0 = auto: the
+    // host's per-frame value passes through untouched (upstream default). A
+    // non-zero value forces it into every 0x02 state report sent to the
+    // controller.
+    uint8_t trigger_reduce; // [0,10] 0=auto; TriggerMotorPowerReduction (byte36 hi)
+    uint8_t speaker_gain;   // [0,7] 0=auto; SpeakerCompPreGain (byte37 lo3)
+    uint8_t mic_select;     // [0,3] 0=auto; MicSelect (byte7 lo2), NoiseCancel forced on
+    uint8_t lock_volume;    // bool; 1 = lock volumes/mute (host writes suppressed)
 };
 
 struct __attribute__((packed)) Config {
