@@ -53,6 +53,13 @@ void config_valid() {
         printf("[Config] Config Body size is invalid\n");
     }
     auto body = &config.body;
+    // 上游 9fb62db：body 版本对不上 = 结构变过，先用 0xFF（擦除态）清空，再由下面的
+    // 逐项校验把它填成文档默认值。必须在字段校验之前，否则会盖掉刚校验好的值。
+    if (body->config_version != CONFIG_VERSION) {
+        memset(body, 0xFF, sizeof(Config_body));
+        body->config_version = CONFIG_VERSION;
+        printf("[Config] Warning: Config may breaking change. Reset to default\n");
+    }
     if (std::isnan(body->haptics_gain) || body->haptics_gain < 1.0f || body->haptics_gain > 2.0f) {
         body->haptics_gain = 1.0f;
         printf("[Config] Haptics Gain value is invalid\n");
@@ -144,10 +151,6 @@ void config_valid() {
     if (body->lock_volume > 1) {
         body->lock_volume = 0; // unlocked
         printf("[Config] lock_volume invalid, defaulting to 0 (off)\n");
-    }
-    if (body->config_version != CONFIG_VERSION) {
-        body->config_version = CONFIG_VERSION;
-        printf("[Config] Warning: Config may breaking change\n");
     }
 }
 

@@ -9,9 +9,17 @@
 #include "hardware/flash.h"
 #include "hardware/sync.h"
 #include "pico/flash.h"
+#include "pico/btstack_flash_bank.h"
 
 constexpr uint32_t SLOTS_MAGIC = 0x44533502u;  // "DS5\x02"
-constexpr uint32_t SLOTS_FLASH_OFFSET = PICO_FLASH_SIZE_BYTES - 2u * FLASH_SECTOR_SIZE;
+// 扇区布局：SDK 的 BTstack TLV（= 经典蓝牙 link key 库）占用
+// PICO_FLASH_BANK_STORAGE_OFFSET 起的 2 个扇区，双 bank 交替写
+// （bank0 = SIZE-12K、bank1 = SIZE-8K）。自建存储必须从 bank 往下堆：
+// config 在 bank 下方第一个扇区，slots 再往下让一个。
+// 旧值曾是 PICO_FLASH_SIZE_BYTES - 2*FLASH_SECTOR_SIZE（正好 = bank1）：写槽位会
+// 擦掉手柄的 link key 库（需重新配对），TLV 轮换也会反过来擦掉槽位。
+// 改址后旧数据自然失效（magic 校验不过 → 槽位恢复默认，手柄配对不受影响）。
+constexpr uint32_t SLOTS_FLASH_OFFSET = PICO_FLASH_BANK_STORAGE_OFFSET - 2u * FLASH_SECTOR_SIZE;
 
 struct __attribute__((packed)) SlotsData {
     uint32_t magic;
@@ -21,6 +29,8 @@ struct __attribute__((packed)) SlotsData {
 
 static_assert(sizeof(SlotsData) <= FLASH_PAGE_SIZE);
 static_assert(SLOTS_FLASH_OFFSET % FLASH_SECTOR_SIZE == 0);
+// 编译期防呆：slots 必须整个落在 BTstack bank 下方（bank 从 STORAGE_OFFSET 起）。
+static_assert(SLOTS_FLASH_OFFSET + FLASH_SECTOR_SIZE <= PICO_FLASH_BANK_STORAGE_OFFSET);
 
 static SlotsData g_slots{};
 
