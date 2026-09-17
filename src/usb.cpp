@@ -2,11 +2,13 @@
 // Created by awalol on 2026/3/4.
 //
 
+#include <cstdio>
+
 #include "tusb.h"
 #include "bsp/board_api.h"
 #include "config.h"
 #include "utils.h" // SetStateData (no include guard in utils.h — include first)
-#include "bt.h"    // update_state
+#include "bt.h"    // update_state + bt_power_off_controller
 
 uint8_t mute[2]; // 0: SPEAKER(0x02) 1: MIC(0x05)
 float volume[2] = {-100.0f, 0.0f}; // 0: SPEAKER(0x02) 1: MIC(0x05) — OLED factory value; upstream releases are also 0dB (48dB only exists on master since a7824d9 2026-07-08, causes Windows level=100 + mic clipping)
@@ -221,4 +223,23 @@ bool tud_audio_set_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
 void tud_hid_report_complete_cb(uint8_t instance, uint8_t const *report, uint16_t len) {
     (void) instance;
     (void) len;
+}
+
+// 上游 9d4a552 + 9923ce3：主机睡眠（USB 挂起）时顺手把手柄也关掉——否则手柄
+// 会空耗一整夜。fork 没有 ENABLE_WAKE_HID（无 wake 分支），无条件编译。
+void tud_suspend_cb(bool remote_wakeup_en) {
+    (void) remote_wakeup_en;
+    printf("[USB PM] invoke tud_suspend_cb\n");
+    bt_power_off_controller();
+}
+
+// 上游 edec7f7：PC 睡眠唤醒后出现"幽灵设备"（BIOS 开了 USB 持续供电时，主机
+// 休眠期间 dongle 一直没掉电，唤醒后残留旧枚举）。唤醒时若手柄没连上，主动断开
+// USB 让主机重新枚举。fork 无 wake 分支，去掉上游的 enable_wake 判断。
+void tud_resume_cb(void) {
+#if !ENABLE_SERIAL
+    if (!bt_is_connected()) {
+        tud_disconnect();
+    }
+#endif
 }

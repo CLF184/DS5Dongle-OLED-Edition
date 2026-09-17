@@ -19,6 +19,8 @@
 #include "config.h"
 #include "audio.h" // update_mic_status (re-arm mic streaming on reconnect)
 #include "state_mgr.h"
+#include "dse.h"
+#include "fake_ds5.h"
 #include "pico/util/queue.h"
 #include "slots.h"
 #if ENABLE_BATT_LED
@@ -53,7 +55,6 @@ static hci_con_handle_t acl_handle = HCI_CON_HANDLE_INVALID;
 static uint16_t hid_control_cid;
 static uint16_t hid_interrupt_cid;
 static bt_data_callback_t bt_data_callback = nullptr;
-static bool check_dse = false;
 static int8_t bt_rssi = 0;
 unordered_map<uint8_t, vector<uint8_t> > feature_data;
 queue_t send_fifo;
@@ -64,6 +65,20 @@ struct send_element {
 };
 
 absolute_time_t inactive_time = 0; // 手柄长时间静默
+
+// 上游 8c8b527：断连时把这份"中性 0x31 报告"喂给数据回调，让主机与 OLED 看到的
+// 按键/摇杆立刻归位，避免掉线后残留"按键卡住"的状态。
+const uint8_t state_init_data[66] = {
+    0xa2, 0x31, 0x01,
+    0x7f, 0x7d, 0x7f, 0x7e, 0x00, 0x00, 0xa7,
+    0x08, 0x00, 0x00, 0x00, 0x52, 0x43, 0x30, 0x41,
+    0x01, 0x00, 0x0e, 0x00, 0xef, 0xff, 0x03, 0x03,
+    0x7b, 0x1b, 0x18, 0xf0, 0xcc, 0x9c, 0x60, 0x00,
+    0xfc, 0x80, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00,
+    0x00, 0x00, 0x09, 0x09, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0xa7, 0xad, 0x60, 0x00, 0x29, 0x18, 0x00,
+    0x53, 0x9f, 0x28, 0x35, 0xa5, 0xa8, 0x0c, 0x8b
+};
 
 // Connection-attempt watchdog timestamp. 0 == not armed; armed == a connection
 // attempt is in flight (committed to a device, not yet USB-enumerating). Set
@@ -288,6 +303,8 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
             const uint8_t state = btstack_event_state_get_state(packet);
             printf("[BT] State: %u\n", state);
             if (state == HCI_STATE_WORKING) {
+                gap_set_page_scan_activity(0x0012, 0x0012); // 11.25ms
+                gap_set_page_scan_type(PAGE_SCAN_MODE_INTERLACED);
                 printf("[BT] Stack ready, start inquiry\n");
                 gap_inquiry_start(30);
             }
@@ -472,10 +489,6 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
                     if (hid_control_cid == 0) {
                         l2cap_create_channel(l2cap_packet_handler, current_device_addr, PSM_HID_CONTROL, MTU_CONTROL,
                                              &hid_control_cid);
-                    } else if (hid_interrupt_cid == 0) {
-                        l2cap_create_channel(l2cap_packet_handler, current_device_addr, PSM_HID_INTERRUPT,
-                                             MTU_INTERRUPT,
-                                             &hid_interrupt_cid);
                     }
                 }
             }
@@ -489,6 +502,8 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
             printf("[HCI] Incoming ACL request from %s cod=0x%06x\n", bd_addr_to_str(addr), (unsigned int) cod);
             if ((cod & 0x000F00) == 0x000500) {
                 bd_addr_copy(current_device_addr, addr);
+                // 这里的 stop 触发条件是：刚开机时，pico 处于 inquiry 模式，然后 DS5 通过 PS 键重连
+                // 如果在连接上以后没有停止 inquiry，会导致回报率很低
                 gap_inquiry_stop();
                 hci_send_cmd(&hci_accept_connection_request, addr, 0x01);
                 connect_attempt_started = get_absolute_time(); // arm watchdog (incoming path)
@@ -511,11 +526,13 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
             hid_control_cid = 0;
             hid_interrupt_cid = 0;
             feature_data.clear();
+            while (queue_try_remove(&send_fifo, NULL)) {}
             cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
 #if ENABLE_BATT_LED
             battery_led_on_disconnect();
 #endif
             printf("[HCI] Disconnected reason=0x%02X, start inquiry\n", reason);
+            bt_data_callback(INTERRUPT, const_cast<uint8_t *>(state_init_data), sizeof(state_init_data));
             gap_inquiry_start(30);
             break;
         }
@@ -540,7 +557,10 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
             bt_data_callback(INTERRUPT, packet, size);
 
             // 静默检测
-            if (get_config().disable_inactive_disconnect) {
+            // 上游 d7fb163：mic 帧（0x31 且 data[2] bit1 置位）的 [3..12] 装的是
+            // Opus 载荷，会被当成"摇杆/按键活动"而每帧重置计时器 —— 录音期间
+            // 自动断电永远不触发。用 packet[2] & 1 过滤掉非标准输入帧。
+            if (!(packet[2] & 1) || get_config().disable_inactive_disconnect) {
                 return;
             }
             if (packet[3] < 120 || packet[3] > 140 ||
@@ -558,32 +578,41 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
                 bt_disconnect();
             }
         } else if (channel == hid_control_cid) {
-            if (check_dse) {
-                if (packet[0] == 0xA3 && packet[1] == 0x70) {
-                    printf("Connected DSE Controller\n");
-                    check_dse = false;
-                    is_dse = true;
-                    connect_attempt_started = 0; // fully up — disarm watchdog
-#if !ENABLE_SERIAL
-                    tud_connect();
-#endif
-                } else if (packet[0] == 0x02) {
-                    printf("Connected DS5 Controller\n");
-                    check_dse = false;
-                    is_dse = false;
-                    connect_attempt_started = 0; // fully up — disarm watchdog
-#if !ENABLE_SERIAL
-                    tud_connect();
-#endif
-                }
-            }
             if (packet[0] == 0xA3) {
                 uint8_t report_id = packet[1];
-                feature_data[report_id].assign(packet + 1, packet + size);
+                feature_data[report_id].assign(packet + 1, packet + size); // fork 约定：带报告 ID
 #if ENABLE_VERBOSE
                 printf("[L2CAP] Stored Feature Report 0x%02X, len=%u\n", report_id, size - 1);
 #endif
+                // 上游 2efc855：不再用 0x70 探测，改用固件信息报告（0x20）识别机型 ——
+                // DSE 的 0x20 byte23 == 0x44，普通 DS5 不是。
+                if (report_id == 0x20) {
+                    if (packet[23] == 0x44) {
+                        printf("Connected DSE Controller\n");
+                        is_dse = true;
+                        connect_attempt_started = 0; // fully up — disarm watchdog
+                        // 解锁 Edge 档位；USB 先连上，档位读取由 dse_profiles_ready() 门控
+                        dse_on_connect();
+                        // 上游 ae83907：DSE 在"DS5 模式"下对主机伪装成 DS5 固件信息
+                        if (get_config().controller_mode == 0) {
+                            uint8_t fake20[1 + sizeof(report20)]; // fork 约定：+报告 ID
+                            fake20[0] = 0x20;
+                            memcpy(fake20 + 1, report20, sizeof(report20));
+                            feature_data[0x20].assign(fake20, fake20 + sizeof(fake20));
+                        }
+                    } else {
+                        printf("Connected DS5 Controller\n");
+                        is_dse = false;
+                        connect_attempt_started = 0; // fully up — disarm watchdog
+                    }
+#if !ENABLE_SERIAL
+                    // don't re-enumerate while the host is suspended -- it would wake a sleeping host
+                    if (!tud_suspended()) tud_connect();
+#endif
+                }
             }
+            // 上游 8a2f576：观察 HID HANDSHAKE（SET 命令是否被手柄接受）
+            dse_on_control_packet(packet, size);
 #if ENABLE_VERBOSE
             printf("[L2CAP] HID Control data len=%u\n", size);
             printf_hexdump(packet, size);
@@ -617,6 +646,15 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
 
                     const auto mtu = l2cap_get_remote_mtu_for_local_cid(hid_control_cid);
                     printf("[L2CAP] Remote Control MTU: %d\n",mtu);
+
+                    // 上游 83b4df9：中断通道改到"控制通道已确认打开"之后才建，避免
+                    // 首配时两条通道连发撞上手柄还没准备好（首次配对偶尔不稳）。
+                    if (new_pair) {
+                        printf("[L2CAP] Opening interrupt channel\n");
+                        l2cap_create_channel(l2cap_packet_handler, current_device_addr, PSM_HID_INTERRUPT,
+                                                 MTU_INTERRUPT,
+                                                 &hid_interrupt_cid);
+                    }
                 } else if (psm == PSM_HID_INTERRUPT) {
                     printf("[L2CAP] HID Interrupt opened cid=0x%04X\n", local_cid);
                     hid_interrupt_cid = local_cid;
@@ -745,7 +783,9 @@ vector<uint8_t> get_feature_data(uint8_t reportId, uint16_t len) {
         // DSE: Set Profile Save?
         reportId == 0x63 ||
         reportId == 0x65 ||
-        reportId == 0x64
+        reportId == 0x64 ||
+        // DSE 档位槽位：返回缓存，但后台重新拉取（上游 8a2f576）
+        dse_is_profile_report(reportId)
     ) {
         if (hid_control_cid != 0) {
             uint8_t get_feature[] = {0x43, reportId};
@@ -775,7 +815,16 @@ void set_feature_data(uint8_t reportId, uint8_t *data, uint16_t len) {
         printf("[L2CAP] Requesting Set Feature Report 0x%02X\n", reportId);
         printf_hexdump(get_feature, len + 2);
 #endif
+        dse_on_profile_write(reportId);
     }
+}
+
+// 上游 9d4a552 + 9923ce3：主机睡眠（USB 挂起）时顺手把手柄也关掉——否则手柄会
+// 空耗一整夜。调用点在 usb.cpp 的 tud_suspend_cb。
+void bt_power_off_controller() {
+    uint8_t bluetooth_control[47]{};
+    bluetooth_control[0] = 0x02; // DualSense Bluetooth control: 1=on, 2=off.
+    set_feature_data(0x08, bluetooth_control, sizeof(bluetooth_control));
 }
 
 void init_feature() {
@@ -783,11 +832,7 @@ void init_feature() {
     get_feature_data(0x20, 64);
     get_feature_data(0x22, 64);
     get_feature_data(0x05, 41);
-    // DSE
-    // check DSE by request 0x70 feature report. DSE return DEFAULT
-    // If len == 1, it's DS5
-    check_dse = true;
-    get_feature_data(0x70, 64);
+    // 上游 2efc855：不再请求 0x70 探测 DSE —— 改用 0x20 固件信息识别（见 l2cap handler）。
 }
 
 // Upstream parity (bt.cpp:917): USB audio SET_CUR (mute/volume) pushes a
@@ -801,4 +846,15 @@ void update_state(const SetStateData &state) {
     pkt[3] = 0x3f;
     memcpy(pkt + 4, &state, sizeof(SetStateData));
     bt_write(pkt, sizeof(pkt));
+}
+
+// Accessors used by the DSE profile module (dse.cpp) — 上游 8a2f576。
+uint16_t bt_control_cid() {
+    return hid_control_cid;
+}
+
+void bt_control_send(const uint8_t *data, uint16_t len) {
+    if (hid_control_cid != 0) {
+        l2cap_send(hid_control_cid, const_cast<uint8_t *>(data), len);
+    }
 }

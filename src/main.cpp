@@ -19,6 +19,7 @@
 #endif
 #include "config.h"
 #include "cmd.h"
+#include "dse.h"
 #if ENABLE_BATT_LED
 #include "battery_led.h"
 #endif
@@ -293,6 +294,13 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
         return pico_cmd_get(report_id, buffer, reqlen);
     }
 
+    // 上游 8a2f576：DSE 档位在 unlock + 预取完成前 NAK（返回 0），让 PS 配件
+    // 反复重试而不是缓存一份空快照；后台仍然发起 BT 拉取。
+    if (dse_is_profile_report(report_id) && !dse_profiles_ready()) {
+        get_feature_data(report_id, reqlen);
+        return 0;
+    }
+
     std::vector<uint8_t> feature_data = get_feature_data(report_id, reqlen);
     if (!feature_data.empty()) {
         memcpy(buffer, feature_data.data() + 1, feature_data.size() - 1);
@@ -455,5 +463,6 @@ int main() {
 #if ENABLE_BATT_LED
         battery_led_tick();
 #endif
+        dse_task();
     }
 }

@@ -43,7 +43,7 @@ static WDL_Resampler resampler;
 static uint8_t reportSeqCounter = 0;
 static uint8_t packetCounter = 0;
 static bool plug_headset = false;
-alignas(8) static uint32_t audio_core1_stack[8192];
+alignas(8) static uint32_t audio_core1_stack[7680]; // 上游 57f185b：8192→7680，腾 RAM 给搬进内存的 crc32 表
 queue_t audio_fifo;
 static uint8_t opus_buf[200];
 critical_section_t opus_cs;
@@ -366,8 +366,9 @@ void __not_in_flash_func(audio_loop)() {
             audio_buf_pos = 0;
         }
 #endif
-        float h_l = raw[i * INPUT_CHANNELS + 2] / 32768.0f * haptics_gain;
-        float h_r = raw[i * INPUT_CHANNELS + 3] / 32768.0f * haptics_gain;
+        // 上游 a55fd46：haptics 增益改到重采样之后再施加（见下面的 int8 转换）。
+        float h_l = raw[i * INPUT_CHANNELS + 2] / 32768.0f;
+        float h_r = raw[i * INPUT_CHANNELS + 3] / 32768.0f;
 
         if (auto_mode > 0) {
             const float spk_l = raw[i * INPUT_CHANNELS    ] / 32768.0f;
@@ -429,10 +430,10 @@ void __not_in_flash_func(audio_loop)() {
 
     // 4. 转换为int8并缓冲，满64字节即组包发送
     for (int i = 0; i < out_frames; i++) {
-        int val_l = static_cast<int>(out_buf[i * 2] * 127.0f);
-        int val_r = static_cast<int>(out_buf[i * 2 + 1] * 127.0f);
-        haptic_buf[haptic_buf_pos++] = (int8_t) clamp(val_l, -128, 127); // 似乎clamp有点多余？还是以防万一吧
-        haptic_buf[haptic_buf_pos++] = (int8_t) clamp(val_r, -128, 127);
+        int val_l = static_cast<int>(out_buf[i * 2] * 127.0f * haptics_gain);
+        int val_r = static_cast<int>(out_buf[i * 2 + 1] * 127.0f * haptics_gain);
+        haptic_buf[haptic_buf_pos++] = static_cast<int8_t>(clamp(val_l, -128, 127));
+        haptic_buf[haptic_buf_pos++] = static_cast<int8_t>(clamp(val_r, -128, 127));
 
         if (haptic_buf_pos != SAMPLE_SIZE) {
             continue;

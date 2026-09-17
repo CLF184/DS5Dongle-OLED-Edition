@@ -8,6 +8,7 @@
 
 #include "hardware/flash.h"
 #include "hardware/sync.h"
+#include "pico/flash.h"
 
 constexpr uint32_t SLOTS_MAGIC = 0x44533502u;  // "DS5\x02"
 constexpr uint32_t SLOTS_FLASH_OFFSET = PICO_FLASH_SIZE_BYTES - 2u * FLASH_SECTOR_SIZE;
@@ -27,15 +28,28 @@ static const SlotsData *flash_slots() {
     return reinterpret_cast<const SlotsData *>(XIP_BASE + SLOTS_FLASH_OFFSET);
 }
 
+// Runs with core1 parked (flash_safe_execute) and core0 interrupts disabled, so
+// neither core touches XIP flash while the sector is erased/programmed. Without
+// the core1 park this races the audio core and corrupts audio (buzzing). Same
+// pattern as config.cpp:config_save_flash_op.
+static void slots_save_flash_op(void *param) {
+    const uint8_t *page = static_cast<const uint8_t *>(param);
+    const uint32_t interrupts = save_and_disable_interrupts();
+    flash_range_erase(SLOTS_FLASH_OFFSET, FLASH_SECTOR_SIZE);
+    flash_range_program(SLOTS_FLASH_OFFSET, page, FLASH_PAGE_SIZE);
+    restore_interrupts(interrupts);
+}
+
 static bool save_slots_to_flash() {
     alignas(4) uint8_t page[FLASH_PAGE_SIZE];
     memset(page, 0xff, sizeof(page));
     memcpy(page, &g_slots, sizeof(g_slots));
 
-    const uint32_t interrupts = save_and_disable_interrupts();
-    flash_range_erase(SLOTS_FLASH_OFFSET, FLASH_SECTOR_SIZE);
-    flash_range_program(SLOTS_FLASH_OFFSET, page, sizeof(page));
-    restore_interrupts(interrupts);
+    const int rc = flash_safe_execute(slots_save_flash_op, page, 1000);
+    if (rc != PICO_OK) {
+        printf("[Slots] save flash_safe_execute failed: %d\n", rc);
+        return false;
+    }
 
     SlotsData verify{};
     memcpy(&verify, flash_slots(), sizeof(verify));
