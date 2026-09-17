@@ -312,6 +312,7 @@ void __not_in_flash_func(audio_loop)() {
     const float haptics_gain = get_config().haptics_gain;
     uint16_t spk_max = g_peak_spk;
     uint16_t hap_max = g_peak_hap;
+    uint16_t native_max = 0;  // 本帧 ch3/ch4 实际峰值（Fallback 静默判断用，不继承 VU 显示缓存）
 
     // ---- Audio Auto Haptics (borrowed from loteran/DS5Dongle 5d6bc2f) ----
     // Derives a haptic-feedback waveform from the speaker audio so games that
@@ -347,6 +348,8 @@ void __not_in_flash_func(audio_loop)() {
             b = (uint16_t)(hr < 0 ? -hr : hr);
             if (a > hap_max) hap_max = a;
             if (b > hap_max) hap_max = b;
+            if (a > native_max) native_max = a;
+            if (b > native_max) native_max = b;
         }
  #if !DISABLE_SPEAKER_PROC
         audio_buf[audio_buf_pos++] = raw[i * INPUT_CHANNELS] / 32768.0f * audio_gain;
@@ -411,7 +414,7 @@ void __not_in_flash_func(audio_loop)() {
     g_peak_spk = spk_max;
     g_peak_hap = hap_max;
     g_ah_out_peak = (uint16_t)(ah_peak * 127.0f);
-    if (hap_max > NATIVE_THRESHOLD) {
+    if (native_max > NATIVE_THRESHOLD) {
         native_silent_count = 0;
     } else if (native_silent_count < NATIVE_SILENT_TIMEOUT * 2) {
         native_silent_count++;
