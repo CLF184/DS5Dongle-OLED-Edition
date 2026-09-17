@@ -66,6 +66,9 @@ struct send_element {
 
 absolute_time_t inactive_time = 0; // 手柄长时间静默
 
+// 0x81 回执配对：读时每发一次查询，用它的变化判断"本次回执已到"（见 get_feature_data）。
+static volatile uint32_t g_report81_seq = 0;
+
 // 上游 8c8b527：断连时把这份"中性 0x31 报告"喂给数据回调，让主机与 OLED 看到的
 // 按键/摇杆立刻归位，避免掉线后残留"按键卡住"的状态。
 const uint8_t state_init_data[66] = {
@@ -581,6 +584,7 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
             if (packet[0] == 0xA3) {
                 uint8_t report_id = packet[1];
                 feature_data[report_id].assign(packet + 1, packet + size); // fork 约定：带报告 ID
+                if (report_id == 0x81) g_report81_seq++; // 0x81 新回执到达（见 get_feature_data）
 #if ENABLE_VERBOSE
                 printf("[L2CAP] Stored Feature Report 0x%02X, len=%u\n", report_id, size - 1);
 #endif
@@ -772,14 +776,44 @@ void __not_in_flash_func(bt_write)(const uint8_t *data, const uint16_t len) {
 }
 
 vector<uint8_t> get_feature_data(uint8_t reportId, uint16_t len) {
-    // 若为0x81则会请求新内容，其他若有旧数据则不进行请求
     auto ret = vector<uint8_t>{};
+    if (reportId == 0x81) {
+        // 测试命令回执：纯透传——主机每读一次就向手柄发一次查询，当场等回执原样返回，
+        // 不做任何跨请求缓存/队列。多块结果因此天然按"一读一块"对齐（诊断数据错位
+        // 的根因就是读与回执的配对被打散）。上限 ~250ms；"未就绪"（全零）稍等重问；
+        // 等待期间只泵 BT 栈。
+        if (hid_control_cid != 0) {
+            const absolute_time_t total_deadline = make_timeout_time_ms(250);
+            for (int attempt = 0; attempt < 4; ++attempt) {
+                const absolute_time_t pre = make_timeout_time_ms(attempt == 0 ? 10 : 25);
+                while (!time_reached(pre) && !time_reached(total_deadline)) {
+                    cyw43_arch_poll();
+                    sleep_us(200);
+                }
+                const uint32_t seq_before = g_report81_seq;
+                uint8_t get81[] = {0x43, 0x81};
+                l2cap_send(hid_control_cid, get81, sizeof(get81));
+                const absolute_time_t ans_deadline = make_timeout_time_ms(80);
+                while (g_report81_seq == seq_before &&
+                       !time_reached(ans_deadline) && !time_reached(total_deadline)) {
+                    cyw43_arch_poll(); // 泵 BT 栈，让回执能进来
+                    sleep_us(200);
+                }
+                if (g_report81_seq == seq_before) continue; // 没回执 → 再问
+                auto it = feature_data.find(0x81);
+                if (it == feature_data.end() || it->second.size() < 5) break;
+                const uint8_t *p = it->second.data();
+                if (!(p[1] == 0 && p[2] == 0 && p[3] == 0 && p[4] == 0)) break; // 非"未就绪"
+                // 全零 = 手柄还没准备好 → 下一轮重问
+            }
+        }
+        if (feature_data.contains(0x81)) ret = feature_data[0x81];
+        return ret;
+    }
     if (feature_data.contains(reportId)) {
         ret = feature_data[reportId];
     }
     if (!feature_data.contains(reportId) ||
-        // Get Test Command Result
-        reportId == 0x81 ||
         // DSE: Set Profile Save?
         reportId == 0x63 ||
         reportId == 0x65 ||
