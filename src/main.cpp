@@ -211,6 +211,13 @@ void __not_in_flash_func(on_bt_data)(CHANNEL_TYPE channel, uint8_t *data, uint16
         if ((data[56] & 1) != (interrupt_in_data[53] & 1)) {
             set_headset(data[56] & 1);
         }
+        if (((data[56] >> 2) & 1) != ((interrupt_in_data[53] >> 2) & 1)) {
+            const SetStateData state{
+                .AllowMuteLight = 1,
+                .MuteLightMode = ((data[56] >> 2) & 1) ? MuteLight::On : MuteLight::Off,
+            };
+            update_state(state);
+        }
 
         if (get_config().polling_rate_mode != 2) {
             memcpy(interrupt_in_data, data + 3, 63);
