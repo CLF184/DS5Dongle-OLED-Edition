@@ -37,6 +37,7 @@ uint16_t audio_mic_last_want();    // bytes asked of tud_audio_write
 uint16_t audio_mic_last_wrote();   // bytes TinyUSB FIFO actually accepted
 uint8_t  audio_mic_last_toc();     // first byte of last Opus packet (frame config)
 uint32_t audio_mic_decode_failures(); // opus_decode <= 0 count (bad/missing packets)
+uint16_t audio_ah_out_peak();   // auto-haptics actual-output peak (0-127), 0 = not contributing
 
 // Called from on_bt_data() in main.cpp when the DS5 sends a mic-tagged
 // 0x31 input report. data points at the Opus payload, len is the bytes

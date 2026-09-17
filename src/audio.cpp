@@ -140,6 +140,13 @@ uint8_t audio_peak_haptic() {
     return (uint8_t)(v >> 7);
 }
 
+// Auto-haptics output peak (0-127 = int8 amplitude of the derived waveform).
+// Counted only where the auto branch actually writes h_l/h_r (Fallback mode
+// stays 0 while native haptics are active), so the OLED "AH" row reflects
+// real auto-haptics usage rather than mere audio energy.
+static volatile uint16_t g_ah_out_peak = 0;
+uint16_t audio_ah_out_peak() { return g_ah_out_peak; }
+
 // Most-recent Opus TOC byte (first byte of the packet). Used by the OLED
 // Diagnostics screen to decode the frame's bandwidth + duration config
 // without serial.
@@ -323,6 +330,7 @@ void __not_in_flash_func(audio_loop)() {
     constexpr uint16_t NATIVE_THRESHOLD     = 256;
     static int native_silent_count = NATIVE_SILENT_TIMEOUT * 2;
     const bool fallback_active = (auto_mode == 1) && (native_silent_count >= NATIVE_SILENT_TIMEOUT);
+    float ah_peak = 0.0f;  // auto-haptics actual-output peak for this USB frame
 
     for (int i = 0; i < nframes; i++) {
         // VU peak tracking
@@ -374,14 +382,26 @@ void __not_in_flash_func(audio_loop)() {
             al = al / (1.0f + (al < 0.0f ? -al : al));
             ar = ar / (1.0f + (ar < 0.0f ? -ar : ar));
 
+            // Track the derived waveform only where it actually lands in the
+            // output (Replace/Mix always, Fallback only while native is silent).
+            auto track_ah = [&](float a, float b) {
+                const float aa = a < 0.0f ? -a : a;
+                const float bb = b < 0.0f ? -b : b;
+                const float a_m = aa > bb ? aa : bb;
+                if (a_m > ah_peak) ah_peak = a_m;
+            };
+
             if (auto_mode == 3) {              // Replace
                 h_l = al; h_r = ar;
+                track_ah(al, ar);
             } else if (auto_mode == 2) {       // Mix
                 float m_l = h_l + al, m_r = h_r + ar;
                 h_l = m_l / (1.0f + (m_l < 0.0f ? -m_l : m_l));
                 h_r = m_r / (1.0f + (m_r < 0.0f ? -m_r : m_r));
+                track_ah(al, ar);
             } else if (auto_mode == 1 && fallback_active) {  // Fallback (default)
                 h_l = al; h_r = ar;
+                track_ah(al, ar);
             }
         }
 
@@ -390,6 +410,7 @@ void __not_in_flash_func(audio_loop)() {
     }
     g_peak_spk = spk_max;
     g_peak_hap = hap_max;
+    g_ah_out_peak = (uint16_t)(ah_peak * 127.0f);
     if (hap_max > NATIVE_THRESHOLD) {
         native_silent_count = 0;
     } else if (native_silent_count < NATIVE_SILENT_TIMEOUT * 2) {

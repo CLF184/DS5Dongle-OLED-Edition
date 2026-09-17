@@ -873,7 +873,7 @@ void sample_diag_rates() {
 
 // Row list ordered by relevance: always-useful at top, parked-mic-investigation
 // data at bottom. To add a row, bump kNumDiagRows and add a case.
-constexpr int kNumDiagRows = 11;
+constexpr int kNumDiagRows = 12;
 __attribute__((noinline))
 void format_diag_row(int idx, char* line, size_t n) {
     switch (idx) {
@@ -921,6 +921,15 @@ void format_diag_row(int idx, char* line, size_t n) {
         case 10:
             snprintf(line, n, "Mic fail: %lu", (unsigned long)audio_mic_decode_failures());
             break;
+        case 11: {
+            // Auto-haptics real usage: peak of the derived waveform (0-127).
+            // Reads 0 while Fallback yields to native haptics or audio is silent.
+            // Any non-zero output counts as active.
+            const uint16_t p = audio_ah_out_peak();
+            const uint16_t pct = (uint16_t)((p * 100u) / 127u);
+            snprintf(line, n, "AH: %u%% %s", pct, (p > 0) ? "ACT" : "idle");
+            break;
+        }
         default:
             line[0] = '\0';
             break;
