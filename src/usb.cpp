@@ -8,7 +8,7 @@
 #include "bsp/board_api.h"
 #include "config.h"
 #include "utils.h" // SetStateData (no include guard in utils.h — include first)
-#include "bt.h"    // update_state + bt_power_off_controller
+#include "bt.h"    // update_state
 
 uint8_t mute[2]; // 0: SPEAKER(0x02) 1: MIC(0x05)
 float volume[2] = {-100.0f, 0.0f}; // 0: SPEAKER(0x02) 1: MIC(0x05) — OLED factory value; upstream releases are also 0dB (48dB only exists on master since a7824d9 2026-07-08, causes Windows level=100 + mic clipping)
@@ -225,12 +225,13 @@ void tud_hid_report_complete_cb(uint8_t instance, uint8_t const *report, uint16_
     (void) len;
 }
 
-// 上游 9d4a552 + 9923ce3：主机睡眠（USB 挂起）时顺手把手柄也关掉——否则手柄
-// 会空耗一整夜。fork 没有 ENABLE_WAKE_HID（无 wake 分支），无条件编译。
+// 上游 caaff10：挂起不再无条件关手柄——单看挂起事件无法区分"主机真实睡眠"与
+// "hub 瞬时挂起"，后者会直接把已连上的手柄踢掉（上游 #174/#148）。该修复依赖
+// 3 秒去抖（wake.cpp），本 fork 没有 wake 分支、无去抖可依，故按上游给非 wake
+// 构建保留的"简单门"处理：这里什么都不做。代价是主机真睡眠时手柄不掉电。
 void tud_suspend_cb(bool remote_wakeup_en) {
     (void) remote_wakeup_en;
     printf("[USB PM] invoke tud_suspend_cb\n");
-    bt_power_off_controller();
 }
 
 // 上游 edec7f7：PC 睡眠唤醒后出现"幽灵设备"（BIOS 开了 USB 持续供电时，主机

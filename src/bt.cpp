@@ -306,8 +306,11 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
             const uint8_t state = btstack_event_state_get_state(packet);
             printf("[BT] State: %u\n", state);
             if (state == HCI_STATE_WORKING) {
-                gap_set_page_scan_activity(0x0012, 0x0012); // 11.25ms
-                gap_set_page_scan_type(PAGE_SCAN_MODE_INTERLACED);
+                // [fork] 不移植上游 1d4dbad/ade9ea1 的常开 page scan（window=interval=11.25ms，
+                // 100% 占空）：fork 音频走 0x36 单包，包数是上游 0x39 双包的两倍，链路余量不足以
+                // 再叠加常开扫描。实测开启后手柄连接期间输入掉帧、音频/HD 震动断续（链路饱和）。
+                // 重连仍走下方各处的 gap_inquiry_start（= 2cbdfcf 的原有行为）。
+                // 若日后移植 0x39 双包释放出射频余量，可再评估恢复本设置。
                 printf("[BT] Stack ready, start inquiry\n");
                 gap_inquiry_start(30);
             }
