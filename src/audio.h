@@ -25,8 +25,8 @@ void update_mic_status();
 // Accessors used by the optional OLED add-on (diag + VU meter screens).
 uint32_t audio_fifo_drops();
 uint32_t opus_fifo_drops();
-uint8_t  audio_peak_speaker();   // 0..255, decays on read
-uint8_t  audio_peak_haptic();    // 0..255, decays on read
+uint8_t  audio_peak_speaker();   // 0..255; time-based release, ~256 ms to zero (pure getter)
+uint8_t  audio_peak_haptic();    // 0..255; time-based release, ~256 ms to zero (pure getter)
 
 // Byte-flow counters for the Diagnostics screen + web emulator.
 uint32_t audio_usb_frames();

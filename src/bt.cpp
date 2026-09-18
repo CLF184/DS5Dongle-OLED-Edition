@@ -230,16 +230,40 @@ void bt_connection_watchdog_tick() {
     }
 }
 
+// Pure getter: returns the last measured RSSI. Refreshing is a separate,
+// explicit request (bt_rssi_request) so that *reading* never changes anything —
+// the previous read-triggers-a-command design made the HCI traffic depend on how
+// many readers existed and how fast each of them polled.
 void bt_get_signal_strength(int8_t *rssi) {
-    // gap_read_rssi() completes asynchronously, so this function can only
-    // return the last cached RSSI value. Trigger a refresh afterwards so a
-    // subsequent call can observe the updated value once the RSSI event arrives.
     if (rssi != nullptr) {
         *rssi = bt_rssi;
     }
-    if (acl_handle != HCI_CON_HANDLE_INVALID) {
-        gap_read_rssi(acl_handle);
+}
+
+// Ask for a fresh RSSI. The rate is owned here, not by the callers: at most one
+// request in flight, and at most one per RSSI_REFRESH_INTERVAL_US. Callers only
+// express intent — the OLED RSSI screen calls this every render (~10 Hz) and the
+// web payload once per request; neither can push the HCI rate past the cap.
+static bool rssi_read_pending = false;
+static absolute_time_t rssi_next_read = 0;
+constexpr int64_t RSSI_REFRESH_INTERVAL_US = 100000;  // 10 Hz
+void bt_rssi_request() {
+    const absolute_time_t now = get_absolute_time();
+    // Self-heal: if an in-flight request never produced its event (link hiccup,
+    // teardown mid-measurement), don't stay blocked forever. 1 s is far longer
+    // than any normal round trip (~10-50 ms).
+    if (rssi_read_pending &&
+        absolute_time_diff_us(rssi_next_read, now) > 1000000) {
+        rssi_read_pending = false;
     }
+    if (acl_handle == HCI_CON_HANDLE_INVALID || rssi_read_pending) return;
+    if (rssi_next_read != 0 &&
+        absolute_time_diff_us(rssi_next_read, now) < RSSI_REFRESH_INTERVAL_US) {
+        return;
+    }
+    rssi_next_read = now;
+    rssi_read_pending = true;
+    gap_read_rssi(acl_handle);
 }
 
 void bt_l2cap_init() {
@@ -543,6 +567,7 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
         }
 
         case GAP_EVENT_RSSI_MEASUREMENT: {
+            rssi_read_pending = false;  // request completed — allow the next one
             const hci_con_handle_t handle = gap_event_rssi_measurement_get_con_handle(packet);
             if (handle == acl_handle) {
                 bt_rssi = static_cast<int8_t>(gap_event_rssi_measurement_get_rssi(packet));

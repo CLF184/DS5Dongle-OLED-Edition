@@ -119,6 +119,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     if (report_id == 0xf9) {
         // [-128,0]
         int8_t rssi = 0;
+        bt_rssi_request();  // ask for a fresh reading; the rate cap lives in bt.cpp
         bt_get_signal_strength(&rssi);
         if (reqlen == 0) {
             return 0;

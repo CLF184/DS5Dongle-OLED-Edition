@@ -124,20 +124,35 @@ static volatile uint32_t g_bt_packets = 0;
 uint32_t audio_usb_frames() { return g_usb_frames; }
 uint32_t audio_bt_packets() { return g_bt_packets; }
 
-// Rolling-peak meters for the OLED VU screen. Updated during audio_loop's
-// per-sample iteration, decayed 12.5 % on each read (so the bar falls back
-// over a few frames if the signal goes quiet).
-static volatile uint16_t g_peak_spk = 0;
-static volatile uint16_t g_peak_hap = 0;
+// Rolling-peak meters for the OLED VU screen. Updated in audio_loop once per USB
+// frame (written by core1, read by core0 — hence volatile).
+//
+// The release is a pure function of elapsed time (~256 ms to zero) instead of
+// "12.5 % per read". Decay-on-read meant a stale peak sat frozen while nobody was looking
+// at the meter — the VU screen opened showing a spike from minutes ago — and every
+// extra reader (the web emulator's 0xFB diag payload reads these too) silently
+// doubled the fall rate. Now the value on screen is decay(stored peak, age), so it
+// expires on its own and all readers see the same number.
+static volatile uint16_t g_peak_spk   = 0;
+static volatile uint16_t g_peak_hap   = 0;
+static volatile uint32_t g_peak_spk_t = 0;  // µs when g_peak_spk was recorded
+static volatile uint32_t g_peak_hap_t = 0;
+
+// Linear release: ~1/256 less per ~1 ms unit, fully released at ~256 ms —
+// anything older reads 0, so a peak cannot survive a page that was left closed.
+// Integer only (no divide): a shift, a multiply, a shift. The u >= 256 guard is
+// what keeps the subtraction from going negative (and wrapping in the uint16).
+static inline uint16_t peak_decay(uint16_t v, uint32_t dt_us) {
+    const uint32_t u = dt_us >> 10;                 // ~1 ms units
+    if (u >= 256u) return 0;                        // ≥ ~256 ms old → fully released
+    return (uint16_t)(v - (uint32_t)v * u / 256u);  // u < 256 → never negative
+}
+
 uint8_t audio_peak_speaker() {
-    const uint16_t v = g_peak_spk;
-    g_peak_spk = (uint16_t)((v * 7) / 8);
-    return (uint8_t)(v >> 7);
+    return (uint8_t)(peak_decay(g_peak_spk, time_us_32() - g_peak_spk_t) >> 7);
 }
 uint8_t audio_peak_haptic() {
-    const uint16_t v = g_peak_hap;
-    g_peak_hap = (uint16_t)((v * 7) / 8);
-    return (uint8_t)(v >> 7);
+    return (uint8_t)(peak_decay(g_peak_hap, time_us_32() - g_peak_hap_t) >> 7);
 }
 
 // Auto-haptics output peak (0-127 = int8 amplitude of the derived waveform).
@@ -310,8 +325,13 @@ void __not_in_flash_func(audio_loop)() {
 
     const float audio_gain = mute[0] ? 0.0f : powf(10.0f, get_config().speaker_volume / 20.0f);
     const float haptics_gain = get_config().haptics_gain;
-    uint16_t spk_max = g_peak_spk;
-    uint16_t hap_max = g_peak_hap;
+    // Peak meters: start from the *decayed* stored peak (not the raw stored one),
+    // so a new, smaller peak can still take over once the old big one has aged out.
+    const uint32_t peak_now = time_us_32();
+    const uint16_t peak_base_spk = peak_decay(g_peak_spk, peak_now - g_peak_spk_t);
+    const uint16_t peak_base_hap = peak_decay(g_peak_hap, peak_now - g_peak_hap_t);
+    uint16_t spk_max = peak_base_spk;
+    uint16_t hap_max = peak_base_hap;
     uint16_t native_max = 0;  // 本帧 ch3/ch4 实际峰值（Fallback 静默判断用，不继承 VU 显示缓存）
 
     // ---- Audio Auto Haptics (borrowed from loteran/DS5Dongle 5d6bc2f) ----
@@ -412,8 +432,10 @@ void __not_in_flash_func(audio_loop)() {
         in_buf[i * 2]     = static_cast<WDL_ResampleSample>(clamp(h_l, -1.0f, 1.0f));
         in_buf[i * 2 + 1] = static_cast<WDL_ResampleSample>(clamp(h_r, -1.0f, 1.0f));
     }
-    g_peak_spk = spk_max;
-    g_peak_hap = hap_max;
+    // 只有真的出现更高峰值才刷新（并盖时间戳）；否则保持原值+原时间戳不动，
+    // 让它按年龄自然过期——避免"旧的大峰值"永久压制后续的小峰值。
+    if (spk_max > peak_base_spk) { g_peak_spk = spk_max; g_peak_spk_t = peak_now; }
+    if (hap_max > peak_base_hap) { g_peak_hap = hap_max; g_peak_hap_t = peak_now; }
     g_ah_out_peak = (uint16_t)(ah_peak * 127.0f);
     if (native_max > NATIVE_THRESHOLD) {
         native_silent_count = 0;
