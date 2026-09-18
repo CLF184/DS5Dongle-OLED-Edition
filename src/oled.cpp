@@ -837,8 +837,15 @@ __attribute__((noinline)) void render_screen_rssi() {
 int   diag_scroll = 0;
 uint8_t diag_last_dpad = 8; // edge-trigger N/E/S/W like settings_handle_input
 
-// Per-second rates sampled once per render, shared across format_diag_row's
+// Per-second rates shown on the diag screen, shared across format_diag_row's
 // rate-based rows so they stay in sync.
+//
+// Computed over a fixed 1 s tumbling window (not once per render): a short
+// window over a bursty counter swings by whole percent per frame — USB aud at
+// 48 kHz looked like it was hunting between 47k and 48k when nothing was wrong,
+// and the low-rate rows (BT32 out ~tens/s) swung by tens of percent. Between
+// window boundaries the last computed values stay on screen, so the rows read
+// as steady per-second rates.
 struct DiagRates {
     uint32_t usb_rate;
     uint32_t bt_rate;
@@ -847,28 +854,57 @@ struct DiagRates {
 };
 DiagRates g_diag_rates{};
 
+constexpr uint32_t kRateWindowUs = 1000000u; // 1 s window length
+constexpr uint32_t kRateStaleUs  = 2000000u; // no call for >2 s (diag page was left):
+                                             // dt no longer means "the last second",
+                                             // so re-baseline instead of computing
+constexpr uint32_t kRatePrimeUs  =  200000u; // first window after entering the page:
+                                             // emit an early short-window value so the
+                                             // rows don't sit at 0 for a full second
+
 void sample_diag_rates() {
-    static uint32_t prev_us_frames = 0, prev_bt_packets = 0, prev_mic_frames = 0, prev_bt31 = 0;
-    static uint32_t prev_sample_us = 0;
+    static uint32_t base_us_frames = 0, base_bt_packets = 0, base_mic_frames = 0, base_bt31 = 0;
+    static uint32_t win_start_us = 0;
+    static bool     have_value   = false;
     const uint32_t now_us = time_us_32();
+
+    if (win_start_us == 0) {                 // first call since boot: baseline only
+        win_start_us = now_us;
+        base_us_frames  = audio_usb_frames();
+        base_bt_packets = audio_bt_packets();
+        base_mic_frames = audio_mic_frames();
+        base_bt31       = bt_31_packet_count();
+        return;
+    }
+
+    const uint32_t dt_us  = now_us - win_start_us;   // uint32 math is wrap-safe
+    const bool     stale  = dt_us > kRateStaleUs;
+    if (!stale && dt_us < kRateWindowUs && (have_value || dt_us < kRatePrimeUs)) {
+        return;                              // window not finished — keep showing the last values
+    }
+
     const uint32_t cur_us_frames  = audio_usb_frames();
     const uint32_t cur_bt_packets = audio_bt_packets();
     const uint32_t cur_mic_frames = audio_mic_frames();
     const uint32_t cur_bt31       = bt_31_packet_count();
-    if (prev_sample_us != 0 && now_us > prev_sample_us) {
-        const uint32_t dt_us = now_us - prev_sample_us;
-        if (dt_us > 0) {
-            g_diag_rates.usb_rate  = (uint32_t)(((uint64_t)(cur_us_frames  - prev_us_frames)  * 1000000u) / dt_us);
-            g_diag_rates.bt_rate   = (uint32_t)(((uint64_t)(cur_bt_packets - prev_bt_packets) * 1000000u) / dt_us);
-            g_diag_rates.mic_rate  = (uint32_t)(((uint64_t)(cur_mic_frames - prev_mic_frames) * 1000000u) / dt_us);
-            g_diag_rates.bt31_rate = (uint32_t)(((uint64_t)(cur_bt31       - prev_bt31)       * 1000000u) / dt_us);
-        }
+
+    if (stale) {
+        // Keep the last shown values; just restart the window from here.
+        have_value = false;
+    } else {
+        g_diag_rates.usb_rate  = (uint32_t)(((uint64_t)(cur_us_frames  - base_us_frames)  * 1000000u) / dt_us);
+        g_diag_rates.bt_rate   = (uint32_t)(((uint64_t)(cur_bt_packets - base_bt_packets) * 1000000u) / dt_us);
+        g_diag_rates.mic_rate  = (uint32_t)(((uint64_t)(cur_mic_frames - base_mic_frames) * 1000000u) / dt_us);
+        g_diag_rates.bt31_rate = (uint32_t)(((uint64_t)(cur_bt31       - base_bt31)       * 1000000u) / dt_us);
+        have_value = true;
     }
-    prev_us_frames  = cur_us_frames;
-    prev_bt_packets = cur_bt_packets;
-    prev_mic_frames = cur_mic_frames;
-    prev_bt31       = cur_bt31;
-    prev_sample_us  = now_us;
+
+    // Baseline and window start move together — they always describe one window.
+    base_us_frames  = cur_us_frames;
+    base_bt_packets = cur_bt_packets;
+    base_mic_frames = cur_mic_frames;
+    base_bt31       = cur_bt31;
+    win_start_us    = now_us;
 }
 
 // Row list ordered by relevance: always-useful at top, parked-mic-investigation
