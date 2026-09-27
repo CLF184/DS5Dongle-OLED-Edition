@@ -1,12 +1,13 @@
 # DualSense adaptive-trigger games — owned + tested through the dongle
 
 Cross-referenced across Steam + Epic + GOG (~1,271 owned games). Native adaptive triggers work
-on **both Steam and Heroic**, flag-free, with **runner = GE-Proton-DualSense (Wine 11)**. Verified
-2026-06-07 by running Cyberpunk on *both* launchers — identical trigger behaviour.
+on **both Steam and Heroic**, flag-free, with **runner = GE-Proton11-7-DualSense (Wine 11)**. Verified
+2026-06-07 by running Cyberpunk on *both* launchers — identical trigger behaviour (on the earlier
+GE-Proton10-based build); re-verified on GE-Proton11-7-DualSense with Uncharted on 2026-09-27.
 
-- **Steam:** GE-Proton-DualSense + **Steam Input off**. No launch option needed (Wine 11 enables
+- **Steam:** GE-Proton11-7-DualSense + **Steam Input off**. No launch option needed (Wine 11 enables
   the hidraw native path by default).
-- **Heroic (Epic / GOG):** GE-Proton-DualSense + **Steam fully quit** + **no `PROTON_PREFER_SDL`**.
+- **Heroic (Epic / GOG):** GE-Proton11-7-DualSense + **Steam fully quit** + **no `PROTON_PREFER_SDL`**.
   No launch option needed. (Earlier belief that Heroic needs `PROTON_ENABLE_HIDRAW` was wrong —
   it was masked by the two gotchas below.)
 

@@ -57,13 +57,13 @@ This project enables the Raspberry Pi Pico2W to function as a Bluetooth bridge f
 
 ## 🐧 Linux: native adaptive triggers (Proton)
 
-Getting a game to drive the controller's **adaptive triggers through the dongle** on Linux needs a Proton that carries the Wine `winebus.sys` **#9034** fix. **As of this writing no official Proton-GE release includes it yet** — it's merged upstream but unreleased, and `GE-Proton10-34` (the current release) and earlier do **not** have it. So a build that does is provided: **`GE-Proton-DualSense`** (see [Releases](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases)). Once an official GE-Proton ships the fix, that will work too.
+Getting a game to drive the controller's **adaptive triggers through the dongle** on Linux needs a Proton that carries the Wine `winebus.sys` **#9034** fix. Official **GE-Proton 11** releases now include it. The build provided here, **`GE-Proton11-7-DualSense`** (see [its release](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/tag/proton-GE-Proton11-7-DualSense)), is official `GE-Proton11-7` plus one extra `winebus.sys` fix: the DualSense reports its serial number as a colon-separated Bluetooth MAC, which makes its device path unopenable in Windows, so games that use Sony's libScePad can't reach the triggers. This build replaces those characters so the path opens. It's the build the trigger results below were verified on.
 
 > Why: the #9034 bug suppresses the SDL gamepad device when a hidraw device exists for the same VID/PID, so the pad is seen *everywhere except in-game*. The fix lets the native (trigger-capable) path and a working gamepad coexist.
 
 **One-time setup**
 
-1. **Install the Proton build.** Download `GE-Proton-DualSense.tar.gz` and extract it to:
+1. **Install the Proton build.** Download `GE-Proton11-7-DualSense.tar.gz` from [the release](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/tag/proton-GE-Proton11-7-DualSense) and extract it to:
    - **Steam:** `~/.steam/root/compatibilitytools.d/`
    - **Heroic:** `~/.config/heroic/tools/proton/`
 
@@ -72,7 +72,7 @@ Getting a game to drive the controller's **adaptive triggers through the dongle*
 
 **Per game**
 
-3. **Force the Proton:** Steam → right-click the game → **Properties → Compatibility → Force the use of a specific Steam Play compatibility tool → `GE-Proton-DualSense`**. (Heroic: set the game's *Wine version* to it.)
+3. **Force the Proton:** Steam → right-click the game → **Properties → Compatibility → Force the use of a specific Steam Play compatibility tool → `GE-Proton11-7-DualSense`**. (Heroic: set the game's *Wine version* to it.)
 
 **No launch option is needed** — Wine 11 enables the hidraw native path by default, so the dongle is handed to the game automatically. Just launch — native adaptive triggers fire through the dongle, 1:1 with a wired DualSense (verified flag-free on Cyberpunk 2077, Uncharted, Spider-Man Remastered, The Last of Us Part I, Avatar, Indiana Jones — and on **both Steam and Heroic**). The game must have **native DualSense support** (XInput-only games give rumble but no adaptive triggers — that's an engine limit, not the dongle). First launch under a new Proton does locale/prefix setup and can sit "Not Responding" for a minute — that's setup, not a crash; let it finish.
 
