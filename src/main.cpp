@@ -513,6 +513,7 @@ int main() {
         cyw43_arch_poll();
         bt_connection_watchdog_tick();
         tud_task();
+        cmd_task();
         audio_loop();
         interrupt_loop();
         oled_loop();

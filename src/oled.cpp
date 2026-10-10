@@ -1818,6 +1818,9 @@ void boot_splash() {
 
 } // namespace
 
+// Configurator trigger preview (0xF6 0x0A): the Trigger Test screen's presets.
+void oled_send_trigger_preset(int preset) { send_trigger_effect(preset); }
+
 void oled_init() {
     spi_init(spi1, 10 * 1000 * 1000);
     gpio_set_function(kPinCLK, GPIO_FUNC_SPI);
@@ -1875,7 +1878,22 @@ void render_dim_pulse(uint32_t dim_elapsed_us) {
     flush_fb_raw(); // skip chrome arrows; nothing to navigate to from sleep
 }
 
+// The configurator changed config behind the OLED's back: re-read every field
+// the OLED caches, and drop the Settings snapshot so a later Triangle-save on
+// the dongle can't write the stale copy over the host's changes.
+static void sync_host_config_changes() {
+    static uint32_t seen_gen = 0;
+    const uint32_t gen = cmd_host_config_gen();
+    if (gen == seen_gen) return;
+    seen_gen = gen;
+    lightbar_load_config();
+    bright_idx = get_config().screen_brightness;
+    settings_init_done = false;
+    settings_dirty = false;
+}
+
 void oled_loop() {
+    sync_host_config_changes();
     handle_buttons();
     const uint32_t now = time_us_32();
     rumble_burst_tick(now);

@@ -11,6 +11,28 @@ bool is_pico_cmd(uint8_t report_id);
 uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer,uint16_t reqlen);
 void pico_cmd_set(uint8_t report_id, uint8_t const *buffer,uint16_t bufsize);
 
+// Configurator protocol (identity report 0xF1, vendor interface only).
+#define PICO_CMD_IDENTITY 0xf1
+#define PICO_PROTO_MAJOR 1
+#define PICO_PROTO_MINOR 0
+
+// Result of the last 0xF6 SET, reported in 0xF1.
+enum : uint8_t {
+    CMD_RESULT_OK = 0,
+    CMD_RESULT_PENDING = 1, // deferred to cmd_task(); poll 0xF1
+    CMD_RESULT_INVALID = 2, // unknown function or bad argument
+    CMD_RESULT_FAILED = 3,  // ran but failed (flash write, BT not connected)
+    CMD_RESULT_BUSY = 4,    // a deferred command is still pending
+};
+
+// Runs deferred host commands (save, slot ops, reboot, BOOTSEL...) from the
+// main loop, outside the USB control transfer that requested them.
+void cmd_task();
+
+// Bumped on every host-originated config change, so the OLED can re-read the
+// fields it caches (lightbar, brightness, Settings snapshot).
+uint32_t cmd_host_config_gen();
+
 // Smoothed RP2350 on-die temperature sensor reading (ADC input 4, 12-bit
 // raw). A single sample is very noisy; this averages a large block and runs
 // a slow EMA so the value converges to the true die temperature instead of

@@ -28,6 +28,9 @@
 #include "config.h"
 #include "bt.h"
 #include "slots.h"
+#if ENABLE_COMPANION_VENDOR
+#include "vendor_itf.h"
+#endif
 
 #ifndef ENABLE_SERIAL
 #define ENABLE_SERIAL 0
@@ -49,6 +52,9 @@ enum {
     ITF_NUM_CDC,
     ITF_NUM_CDC_DATA,
 #endif
+#if ENABLE_COMPANION_VENDOR
+    ITF_NUM_VENDOR,
+#endif
     ITF_NUM_TOTAL,
 
     CONFIG_DESC_LEN_AUDIO_IAD =
@@ -62,7 +68,14 @@ enum {
 #if ENABLE_SERIAL
         + TUD_CDC_DESC_LEN
 #endif
+#if ENABLE_COMPANION_VENDOR
+        + TUD_VENDOR_ITF_DESC_LEN
+#endif
 };
+
+#if ENABLE_COMPANION_VENDOR
+static_assert(ITF_NUM_VENDOR == VENDOR_ITF_NUM, "vendor_itf.h VENDOR_ITF_NUM out of sync with the interface enum");
+#endif
 
 // String Descriptor Index
 enum {
@@ -72,6 +85,9 @@ enum {
     STRID_SERIAL,
 #if ENABLE_SERIAL
     STRID_CDC,
+#endif
+#if ENABLE_COMPANION_VENDOR
+    STRID_VENDOR,
 #endif
 };
 
@@ -394,6 +410,21 @@ uint8_t descriptor_configuration[] = {
 #if ENABLE_SERIAL
     // --- CDC ACM (USB Serial) ---
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, STRID_CDC, 0x85, 0x08, 0x06, 0x86, 0x40),
+#endif
+
+#if ENABLE_COMPANION_VENDOR
+    // --- Configurator vendor interface (control transfers only, no endpoints) ---
+    // Appended AFTER everything else so CONFIG_DESC_LEN_BASE stays the
+    // bInterval / HID-length patch anchor used by tud_descriptor_configuration_cb.
+    0x09, // bLength
+    0x04, // bDescriptorType (INTERFACE)
+    ITF_NUM_VENDOR, // bInterfaceNumber
+    0x00, // bAlternateSetting
+    0x00, // bNumEndpoints
+    TUSB_CLASS_VENDOR_SPECIFIC, // bInterfaceClass
+    0x00, // bInterfaceSubClass
+    0x00, // bInterfaceProtocol
+    STRID_VENDOR, // iInterface
 #endif
 };
 
@@ -829,6 +860,9 @@ static char const *string_desc_arr[] =
 #if ENABLE_SERIAL
     "USB Serial", // 4: CDC interface
 #endif
+#if ENABLE_COMPANION_VENDOR
+    "DS5 Dongle Configurator", // vendor interface (identifies the dongle vs a real DualSense)
+#endif
 };
 
 static uint16_t _desc_str[60 + 1];
@@ -880,6 +914,14 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
             }
             break;
         }
+
+#if ENABLE_COMPANION_VENDOR
+        case MS_OS_STRING_INDEX:
+            // Microsoft OS 1.0 string: "MSFT100" + vendor code. Windows asks for
+            // it once per VID/PID/bcdDevice and then requests the WinUSB
+            // compat-ID / interface-GUID descriptors (vendor_itf.cpp).
+            return ms_os_string_descriptor();
+#endif
 
         default:
             // Note: the 0xEE index string is a Microsoft OS 1.0 Descriptors.

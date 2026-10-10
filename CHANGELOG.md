@@ -6,6 +6,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Configurator interface (build flag `ENABLE_COMPANION_VENDOR`, off by default).** A control-only vendor USB interface for the upcoming desktop configurator. Linux's `hid_playstation` leaves it alone, and Windows binds WinUSB to it with no driver install. The gamepad descriptor stays byte-identical to a real DualSense.
+- **Configurator commands.** An identity report (`0xF1`) with protocol version and last-command result; switch/forget/wipe pairing slots, reboot, reboot into BOOTSEL, factory reset and trigger preset preview over `0xF6`. Saving now reports success or failure.
+
+### Fixed
+
+- **Host config changes now show on the dongle without a reboot.** Lightbar mode and favourites, and OLED brightness, were only read at boot; a dongle-side Settings save could also write its stale snapshot over changes made from the PC.
+
+---
+
 ## [0.7.0-oled-edition] — 2026-10-10
 
 > **After updating, re-pair your controller(s)** (hold Create + PS). The config, pairing-slot and remap flash sectors moved (see Fixed); saved settings are migrated automatically, but pairing slots and button remaps start fresh.

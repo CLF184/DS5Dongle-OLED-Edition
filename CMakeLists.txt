@@ -183,6 +183,21 @@ target_compile_definitions(ds5-bridge PRIVATE
         DISABLE_SPEAKER_PROC=${DISABLE_SPEAKER_PROC_VALUE}
 )
 
+# Control-only vendor-class USB interface for the desktop configurator
+# (docs: CLAUDE.md "Companion vendor interface"). Linux hid_playstation only
+# binds HID, so unlike the June 0xFF5D HID companion this one is not hijacked;
+# Windows binds WinUSB via MS OS 1.0 descriptors with no driver install.
+option(ENABLE_COMPANION_VENDOR "Add the configurator's vendor USB interface" OFF)
+if (ENABLE_COMPANION_VENDOR)
+        set(ENABLE_COMPANION_VENDOR_VALUE 1)
+        target_sources(ds5-bridge PRIVATE src/vendor_itf.cpp)
+else ()
+        set(ENABLE_COMPANION_VENDOR_VALUE 0)
+endif ()
+target_compile_definitions(ds5-bridge PRIVATE
+        ENABLE_COMPANION_VENDOR=${ENABLE_COMPANION_VENDOR_VALUE}
+)
+
 option(ENABLE_WAKE_HID "Wake the Windows host on PS-button press" OFF)
 if(ENABLE_WAKE_HID)
     target_compile_definitions(ds5-bridge PRIVATE

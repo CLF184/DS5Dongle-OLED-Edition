@@ -15,9 +15,12 @@
 #include "pico/time.h"
 #include "slots.h"
 #include "remap.h"
+#include "oled.h"
 #include "hardware/clocks.h"
 #include "hardware/adc.h"
 #include "hardware/vreg.h"
+#include "hardware/watchdog.h"
+#include "pico/bootrom.h"
 
 uint16_t cpu_temp_raw_smoothed() {
     // One-time ADC bring-up. This is the only place the ADC is initialised
@@ -76,6 +79,69 @@ extern uint8_t g_get_ring[16][2];
 extern volatile uint32_t g_get_count;
 extern uint8_t g_last_out02_trig[47];
 
+constexpr int kNumTriggerPresets = 7;
+
+// Host command bookkeeping, reported by 0xF1. Everything here is touched only
+// from the main loop (tud_task callbacks + cmd_task), so no locking.
+static uint16_t s_cmd_seq = 0;
+static uint8_t s_last_func = 0;
+static uint8_t s_last_result = CMD_RESULT_OK;
+static uint32_t s_host_gen = 0;
+static bool s_pending = false;
+static uint8_t s_pending_func = 0;
+static uint8_t s_pending_arg = 0;
+static uint64_t s_pending_due_us = 0;
+
+uint32_t cmd_host_config_gen() { return s_host_gen; }
+
+static void defer(uint8_t func, uint8_t arg, uint32_t delay_ms) {
+    s_pending_func = func;
+    s_pending_arg = arg;
+    s_pending_due_us = time_us_64() + (uint64_t) delay_ms * 1000;
+    s_pending = true;
+    s_last_result = CMD_RESULT_PENDING;
+}
+
+void cmd_task() {
+    if (!s_pending || time_us_64() < s_pending_due_us) return;
+    s_pending = false;
+    uint8_t result = CMD_RESULT_OK;
+    switch (s_pending_func) {
+        case 0x02:
+            result = config_save() ? CMD_RESULT_OK : CMD_RESULT_FAILED;
+            break;
+        case 0x04:
+            bt_set_slot(s_pending_arg); // saves current_slot itself
+            s_host_gen++;
+            break;
+        case 0x05:
+            bt_forget_slot(s_pending_arg);
+            break;
+        case 0x06:
+            bt_wipe_all_slots();
+            break;
+        case 0x07:
+            watchdog_reboot(0, 0, 0);
+            break;
+        case 0x08:
+            reset_usb_boot(0, 0);
+            break;
+        case 0x09:
+            config_default();
+            result = config_save() ? CMD_RESULT_OK : CMD_RESULT_FAILED;
+            s_host_gen++;
+            break;
+        case 0x0A:
+            if (bt_is_connected()) oled_send_trigger_preset(s_pending_arg);
+            else result = CMD_RESULT_FAILED;
+            break;
+        default:
+            result = CMD_RESULT_INVALID;
+            break;
+    }
+    s_last_result = result;
+}
+
 bool is_pico_cmd(uint8_t report_id) {
     if (report_id == 0xf2 ||  // last 16 host GET_REPORT requests
         report_id == 0xf3 ||  // last host 0x02 output report
@@ -97,6 +163,36 @@ bool is_pico_cmd(uint8_t report_id) {
 }
 
 uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
+    // 0xF1 identity (vendor interface only; a real DS5 uses 0xF1 for its own
+    // firmware-update protocol, so the HID path never routes it here).
+    //   [0..3]  'D''S''5''O'        [4] proto major   [5] proto minor
+    //   [6]     sizeof(Config_body) [7] feature bits (see kIdentityFeatures)
+    //   [8..9]  u16 SET sequence    [10] last SET function   [11] its result
+    //   [12..15] u32 host config generation
+    //   [16] slot count  [17] current slot  [18] BT connected  [19] reserved
+    if (report_id == PICO_CMD_IDENTITY) {
+        constexpr uint8_t kIdentityFeatures =
+            0x01 |  // remap table (0x10)
+            0x02 |  // slot switch / forget / wipe (0x04-0x06)
+            0x04 |  // reboot / BOOTSEL (0x07, 0x08)
+            0x08 |  // factory reset (0x09)
+            0x10;   // trigger preset preview (0x0A)
+        if (reqlen < 20) return 0;
+        memset(buffer, 0, 20);
+        buffer[0] = 'D'; buffer[1] = 'S'; buffer[2] = '5'; buffer[3] = 'O';
+        buffer[4] = PICO_PROTO_MAJOR;
+        buffer[5] = PICO_PROTO_MINOR;
+        buffer[6] = sizeof(Config_body);
+        buffer[7] = kIdentityFeatures;
+        memcpy(buffer + 8, &s_cmd_seq, 2);
+        buffer[10] = s_last_func;
+        buffer[11] = s_last_result;
+        memcpy(buffer + 12, &s_host_gen, 4);
+        buffer[16] = kNumSlots;
+        buffer[17] = (uint8_t) bt_get_slot();
+        buffer[18] = bt_is_connected() ? 1 : 0;
+        return 20;
+    }
     if (report_id == 0xf7) {
         printf("[HID] Receive 0xf7 getting config\n");
         const size_t cfg_len = sizeof(Config_body);
@@ -326,22 +422,65 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
         return;
     }
 
-    // 0x01 update config in variable
-    // 0x02 write config to flash
-    // 0x03 reconnect tinyusb device;
-    if (buffer[0] == 0x01) {
-        printf("[CMD] Enter config set func\n");
-        set_config(buffer + 1, bufsize - 1);
+    const uint8_t func = buffer[0];
+    const uint8_t arg = bufsize >= 2 ? buffer[1] : 0xFF;
+    s_cmd_seq++;
+    s_last_func = func;
+
+    // Functions that run later in cmd_task() can't stack: a host must wait for
+    // 0xF1 to leave PENDING before sending the next one.
+    const bool deferred = func == 0x02 || (func >= 0x04 && func <= 0x0A);
+    if (deferred && s_pending) {
+        s_last_result = CMD_RESULT_BUSY;
+        return;
     }
-    if (buffer[0] == 0x02) {
-        printf("[CMD] Enter config save func\n");
-        config_save();
-    }
-    if (buffer[0] == 0x03) {
-        printf("[CMD] Enter tud reconnect func\n");
-        tud_disconnect();
-        sleep_ms(150);
-        tud_connect();
+
+    //   0x01 update config in RAM          0x02 write config to flash (deferred)
+    //   0x03 reconnect tinyusb device      0x04 [slot] switch slot (deferred)
+    //   0x05 [slot] forget slot            0x06 wipe all slots
+    //   0x07 reboot                        0x08 reboot into BOOTSEL
+    //   0x09 factory reset + save          0x0A [preset] trigger preset preview
+    //   0x10 remap table (below)
+    s_last_result = CMD_RESULT_OK;
+    switch (func) {
+        case 0x01:
+            printf("[CMD] Enter config set func\n");
+            set_config(buffer + 1, bufsize - 1);
+            s_host_gen++;
+            break;
+        case 0x02:
+            defer(func, 0, 0);
+            break;
+        case 0x03:
+            printf("[CMD] Enter tud reconnect func\n");
+            tud_disconnect();
+            sleep_ms(150);
+            tud_connect();
+            break;
+        case 0x04:
+        case 0x05:
+            if (arg >= kNumSlots) s_last_result = CMD_RESULT_INVALID;
+            else defer(func, arg, 0);
+            break;
+        case 0x06:
+        case 0x09:
+            defer(func, 0, 0);
+            break;
+        case 0x07:
+        case 0x08:
+            // Give the host time to finish the control transfer (the HID path
+            // runs this before its status stage) before the bus disappears.
+            defer(func, 0, 50);
+            break;
+        case 0x0A:
+            if (arg >= kNumTriggerPresets) s_last_result = CMD_RESULT_INVALID;
+            else defer(func, arg, 0);
+            break;
+        case 0x10:
+            break;
+        default:
+            s_last_result = CMD_RESULT_INVALID;
+            break;
     }
     // 0x10 set button-remap table (OLED Edition). Hardened framing so a stray
     // write to 0xF6 can't corrupt the map: magic 'R''M' + protocol version gate
@@ -355,13 +494,18 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
         constexpr uint16_t kNeed = 4 + kRemapCount;
         if (bufsize < kNeed) {
             printf("[CMD] 0x10 remap-set too short (%u<%u)\n", bufsize, kNeed);
+            s_last_result = CMD_RESULT_INVALID;
             return;
         }
         if (buffer[1] != 'R' || buffer[2] != 'M' || buffer[3] != kRemapProtoVer) {
             printf("[CMD] 0x10 remap-set bad magic/version\n");
+            s_last_result = CMD_RESULT_INVALID;
             return;
         }
         if (remap_set(buffer + 4)) printf("[CMD] remap set ok (rev=%u)\n", remap_revision());
-        else                       printf("[CMD] remap set rejected (invalid table)\n");
+        else {
+            printf("[CMD] remap set rejected (invalid table)\n");
+            s_last_result = CMD_RESULT_INVALID;
+        }
     }
 }
