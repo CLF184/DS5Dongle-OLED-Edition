@@ -8,22 +8,21 @@
 
 ---
 
-## 🛠️ 网页配置工具
+## 🛠️ 配置工具（桌面应用）
 
-**[→ 打开 OLED 版网页配置](https://marcelinevpq.github.io/DS5Dongle-OLED-Config-Web/#config)**
+**[→ 下载 DS5 Dongle OLED Edition Configurator](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web/releases)**（Linux AppImage、Windows 免安装 exe、macOS）
 
-网页工具是一站式方案 —— **无需安装、无需命令行、无需 `picotool`**。一块全新的 Pico 2 W 可以全程在浏览器里从"刚开箱"做到完整刷写并配置完成：
+这个桌面应用可以配置固件提供的全部功能，并让应用本身和接收器固件保持最新：
 
-- **刷写固件标签页** —— 让 Pico 进入 **BOOTSEL 模式**，然后在浏览器中点击 *Connect to Pico*，再点 *Flash now*。站点会捆绑最新发布的 UF2，你也可以载入自己编译的本地 `.uf2`。基于 WebUSB。
+- **手柄：** 一眼看到连接、电量和信号；灯条模式与收藏颜色；四个配对槽位。
+- **音频与触感：** 触感强度、扬声器电平（最高 +12 dB）、蓝牙麦克风、音频自动触感。
+- **按键：** 可视化按键重映射与自适应扳机测试。
+- **接收器：** OLED 显示、电源、USB 模式、诊断信息，以及**一键固件更新**。应用会把接收器重启到引导程序、写入固件并校验结果，无需按 BOOTSEL，也无需拷贝文件。
+- **托盘图标**实时显示手柄状态和灯条颜色；支持**跟随桌面配色**主题；应用内可直接查看更新日志。
 
-  > **什么是 BOOTSEL 模式？** 这是 Pico 内置的刷写模式。进入方法：按住 Pico 上标有 **BOOTSEL** 的白色小按钮，*然后*插入 USB 线（若已插好，则在按住 BOOTSEL 的同时短暂拔插一次）。Pico 会作为可移动磁盘出现在电脑上 —— 看到它就说明已进入 BOOTSEL 模式。网页工具刷完固件后，Pico 会自动重启进入正常模式即可使用。
-- **配置标签页** —— 设备刷好并重新连接后，可编辑振动增益、扬声器音量、轮询率、音频自动触感模式以及其余持久化设置；一键保存到设备闪存。基于 WebHID。
-- **重映射标签页** —— 可视化按键重映射器：在实时 DualSense 示意图上点击某个按键即可把它重新指派为任意其他按键（肩键/扳机会以带标签的图标浮动到角落）。映射保存在设备上并在主机看到报告之前应用，因此在任何游戏、任何操作系统中都生效。基于 WebHID。
-- **OLED 预览标签页** —— 像素级精确模拟全部 11 个 OLED 屏幕。用页面内的 KEY0/KEY1 按钮（或在 DualSense 配对时用手柄的 △ / R1 / 方向键）来导航。循环切换扳机测试预设时，自适应扳机会在手柄上真实触发。
+需要 **v0.8 或更新**的固件（新增了一个小型配置用 USB 接口，游戏看不到它，接收器在游戏眼中仍与真正的 DualSense 完全一致）。旧固件请先手动刷写一次 v0.8（见[刷写固件](#刷写固件)），之后由应用负责更新。源码：**[MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web)**。
 
-可在任何基于 Chromium 的浏览器中使用（Chrome、Edge、Brave、Opera）。Firefox 与 Safari 不提供 WebHID 或 WebUSB，因此那里无法刷写和实时配置 —— 但 OLED 预览仍会用模拟数据渲染。
-
-> 网页工具源码：**[MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web)**（[awalol/ds5dongle-config-web](https://github.com/awalol/ds5dongle-config-web) 的分支）。
+> **浏览器配置工具**（[marcelinevpq.github.io/DS5Dongle-OLED-Config-Web](https://marcelinevpq.github.io/DS5Dongle-OLED-Config-Web/)）仍可在 Chrome/Edge 中刷写 Pico，但其配置和重映射标签页只适用于 v0.6.12 之前的固件。桌面应用将取代它。
 
 ---
 
@@ -44,7 +43,7 @@
 **OLED 版新增：**
 
 - 可选的 Pico-OLED-1.3 状态显示屏，含 **11 个屏幕**（状态、配对槽、灯条、扳机测试、陀螺仪倾斜、触摸板、诊断、CPU/时钟、RSSI、VU 表、设置）
-- **按键重映射** —— 把 16 个数字控件（面板按键、方向键、肩键/扳机、摇杆按下、Create/Options）中的任意一个重新指派为其他按键。映射保存在设备上并在主机看到报告之前应用，因此在**任何游戏和操作系统中都无需任何主机端软件**即可生效；默认为恒等映射（无重映射）。可在[网页配置工具](#️-网页配置工具)的**重映射标签页**中可视化编辑，或通过 `scripts/remap_test.py` 无界面编辑。保存在专属闪存扇区，重启后保留。
+- **按键重映射** —— 把 16 个数字控件（面板按键、方向键、肩键/扳机、摇杆按下、Create/Options）中的任意一个重新指派为其他按键。映射保存在设备上并在主机看到报告之前应用，因此在**任何游戏和操作系统中都无需任何主机端软件**即可生效；默认为恒等映射（无重映射）。可在[配置工具应用](#️-配置工具桌面应用)的**按键**页面中可视化编辑，或通过 `scripts/remap_test.py` 无界面编辑。保存在专属闪存扇区，重启后保留。
 - **4 槽持久化多手柄配对** —— 可绑定至多四个 DualSense，在 OLED 上切换，开机时自动重连槽 0
 - **灯条调色器**，含 4 个用户收藏槽 + 呼吸 / 彩虹 / 渐变特效预设
 - **持久化设置菜单**，涵盖 8 个固件配置字段（振动增益、扬声器音量、轮询率等），并提供按住确认的"重置"与"清除全部槽"操作
@@ -98,7 +97,7 @@ Pico 2 W 与 Waveshare Pico-OLED-1.3 在全球都很容易买到：
 
 有四种方式配置固件：
 
-**网页配置（推荐，任何基于 Chromium 的浏览器）：** 在 Chrome、Edge、Vivaldi、Brave 或 Opera 中打开 **[DS5 Bridge Config — OLED Edition](https://marcelinevpq.github.io/DS5Dongle-OLED-Config-Web/)**（不支持 Firefox —— Mozilla 拒绝实现 WebHID）。点击 **Connect**，在浏览器对话框中选择 DualSense，然后用熟悉的表单界面编辑任意字段。页面通过 WebHID 直接与 Pico 通信 —— 无驱动、无安装，数据不离开你的机器。源码见 [MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web)。
+**配置工具应用（推荐）：** 适用于 Linux、Windows 和 macOS 的 [DS5 Dongle OLED Edition Configurator](#️-配置工具桌面应用)。它会自动找到接收器，修改即时生效，一键保存到接收器闪存。需要 v0.8 及以上固件。
 
 **设备端（已装 OLED 插件）：** 使用屏上的**设置**菜单（第 11 个屏幕）。方向键 ▲▼ 移动选择，▶◀ 调整数值，△ 保存到闪存。
 
@@ -153,7 +152,7 @@ scripts/set_ds5.py --help                     # 完整参数列表
 
 - **默认开启。** 配对手柄后一两秒内麦克风便开始流式传输 —— 无需游戏音频（适配器会自行保活该流）。
 - **在主机端调高采集音量** —— 它默认很低。在 Linux 上，用 `arecord -l` 找到声卡，然后例如 `amixer -c <DualSense 声卡> sset 'Headset' 90%`。用 `scripts/mic_diag.sh capture` 验证采集。
-- **关闭它以节省手柄电量** —— OLED **设置 → BT Mic**，或[网页配置工具](#️-网页配置工具)中的 **BT microphone** 开关。常开麦克风会让 DS5 的音频子系统保持唤醒，明显加快耗电，所以不用语音时请关闭。
+- **关闭它以节省手柄电量** —— OLED **设置 → BT Mic**，或[配置工具应用](#️-配置工具桌面应用)中的 **BT microphone** 开关。常开麦克风会让 DS5 的音频子系统保持唤醒，明显加快耗电，所以不用语音时请关闭。
 
 **注意点：**
 
@@ -389,7 +388,7 @@ OLED 插件上的两个物理按键**严格用于导航**：
 - **[zurce/DS5Dongle-OLED](https://github.com/zurce/DS5Dongle-OLED)** —— OLED 状态头部的像素图标（视觉方案）、设置屏 "Reset to defaults" 项使用的"按住以恢复出厂"交互模式（按住 △ 2 秒确认），以及新增配对槽屏上的多槽持久化蓝牙配对系统（4 个已绑定手柄、方向键导航、△ 切换槽、□ 按住清除某槽，外加设置菜单中的 "Wipe all slots"）。
 - **[loteran/DS5Dongle](https://github.com/loteran/DS5Dongle)** —— 独立地重新发现了上游 `3a31bd7` 破坏扬声器/HD 触感输出的回归（提交 `c7a8d3c`）；我们 `src/audio.cpp` 中的修复恢复了同样的 SetStateData 子报告。也是音频自动触感 DSP（1 极点 LP + 包络跟随器，见 设置 → Auto Haptics）以及"不要把 USB 侧 UAC1 音量同步到持久化配置"修复的来源。
 - **[awalol/ds5dongle-config-web](https://github.com/awalol/ds5dongle-config-web)** —— 我们分支版网页配置应用 [MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web) 的基础。该分支把上游的 Config_body 布局适配为我们的版本，并为我们的新增功能（多槽配对、Auto Haptics）添加了 UI。
-- **[PS5 Button Icons and Controls](https://zacksly.itch.io/ps5-button-icons-and-controls)**（作者 **Zacksly**）—— 网页配置工具重映射标签页所用的 DualSense 控制器轮廓与按键图标，采用 [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) 授权（已重新着色为 `currentColor` 并裁剪以适配主题）。
+- **[PS5 Button Icons and Controls](https://zacksly.itch.io/ps5-button-icons-and-controls)**（作者 **Zacksly**）—— 配置工具（桌面应用与网页工具）按键页面所用的 DualSense 控制器轮廓与按键图标，采用 [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) 授权（已重新着色为 `currentColor` 并裁剪以适配主题）。
 
 ## 路线图
 - 请查看 [DS5Dongle plan](https://github.com/users/awalol/projects/5)

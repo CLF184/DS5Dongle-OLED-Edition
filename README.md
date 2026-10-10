@@ -8,24 +8,21 @@
 
 ---
 
-## 🛠️ Web Config Tool
+## 🛠️ Configurator app
 
-**[→ Open the OLED Edition Web Config](https://marcelinevpq.github.io/DS5Dongle-OLED-Config-Web/#config)**
+**[→ Download the DS5 Dongle OLED Edition Configurator](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web/releases)** (Linux AppImage, Windows portable exe, macOS)
 
-The web tool is a one-stop shop — **no installs, no command line, no `picotool`**. A brand-new Pico 2 W can go from "just out of the box" to fully flashed and configured without ever leaving the browser:
+The desktop app configures everything the firmware offers and keeps both itself and the dongle up to date:
 
-- **Flash Firmware tab** — put the Pico in **BOOTSEL mode**, then click *Connect to Pico* in the browser and *Flash now*. The site bundles the latest release UF2, or you can load a local `.uf2` you've built yourself. Powered by WebUSB.
+- **Controller:** connection, battery and signal at a glance; lightbar modes and favorite colors; the four pairing slots.
+- **Audio & haptics:** haptics strength, speaker level (up to +12 dB), Bluetooth mic, Audio Auto Haptics.
+- **Buttons:** visual button remapping and the adaptive-trigger test.
+- **Dongle:** OLED display, power, USB mode, diagnostics, and **one-click firmware updates**. The app restarts the dongle into its bootloader, flashes it and checks the result: no BOOTSEL button, no drive copying.
+- **Tray icon** that shows the controller's state and lightbar color; **match-desktop theme**; the changelogs inside the app.
 
-  > **What is BOOTSEL mode?** It's the Pico's built-in flashing mode. To enter it: press and hold the small white button labeled **BOOTSEL** on the Pico, *then* plug the USB cable in (or, if it's already plugged in, briefly disconnect and reconnect while holding BOOTSEL). The Pico will appear to your computer as a removable drive — that's how you know it's in BOOTSEL mode. After the web tool flashes the firmware, the Pico auto-reboots into normal mode and is ready to use.
-- **Config tab** — once the dongle is flashed and reconnected, edit haptics gain, speaker volume, polling rate, audio auto-haptics mode, and the rest of the persistent settings; save to the dongle's flash with one click. Powered by WebHID. **⚠️ Does not work on the native-trigger firmware** — see the note below.
-- **Remap tab** — visual button remapper: click a button on a live DualSense diagram to reassign it to any other (the shoulders/triggers float to the corners as labeled glyphs). The map is stored on the dongle and applied before the host sees the report, so it works in every game and on every OS. Powered by WebHID. **⚠️ Does not work on the native-trigger firmware** — see the note below.
-- **OLED Preview tab** — pixel-perfect emulation of all 11 OLED screens. Use the in-page KEY0/KEY1 buttons (or the controller's △ / R1 / D-pad when a DualSense is paired) to navigate. Adaptive triggers actually fire on the controller when you cycle the Trigger Test preset.
+It needs firmware **v0.8 or newer**, which adds a small configurator USB interface. Games never see it, so the dongle still looks exactly like a real DualSense. On older firmware, flash v0.8 once by hand (see [Flashing Firmware](#flashing-firmware)); after that the app handles updates. Source: **[MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web)**.
 
-Works in any Chromium-based browser (Chrome, Edge, Brave, Opera). Firefox + Safari don't expose WebHID or WebUSB, so flashing and live config aren't available there — the OLED Preview still renders with mock data.
-
-> **⚠️ Native-trigger firmware (v0.6.12 and later) and the WebHID tabs.** To make games on Linux/Proton recognise the dongle as a genuine DualSense and fire **native adaptive triggers** (see [CHANGELOG.md](./CHANGELOG.md)), the firmware's HID descriptor is now byte-identical to a real DS5 — which meant *un-declaring* the `0xF6`/`0xF7` config reports the browser **Config** and **Remap** tabs depend on. On that firmware those two tabs can't reach the dongle (WebHID refuses undeclared report IDs). **Flash Firmware and OLED Preview still work**, on-dongle OLED config still works, and the same settings can be driven over Linux `hidraw`. Releases before v0.6.12 are unaffected.
-
-> Source for the web tool: **[MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web)** (fork of [awalol/ds5dongle-config-web](https://github.com/awalol/ds5dongle-config-web)).
+> **The browser config tool** ([marcelinevpq.github.io/DS5Dongle-OLED-Config-Web](https://marcelinevpq.github.io/DS5Dongle-OLED-Config-Web/)) can still flash a Pico from Chrome/Edge, but its Config and Remap tabs only work on firmware older than v0.6.12. The desktop app replaces it.
 
 ---
 
@@ -47,7 +44,7 @@ This project enables the Raspberry Pi Pico2W to function as a Bluetooth bridge f
 
 - **Native DualSense adaptive triggers in PC games on Linux/Proton — through the dongle.** Games with native DualSense support drive the controller's adaptive triggers wirelessly via the dongle, **1:1 with a directly-wired DualSense**. Requires a Proton carrying the Wine `winebus.sys` #9034 fix (Wine 11 / current Proton-GE) with Steam Input disabled — **no launch option needed** (Wine 11 enables the hidraw native path by default). Works on **both Steam and Heroic** (Epic/GOG). The firmware makes the dongle byte-for-byte indistinguishable from a real DS5 so the game accepts it (full write-up in [CHANGELOG.md](./CHANGELOG.md)). Trade-off: the browser Config/Remap tabs are disabled on this firmware (see the note above).
 - Optional Pico-OLED-1.3 status display with **11 screens** (status, slots, lightbar, trigger test, gyro tilt, touchpad, diagnostics, CPU/clock, RSSI, VU meters, settings)
-- **Button remapping** — reassign any of the 16 digital controls (face buttons, D-pad, shoulders/triggers, stick clicks, Create/Options) to any other. Stored on the dongle and applied before the host sees the report, so it works in **every game and OS with no host-side software**; identity (no remap) is the default. Edit it visually in the [web config tool](#️-web-config-tool)'s **Remap tab**, or headlessly via `scripts/remap_test.py`. Persisted in its own flash sector, survives reboot.
+- **Button remapping** — reassign any of the 16 digital controls (face buttons, D-pad, shoulders/triggers, stick clicks, Create/Options) to any other. Stored on the dongle and applied before the host sees the report, so it works in **every game and OS with no host-side software**; identity (no remap) is the default. Edit it visually on the [configurator app](#️-configurator-app)'s **Buttons** page, or headlessly via `scripts/remap_test.py`. Persisted in its own flash sector, survives reboot.
 - **4-slot persistent multi-controller pairing** — bond up to four DualSenses, switch between them from the OLED, slot 0 reconnects automatically on boot
 - **Lightbar color picker** with 4 user favorite slots + breathing / rainbow / fade effect presets
 - **Persistent settings menu** for the 8 firmware config fields (haptics gain, speaker volume, polling rate, etc.) with hold-to-confirm Reset and Wipe-all-slots actions
@@ -141,7 +138,7 @@ Both the Pico 2 W and the Waveshare Pico-OLED-1.3 are widely available worldwide
 
 There are four ways to configure the firmware:
 
-**Web config (recommended, any Chromium-based browser):** open **[DS5 Bridge Config — OLED Edition](https://marcelinevpq.github.io/DS5Dongle-OLED-Config-Web/)** in Chrome, Edge, Vivaldi, Brave, or Opera (Firefox isn't supported — Mozilla declined WebHID). Click **Connect**, pick the DualSense from the browser dialog, and edit any field with a familiar form UI. The page talks directly to the Pico over WebHID — no driver, no install, no data leaves your machine. Source at [MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web).
+**Configurator app (recommended):** the [DS5 Dongle OLED Edition Configurator](#️-configurator-app) for Linux, Windows and macOS. It finds the dongle by itself, applies changes live, and saves to the dongle's flash with one click. Needs firmware v0.8+.
 
 **On-device (OLED add-on present):** use the on-screen **Settings** menu (10th screen). D-pad ▲▼ moves selection, ▶◀ adjusts values, △ saves to flash.
 
@@ -158,7 +155,7 @@ scripts/set_ds5.py --rssi                     # live BT RSSI in dBm
 scripts/set_ds5.py --help                     # full flag list
 ```
 
-The script talks to the firmware over USB HID feature reports `0xF6`/`0xF7`/`0xF8`/`0xF9` — works on Linux, macOS, and Windows in any terminal regardless of which browser you use. Ported from [loteran/DS5Dongle](https://github.com/loteran/DS5Dongle) and extended for this fork's `current_slot` field.
+The script talks to the firmware over USB HID feature reports `0xF6`/`0xF7`/`0xF8`/`0xF9`. Since v0.6.12 those reports aren't declared in the HID descriptor (games need it byte-identical to a real DualSense), so the script works on Linux only; use the configurator app elsewhere. Ported from [loteran/DS5Dongle](https://github.com/loteran/DS5Dongle) and extended for this fork's `current_slot` field.
 
 **DualSense controller buttons (legacy fallback, no OLED, no CLI):**
 
@@ -196,7 +193,7 @@ This was long believed impossible — earlier versions of this fork documented i
 
 - **On by default.** Pair the controller and the mic begins streaming within a second or two — no game audio required (the dongle keeps the stream alive on its own).
 - **Raise the capture volume on the host** — it defaults low. On Linux, find the card with `arecord -l`, then e.g. `amixer -c <DualSense card> sset 'Headset' 90%`. Verify capture with `scripts/mic_diag.sh capture`.
-- **Toggle it off to save controller battery** — OLED **Settings → BT Mic**, or the **BT microphone** switch in the [web config tool](#web-config-tool). Always-on mic keeps the DS5's audio subsystem awake, which drains its battery noticeably faster, so disable it if you don't use voice.
+- **Toggle it off to save controller battery** — OLED **Settings → BT Mic**, or the **BT microphone** switch in the [configurator app](#️-configurator-app). Always-on mic keeps the DS5's audio subsystem awake, which drains its battery noticeably faster, so disable it if you don't use voice.
 
 **Caveats:**
 
