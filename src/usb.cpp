@@ -5,6 +5,8 @@
 #include "tusb.h"
 #include "bsp/board_api.h"
 #include "config.h"
+#include "state_mgr.h"
+#include <algorithm>
 
 uint8_t mute[2]; // 0: SPEAKER(0x02) 1: MIC(0x05)
 float volume[2] = {-100.0f,0.0f}; // 0: SPEAKER(0x02) 1: MIC(0x05)
@@ -72,7 +74,16 @@ static bool audio10_set_req_entity(tusb_control_request_t const *p_request, uint
                         // its last-known UAC1 volume on every device reconnect, which
                         // would silently override the user's saved speaker_volume.
                         // Fix borrowed from loteran/DS5Dongle commit 03fa1e4.
-                        (void)entityID;
+                        //
+                        // Instead the host volume drives the controller's amp,
+                        // 0 dB -> 100 (0x64, top of the speaker range) down to
+                        // -100 dB -> 0, as upstream does (aa5e012). Before, the
+                        // amp was pinned at 0x64 whatever the host slider said,
+                        // which overdrove the speaker into crackle.
+                        if (entityID == UAC1_ENTITY_SPK_FEATURE_UNIT) {
+                            const float v = std::clamp(100.0f + volume[index], 0.0f, 100.0f);
+                            state_set_volume(static_cast<uint8_t>(v), static_cast<uint8_t>(v));
+                        }
 
                         TU_LOG2("    Set Volume: %d dB of entity: %u\r\n", volume[index], entityID);
                         return true;

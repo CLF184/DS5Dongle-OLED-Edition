@@ -22,13 +22,11 @@ namespace {
     constexpr size_t kPlayerIndicatorsOffset = offsetof(SetStateData, LedRed) - sizeof(uint8_t);
 }
 
-// Byte 0 leaves AllowHeadphoneVolume / AllowSpeakerVolume (bits 4-5) clear so
-// the controller keeps its own default amp level, as upstream does (aa5e012).
-// Forcing VolumeSpeaker to 0x64 (top of range) overdrove the small speaker and
-// made it crackle on loud passages. The volume bytes below are ignored while
-// those bits are clear.
+// Headphones/Speaker volume start at max until the host sets its USB volume,
+// which state_set_volume() then maps onto the controller's amp (see usb.cpp).
+// With the allow bits clear the DS5 amp stays silent, so they must stay set.
 static constexpr uint8_t state_init_data[63] = {
-    0xcd, 0xf7, 0x0, 0x0,
+    0xfd, 0xf7, 0x0, 0x0,
     0x7f, 0x64, // Headphones, Speaker
     0x40, 0x9, 0x0, 0x00, 0x0, 0x0, 0x0, 0x0, // VolumeMic=64, MuteControl all clear (no PowerSave)
     0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
@@ -56,6 +54,12 @@ void state_set_led(uint8_t r, uint8_t g, uint8_t b) {
     state[offsetof(SetStateData, LedRed) + 0] = r;
     state[offsetof(SetStateData, LedRed) + 1] = g;
     state[offsetof(SetStateData, LedRed) + 2] = b;
+}
+
+void state_set_volume(uint8_t headphones, uint8_t speaker) {
+    state[0] |= 0x30; // AllowHeadphoneVolume | AllowSpeakerVolume
+    state[offsetof(SetStateData, VolumeHeadphones)] = headphones;
+    state[offsetof(SetStateData, VolumeSpeaker)] = speaker;
 }
 
 void state_get_led(uint8_t *r, uint8_t *g, uint8_t *b) {
