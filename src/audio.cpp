@@ -22,8 +22,12 @@
 #define INPUT_CHANNELS    4
 #define OUTPUT_CHANNELS   2
 #define SAMPLE_SIZE       64
-#define REPORT_SIZE       398
-#define REPORT_ID         0x36
+// Upstream's packed audio report (awalol 8eb8612): two haptic + two speaker
+// frames per BT packet, no SetStateData. Controller state now travels in its own
+// 0x31 reports (main.cpp forwards every host output report), so it isn't
+// re-broadcast at the audio rate any more.
+#define REPORT_SIZE       547
+#define REPORT_ID         0x39
 // #define VOLUME_GAIN       2
 // #define BUFFER_LENGTH     48
 
@@ -39,7 +43,7 @@ using std::clamp;
 using std::max;
 
 static WDL_Resampler resampler;
-static uint8_t reportSeqCounter = 0;
+extern uint8_t reportSeqCounter; // shared with main.cpp's 0x31 forwards
 static uint8_t packetCounter = 0;
 static bool plug_headset = false;
 alignas(8) static uint32_t audio_core1_stack[8192];
@@ -158,57 +162,33 @@ void mic_add_queue(const uint8_t *data) {
     queue_try_add(&mic_fifo, &packet);
 }
 
-// Re-assert the DS5 mic-enable (pkt[4] bit 0) so the controller streams its mic
-// even when no audio is being output to it. Normally the enable only rides the
-// 0x36 audio frames, which are gated on active USB audio — so without this, mic
-// only works while a game plays sound. The enable is sticky (the DS5 keeps
-// streaming once it starts), so we send a control-only 0x36 (enable + the
-// load-bearing SetStateData sub-report + a silent haptic block, no speaker
-// payload → makes no sound) at ~4 Hz ONLY until mic frames start arriving, then
-// stop — minimizing BT traffic and DS5 battery. Resumes if the stream stalls.
-// When the host closes the mic (or BT Mic is turned off) one control frame with
-// the enable bit cleared is sent so the DS5 stops streaming.
-static void send_mic_control(bool enable);
-
-static void mic_enable_keepalive() {
-    if (!bt_is_connected()) return;
-    static bool armed = false;
-    if (!audio_mic_wanted()) {
-        if (armed) { send_mic_control(false); armed = false; }
-        return;
-    }
-    armed = true;
-    const uint64_t now = time_us_64();
-    static uint32_t last_frames = 0;
-    static uint64_t last_frame_us = 0;
-    static uint64_t last_send_us = 0;
-    const uint32_t frames = g_mic_frames;
-    if (frames != last_frames) { last_frames = frames; last_frame_us = now; }
-    if (last_frame_us != 0 && (now - last_frame_us) < 1000000ULL) return; // streaming → sticky, no resend
-    if (last_send_us != 0 && (now - last_send_us) < 250000ULL) return;    // throttle to ~4 Hz while arming
-    last_send_us = now;
-    send_mic_control(true);
-}
-
-static void send_mic_control(bool enable) {
-    uint8_t pkt[REPORT_SIZE]{};
-    pkt[0] = REPORT_ID;
+// Tell the DS5 whether to stream its mic (0x32 audio-control report, as
+// upstream's update_mic_status). Sent on every change of audio_mic_wanted()
+// and on each new BT link; the setting is sticky on the controller, so the
+// old ~4 Hz keepalive isn't needed.
+static void update_mic_status(bool enable) {
+    uint8_t pkt[142]{};
+    pkt[0] = 0x32;
     pkt[1] = reportSeqCounter << 4;
     reportSeqCounter = (reportSeqCounter + 1) & 0x0F;
-    pkt[2] = 0x11 | 1 << 7;
-    pkt[3] = 7;
-    pkt[4] = enable ? 0b11111111 : 0b11111110; // mic-enable (bit 0)
-    const auto buf_len = get_config().audio_buffer_length;
-    pkt[5] = pkt[6] = pkt[7] = pkt[8] = pkt[9] = buf_len;
-    pkt[10] = packetCounter++;
-    pkt[11] = 0x10 | 1 << 7; // SetStateData sub-report (load-bearing — keeps actuators alive)
-    pkt[12] = 63;
-    state_set(pkt + 13, 63);
-    pkt[76] = 0x12 | 1 << 7;  // haptic sub-report; samples left zero = silent
-    pkt[77] = SAMPLE_SIZE;
-    // no speaker sub-report (pkt[142..] stays zero) → control-only, no audio out
+    pkt[2] = 0x11 | 0 << 6 | 1 << 7;
+    pkt[3] = 1;
+    pkt[4] = enable ? 0b00000011 : 0b00000010;
     bt_write(pkt, sizeof(pkt));
-    g_bt_packets++;
+}
+
+static volatile bool mic_status_dirty = true;
+void audio_on_bt_connected() { mic_status_dirty = true; }
+
+static void mic_status_task() {
+    static bool sent = false;
+    const bool want = audio_mic_wanted();
+    if (!bt_is_connected()) return;
+    if (mic_status_dirty || want != sent) {
+        update_mic_status(want);
+        sent = want;
+        mic_status_dirty = false;
+    }
 }
 
 // Mic out: feed decoded PCM to the USB IN FIFO in 1 ms slices whenever it has
@@ -255,55 +235,50 @@ static void mic_drain() {
     }
 }
 
-// Send one 0x36 once a haptic frame and its matching speaker frame are both
-// ready. Both streams come from the same USB audio at the same rate (512 frames
-// @ 48 kHz each), so they pair 1:1; the haptic frame just waits for core1's
-// Opus encode. If core1 falls a full frame behind, the haptic goes out with the
-// previous speaker frame rather than being dropped.
+// Send one 0x39 once two haptic frames and two speaker frames are queued
+// (upstream audio_bt_task). Both streams come from the same USB audio at the
+// same rate, so they stay paired; this halves the BT packet rate vs one 0x36
+// per frame.
 static void audio_bt_task() {
-    if (queue_is_empty(&haptics_fifo)) return;
+    if (queue_get_level(&haptics_fifo) < 2) return;
 #if !DISABLE_SPEAKER_PROC
-    static audio_spk_element spk{};
-    if (!queue_try_remove(&audio_spk_fifo, &spk) && queue_get_level(&haptics_fifo) < 2) {
-        return;
-    }
+    if (queue_get_level(&audio_spk_fifo) < 2) return;
 #endif
-    static haptics_element hap{};
-    queue_try_remove(&haptics_fifo, &hap);
 
     uint8_t pkt[REPORT_SIZE]{};
     pkt[0] = REPORT_ID;
     pkt[1] = reportSeqCounter << 4;
     reportSeqCounter = (reportSeqCounter + 1) & 0x0F;
     pkt[2] = 0x11 | 0 << 6 | 1 << 7;
-    pkt[3] = 7;
-    // bit 0 = mic-enable: tells the DS5 to stream its mic over BT (awalol
-    // confirmed this is the key). Bits 1-7 are the pre-existing speaker/
-    // haptic audio-enable flags. Set only while the host is recording.
-    pkt[4] = audio_mic_wanted() ? 0b11111111 : 0b11111110;
+    pkt[3] = 6;
+    // bit 0 = mic-enable, bit 6 required (upstream's byte-4 research).
+    pkt[4] = audio_mic_wanted() ? 0b01111111 : 0b01111110;
     const auto buf_len = get_config().audio_buffer_length;
     pkt[5] = buf_len;
     pkt[6] = buf_len;
     pkt[7] = buf_len;
-    pkt[8] = buf_len; // 这 4 个字节的作用未知，调整没有效果
-    pkt[9] = buf_len; // audio buffer length 只有调整这个字节生效。
-    pkt[10] = packetCounter++;
-    // SetStateData
-    pkt[11] = 0x10 | 0 << 6 | 1 << 7;
-    pkt[12] = 63;
-    state_set(pkt + 13,63);
-    // Haptics Audio Data
-    pkt[76] = 0x12 | 0 << 6 | 1 << 7;
-    pkt[77] = SAMPLE_SIZE;
-    memcpy(pkt + 78, hap.data, SAMPLE_SIZE);
+    pkt[8] = buf_len; // AudioBufferLength
+    pkt[9] = packetCounter += 2;
+    // Haptics Audio Data (2 frames)
+    pkt[10] = 0x12 | 1 << 6 | 1 << 7;
+    pkt[11] = SAMPLE_SIZE;
+    static haptics_element hap{};
+    queue_try_remove(&haptics_fifo, &hap);
+    memcpy(pkt + 12, hap.data, SAMPLE_SIZE);
+    queue_try_remove(&haptics_fifo, &hap);
+    memcpy(pkt + 12 + SAMPLE_SIZE, hap.data, SAMPLE_SIZE);
 #if !DISABLE_SPEAKER_PROC
-    // Speaker Audio Data
-    pkt[142] = (plug_headset ? 0x16 : 0x13) | 0 << 6 | 1 << 7; // Speaker: 0x13
+    // Speaker Audio Data (2 frames)
+    pkt[140] = (plug_headset ? 0x16 : 0x13) | 1 << 6 | 1 << 7; // Speaker: 0x13
     // L Headset Mono: 0x14
     // L Headset R Speaker: 0x15
     // Headset: 0x16
-    pkt[143] = SPEAKER_OPUS_SIZE;
-    memcpy(pkt + 144, spk.data, SPEAKER_OPUS_SIZE);
+    pkt[141] = SPEAKER_OPUS_SIZE;
+    static audio_spk_element spk{};
+    queue_try_remove(&audio_spk_fifo, &spk);
+    memcpy(pkt + 142, spk.data, SPEAKER_OPUS_SIZE);
+    queue_try_remove(&audio_spk_fifo, &spk);
+    memcpy(pkt + 142 + SPEAKER_OPUS_SIZE, spk.data, SPEAKER_OPUS_SIZE);
 #endif
 
     bt_write(pkt, sizeof(pkt));
@@ -311,20 +286,14 @@ static void audio_bt_task() {
 }
 
 void audio_loop() {
+    // Only after enumeration: BT traffic during the fresh-pair feature handshake
+    // delays controller detection past the connection watchdog (~10-15 s drop).
+    if (tud_mounted()) mic_status_task();
     mic_drain();
     audio_bt_task();
 
     // 1. 读取 USB 音频数据
-    if (!tud_audio_available()) {
-        // Keep the DS5 mic streaming even without output audio — but ONLY once
-        // the host has enumerated us (tud_mounted). Running it during the
-        // fresh-pair feature handshake floods BT TX and delays controller-type
-        // detection past the connection watchdog's timeout, which then tears the
-        // link down (~10-15s "shutdown" on fresh pair). After enumeration the
-        // handshake is done, so it's safe — and always-on mic still works.
-        if (tud_mounted()) mic_enable_keepalive();
-        return;
-    }
+    if (!tud_audio_available()) return;
 
     int16_t raw[192];
     uint32_t bytes_read = tud_audio_read(raw, sizeof(raw)); // 每次读入 384 bytes
@@ -351,7 +320,7 @@ void audio_loop() {
     // produce rumble. Mode 1 (Fallback, default) fires only when native is
     // silent → preserves native HD haptics in games that do send them.
     const uint8_t auto_mode = get_config().auto_haptics_enable;
-    const float auto_gain   = (auto_mode > 0) ? (get_config().auto_haptics_gain / 100.0f) * haptics_gain : 0.0f;
+    const float auto_gain   = (auto_mode > 0) ? (get_config().auto_haptics_gain / 100.0f) : 0.0f;
     static const float LP_COEFF[4] = { 0.01039f, 0.02074f, 0.03095f, 0.05123f };
     const float lp_a = LP_COEFF[get_config().auto_haptics_lowpass & 3];
     static float lp_l = 0.0f, lp_r = 0.0f;
@@ -394,8 +363,8 @@ void audio_loop() {
             audio_buf_pos = 0;
         }
 #endif
-        float h_l = raw[i * INPUT_CHANNELS + 2] / 32768.0f * haptics_gain;
-        float h_r = raw[i * INPUT_CHANNELS + 3] / 32768.0f * haptics_gain;
+        float h_l = raw[i * INPUT_CHANNELS + 2] / 32768.0f;
+        float h_r = raw[i * INPUT_CHANNELS + 3] / 32768.0f;
 
         if (auto_mode > 0) {
             const float spk_l = raw[i * INPUT_CHANNELS    ] / 32768.0f;
@@ -444,8 +413,9 @@ void audio_loop() {
 
     // 4. 转换为int8并缓冲，满64字节即组包发送
     for (int i = 0; i < out_frames; i++) {
-        int val_l = static_cast<int>(out_buf[i * 2] * 127.0f);
-        int val_r = static_cast<int>(out_buf[i * 2 + 1] * 127.0f);
+        // Gain after the resampler, as upstream (a55fd46).
+        int val_l = static_cast<int>(out_buf[i * 2] * 127.0f * haptics_gain);
+        int val_r = static_cast<int>(out_buf[i * 2 + 1] * 127.0f * haptics_gain);
         haptic_buf[haptic_buf_pos++] = (int8_t) clamp(val_l, -128, 127); // 似乎clamp有点多余？还是以防万一吧
         haptic_buf[haptic_buf_pos++] = (int8_t) clamp(val_r, -128, 127);
 
@@ -467,7 +437,7 @@ void audio_init() {
     resampler.SetMode(true, 0, false);
     resampler.SetRates(48000, 3000);
     resampler.SetFeedMode(true);
-    resampler.Prealloc(2, 24, 6);
+    resampler.Prealloc(2, 48, 4);
     queue_init(&haptics_fifo, sizeof(haptics_element), 2);
 #if !DISABLE_SPEAKER_PROC
     queue_init(&audio_fifo, sizeof(audio_raw_element), 2);

@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include "bt.h"
+#include "audio.h"
 #include <queue>
 #include <unordered_map>
 #include <vector>
@@ -635,6 +636,7 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
                     report32[3] = 0x3f; // 63 bytes
                     state_set(report32 + 4,sizeof(SetStateData));
                     bt_write(report32, sizeof(report32));
+                    audio_on_bt_connected(); // re-send mic-stream state on this link
 
                     const auto mtu = l2cap_get_remote_mtu_for_local_cid(hid_interrupt_cid);
                     printf("[L2CAP] Remote Interrupt MTU: %d\n",mtu);

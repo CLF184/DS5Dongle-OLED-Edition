@@ -1422,14 +1422,10 @@ void lightbar_service() {
     }
 
     g_lightbar_override = true;
-    state_set_led(lb_r, lb_g, lb_b);  // ride every host/audio frame
-    if (!spk_active) {
-        // Active push so the LED updates when the host is idle and animations
-        // keep moving. Skipped during audio: the 0x36 frames already carry
-        // state[]'s LED at audio rate, and slipping a 0x31 between them would
-        // intrude on the load-bearing audio/haptic packet cadence.
-        send_lightbar_color(lb_r, lb_g, lb_b);
-    }
+    state_set_led(lb_r, lb_g, lb_b);  // carried by the BT-connect init
+    // Active push so the LED updates when the host is idle and animations keep
+    // moving. Audio frames (0x39) don't carry state, so this runs during audio too.
+    send_lightbar_color(lb_r, lb_g, lb_b);
 }
 
 void lightbar_load_config() {

@@ -27,9 +27,10 @@
 // Pico SDK speciifically for waiting on conditions
 #include "pico/critical_section.h"
 
-int reportSeqCounter = 0;
+uint8_t reportSeqCounter = 0; // 4-bit BT output sequence, shared with audio.cpp
 uint8_t packetCounter = 0;
 bool spk_active = false;
+extern bool g_lightbar_override; // oled.cpp: OLED owns the lightbar
 
 // Mic-debug instrumentation: count every 0x31 BT input report regardless
 // of mic-tag bit, accumulate OR-mask of every byte-2 value seen (tells us
@@ -352,24 +353,23 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
                 if (bufsize > 1 && (buffer[1] & 0x0C)) {
                     g_host_out02_trig_allow++;
                 }
+                // state[] still tracks the host's state for the OLED (LED readout,
+                // trigger screens) and the BT-connect init.
                 state_update(buffer + 1, bufsize - 1);
-                if (spk_active) {
-                    // Not forwarded as a standalone 0x31 — the trigger FFB just
-                    // written into state[] rides the 0x36 audio frames instead.
-                    // Count the trigger-bearing ones so the Diag screen shows
-                    // trig_allow == to_bt(trig) + folded (issue #6: not drops).
-                    if (bufsize > 1 && (buffer[1] & 0x0C)) g_host_out02_trig_folded++;
-                    break;
-                }
+                if (bufsize - 1 < sizeof(SetStateData)) break;
+                // Forward the host's report as-is, every time, as upstream does.
+                // Audio frames (0x39) no longer carry state, so this is the only
+                // path to the controller; sending the host's own allow bits (not a
+                // latched copy) also ends the trigger re-fire buzz (#11).
                 uint8_t outputData[78]{};
                 outputData[0] = 0x31;
                 outputData[1] = reportSeqCounter << 4;
-                if (++reportSeqCounter == 256) {
-                    reportSeqCounter = 0;
-                }
+                reportSeqCounter = (reportSeqCounter + 1) & 0x0F;
                 outputData[2] = 0x10;
-                // memcpy(outputData + 3, buffer + 1, bufsize - 1);
-                state_set(outputData + 3,sizeof(SetStateData));
+                memcpy(outputData + 3, buffer + 1, sizeof(SetStateData));
+                if (g_lightbar_override) {
+                    outputData[3 + 1] &= ~0x04; // OLED owns the lightbar: drop AllowLedColor
+                }
                 bt_write(outputData, sizeof(outputData));
                 g_host_out02_to_bt++;
                 break;

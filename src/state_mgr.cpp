@@ -7,6 +7,9 @@
 
 #include "utils.h"
 #include "state_mgr.h"
+#include "bt.h"
+
+extern uint8_t reportSeqCounter;
 
 // Set by the OLED lightbar service (src/oled.cpp). While true, the firmware
 // owns the lightbar (an OLED mode or the charging pulse) and the host's
@@ -60,6 +63,17 @@ void state_set_volume(uint8_t headphones, uint8_t speaker) {
     state[0] |= 0x30; // AllowHeadphoneVolume | AllowSpeakerVolume
     state[offsetof(SetStateData, VolumeHeadphones)] = headphones;
     state[offsetof(SetStateData, VolumeSpeaker)] = speaker;
+
+    // Push it now (upstream update_state): audio frames don't carry state.
+    uint8_t pkt[78]{};
+    pkt[0] = 0x31;
+    pkt[1] = reportSeqCounter << 4;
+    reportSeqCounter = (reportSeqCounter + 1) & 0x0F;
+    pkt[2] = 0x10;
+    pkt[3] = 0x30; // valid_flag0: headphone + speaker volume only
+    pkt[3 + offsetof(SetStateData, VolumeHeadphones)] = headphones;
+    pkt[3 + offsetof(SetStateData, VolumeSpeaker)] = speaker;
+    bt_write(pkt, sizeof(pkt));
 }
 
 void state_get_led(uint8_t *r, uint8_t *g, uint8_t *b) {

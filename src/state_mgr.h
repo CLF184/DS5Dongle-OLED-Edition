@@ -17,8 +17,8 @@ void state_update(const uint8_t *data, const uint8_t size);
 // host/audio frame instead of only the transient send_lightbar_color() packet.
 void state_set_led(uint8_t r, uint8_t g, uint8_t b);
 void state_get_led(uint8_t *r, uint8_t *g, uint8_t *b);
-// Controller amp volume (0..0x64 speaker, 0..0x7f headphones), re-sent in
-// every 0x36 frame.
+// Controller amp volume (0..0x64 speaker, 0..0x7f headphones). Stored in
+// state[] for the BT-connect init and pushed to the controller immediately.
 void state_set_volume(uint8_t headphones, uint8_t speaker);
 
 #endif //DS5_BRIDGE_STATE_MGR_H

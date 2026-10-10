@@ -38,5 +38,7 @@ void audio_set_mic_active(bool active);
 // True while the host is recording AND BT Mic is enabled — gates the DS5
 // mic-enable bit and the mic decode path.
 bool audio_mic_wanted();
+// New BT link: re-send the mic-stream state to the controller.
+void audio_on_bt_connected();
 
 #endif //DS5_BRIDGE_AUDIO_H
