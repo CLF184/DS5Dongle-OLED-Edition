@@ -23,6 +23,7 @@ Headline: **the controller speaker is clean over the dongle.** The residual crac
 - **Audio goes out as upstream's packed `0x39` report** — two haptic + two speaker frames per BT packet, half the packet rate of one `0x36` per frame, with no controller state inside (upstream `8eb8612`). Controller state reaches the DS5 as `0x31` output reports (every host report, forwarded immediately), and volume / mic-stream changes go out as one-off reports. The OLED lightbar now pushes its color during audio too.
 - **Audio Auto Haptics defaults to Off.** In Fallback mode the actuators followed any speaker audio when a game sent no haptics, so music and desktop sound made the controller vibrate constantly. Haptics now come only from the game; Fallback / Mix / Replace stay available in the OLED Settings menu. Existing saved settings are kept — set `AutoHap` to Off on the OLED if yours is on Fallback.
 - Haptics gain is applied after the 48 kHz → 3 kHz resampler, as upstream (`a55fd46`).
+- **Haptics gain now goes up to 6.0** (was 2.0), in 0.5 steps on the OLED `Gain` item, for when HD haptics feel weaker than wired.
 
 ### Added
 
