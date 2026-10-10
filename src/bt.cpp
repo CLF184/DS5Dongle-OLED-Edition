@@ -631,14 +631,8 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
 
                     init_feature();
                     // 初始化手柄状态
-                    uint8_t report32[142]{};
-                    report32[0] = 0x32;
-                    report32[1] = 0x10; // reportSeqCounter
-                    report32[2] = 0x10 | 0 << 6 | 1 << 7;
-                    report32[3] = 0x3f; // 63 bytes
-                    state_set(report32 + 4,sizeof(SetStateData));
-                    bt_write(report32, sizeof(report32));
-                    audio_on_bt_connected(); // re-send mic-stream state on this link
+                    bt_send_state();
+                    audio_on_bt_connected(); // re-send state + mic-stream state once USB is up
 
                     const auto mtu = l2cap_get_remote_mtu_for_local_cid(hid_interrupt_cid);
                     printf("[L2CAP] Remote Interrupt MTU: %d\n",mtu);
@@ -707,6 +701,20 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
             break;
         }
     }
+}
+
+// Send the full controller state (lightbar, audio routing, volumes, rumble
+// mode) as a 0x32 SetStateData report. Sent at L2CAP open and again once the
+// host has enumerated us: the DS5 drops the first copy while it is still
+// answering init_feature()'s requests (lightbar stayed on the player LED only).
+void bt_send_state() {
+    uint8_t report32[142]{};
+    report32[0] = 0x32;
+    report32[1] = 0x10; // reportSeqCounter
+    report32[2] = 0x10 | 0 << 6 | 1 << 7;
+    report32[3] = 0x3f; // 63 bytes
+    state_set(report32 + 4,sizeof(SetStateData));
+    bt_write(report32, sizeof(report32));
 }
 
 void bt_write(const uint8_t *data, const uint16_t len) {

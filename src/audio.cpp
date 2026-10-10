@@ -190,6 +190,7 @@ static void mic_status_task() {
     static bool sent = false;
     const bool want = audio_mic_wanted();
     if (!bt_is_connected()) return;
+    if (mic_status_dirty) bt_send_state(); // new link: re-apply state now the DS5 is ready
     if (mic_status_dirty || want != sent) {
         update_mic_status(want);
         sent = want;
