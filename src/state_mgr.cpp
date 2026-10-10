@@ -22,8 +22,13 @@ namespace {
     constexpr size_t kPlayerIndicatorsOffset = offsetof(SetStateData, LedRed) - sizeof(uint8_t);
 }
 
+// Byte 0 leaves AllowHeadphoneVolume / AllowSpeakerVolume (bits 4-5) clear so
+// the controller keeps its own default amp level, as upstream does (aa5e012).
+// Forcing VolumeSpeaker to 0x64 (top of range) overdrove the small speaker and
+// made it crackle on loud passages. The volume bytes below are ignored while
+// those bits are clear.
 static constexpr uint8_t state_init_data[63] = {
-    0xfd, 0xf7, 0x0, 0x0,
+    0xcd, 0xf7, 0x0, 0x0,
     0x7f, 0x64, // Headphones, Speaker
     0x40, 0x9, 0x0, 0x00, 0x0, 0x0, 0x0, 0x0, // VolumeMic=64, MuteControl all clear (no PowerSave)
     0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
