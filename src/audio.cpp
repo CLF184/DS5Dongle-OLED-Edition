@@ -115,10 +115,17 @@ void set_headset(bool state) {
     plug_headset = state;
 }
 
-// Stubs kept for OLED diag-screen compatibility. Upstream removed the opus
-// queue and audio FIFO drop tracking isn't wired here; OLED shows 0.
-uint32_t audio_fifo_drops() { return 0; }
-uint32_t opus_fifo_drops() { return 0; }
+// Drop counters for the OLED Diagnostics "Drop" row. Each is a 10.7 ms chunk
+// thrown away because the next stage fell behind:
+//   raw - core0 dropped PCM because core1 hadn't encoded the previous chunk
+//   enc - core1 dropped an encoded speaker frame because BT hadn't sent it
+//   hap - core0 dropped a haptic frame waiting for its speaker pair / BT
+static volatile uint32_t g_drop_raw = 0;
+static volatile uint32_t g_drop_enc = 0;
+static volatile uint32_t g_drop_hap = 0;
+uint32_t audio_fifo_drops() { return g_drop_raw; }
+uint32_t opus_fifo_drops() { return g_drop_enc; }
+uint32_t audio_hap_drops() { return g_drop_hap; }
 
 // Monotonic byte-flow counters for the OLED Diagnostics screen and the web
 // emulator's USB / BT rate display. Updated below.
@@ -356,6 +363,7 @@ void audio_loop() {
             memcpy(element.data, audio_buf, 512 * 2 * 4);
             if (queue_is_full(&audio_fifo)) {
                 queue_try_remove(&audio_fifo,NULL);
+                g_drop_raw++;
             }
             if (!queue_try_add(&audio_fifo, &element)) {
                 printf("[Audio] Warning: audio_fifo add failed\n");
@@ -426,6 +434,7 @@ void audio_loop() {
         memcpy(element.data, haptic_buf, SAMPLE_SIZE);
         if (queue_is_full(&haptics_fifo)) {
             queue_try_remove(&haptics_fifo, NULL);
+            g_drop_hap++;
         }
         queue_try_add(&haptics_fifo, &element);
         haptic_buf_pos = 0;
@@ -475,6 +484,7 @@ static void speaker_proc() {
     if (encoded < SPEAKER_OPUS_SIZE) memset(spk.data + encoded, 0, SPEAKER_OPUS_SIZE - encoded);
     if (queue_is_full(&audio_spk_fifo)) {
         queue_try_remove(&audio_spk_fifo, NULL);
+        g_drop_enc++;
     }
     queue_try_add(&audio_spk_fifo, &spk);
 }

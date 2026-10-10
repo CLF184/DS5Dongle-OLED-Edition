@@ -894,9 +894,10 @@ void format_diag_row(int idx, char* line, size_t n) {
                      (unsigned long)host_out02_to_bt());
             break;
         case 4:
-            // Trigger reports folded into the 0x36 audio path (speaker active),
-            // not sent as 0x31. trig == tx-trig-share + this → no drops (#6).
-            snprintf(line, n, "trig fold: %lu", (unsigned long)host_out02_trig_folded());
+            // Audio chunks dropped: raw PCM (core1 behind), encoded speaker
+            // (BT behind), haptic (waiting on speaker/BT). See audio.cpp.
+            snprintf(line, n, "Drop r%lu e%lu h%lu", (unsigned long)audio_fifo_drops(),
+                     (unsigned long)opus_fifo_drops(), (unsigned long)audio_hap_drops());
             break;
         case 5:
             snprintf(line, n, "BT31 in: %lu/s", (unsigned long)g_diag_rates.bt31_rate);
