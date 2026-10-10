@@ -67,6 +67,10 @@ extern volatile uint8_t  g_longest_frame[80];
 extern volatile uint32_t g_host_out02_total;
 extern volatile uint32_t g_host_out02_trig_allow;
 extern volatile uint32_t g_host_out02_to_bt;
+extern volatile uint32_t g_fse_calls;
+extern volatile uint32_t g_fse_fail;
+extern volatile uint32_t g_setfeat_count;
+extern volatile uint32_t g_setfeat_last;
 
 bool is_pico_cmd(uint8_t report_id) {
     if (report_id == 0xf5 ||  // audio pipeline counters
@@ -214,11 +218,14 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         //   [5] core1 loops  [6] core1 speaker frames encoded
         //   [7] raw PCM frames queued  [8] haptic frames queued
         //   [9] mic frames decoded  [10] mic PLC frames
+        //   [11] flash_safe_execute calls  [12] ...failed
+        //   [13] host SET_REPORT (feature) count  [14] last: id | b0<<8 | len<<16
         const uint32_t v[] = {
             audio_usb_frames(), audio_bt_packets(),
             audio_fifo_drops(), opus_fifo_drops(), audio_hap_drops(),
             audio_c1_loops(), audio_c1_enc(), audio_raw_push(), audio_hap_push(),
             audio_mic_frames(), audio_mic_plc_frames(),
+            g_fse_calls, g_fse_fail, g_setfeat_count, g_setfeat_last,
         };
         const uint16_t want = sizeof(v);
         const uint16_t len = (reqlen < want) ? reqlen : want;

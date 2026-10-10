@@ -31,16 +31,8 @@ inline void flash_sector_write_cb(void *param) {
 
 inline bool flash_sector_write(uint32_t offset, const uint8_t *page) {
     FlashSectorWrite w{offset, page};
-    // Boot-time writes (config/remap/slots repair in *_load) run before
-    // audio_init launches core1, when flash_safe_execute would refuse
-    // (NOT_PERMITTED). Core1 isn't running then, so masking core0's IRQs is
-    // enough — same as the old path.
-    if (!multicore_lockout_victim_is_initialized(1)) {
-        const uint32_t irq = save_and_disable_interrupts();
-        flash_sector_write_cb(&w);
-        restore_interrupts(irq);
-        return true;
-    }
+    // Writes before core1 registers for lockout are handled inside the
+    // flash_safe_execute wrapper (src/main.cpp).
     return flash_safe_execute(flash_sector_write_cb, &w, 100) == PICO_OK;
 }
 

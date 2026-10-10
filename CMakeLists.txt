@@ -246,5 +246,9 @@ target_link_libraries(ds5-bridge
         opus
 )
 
+# Count every flash_safe_execute() (ours and BTstack's link-key storage) for
+# the 0xF5 diagnostics; see __wrap_flash_safe_execute in src/main.cpp.
+target_link_options(ds5-bridge PRIVATE -Wl,--wrap=flash_safe_execute)
+
 pico_add_extra_outputs(ds5-bridge)
 

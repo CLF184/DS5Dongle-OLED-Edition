@@ -10,12 +10,12 @@
 #include "utils.h"
 #include "hardware/flash.h"
 #include "flash_safe.h"
+#include "flash_layout.h"
 #include "hardware/sync.h"
 #include "pico/cyw43_arch.h"
 
 constexpr uint32_t CONFIG_MAGIC = 0x66ccff00;
 constexpr uint16_t CONFIG_VERSION = 1;
-constexpr uint32_t CONFIG_FLASH_OFFSET = PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE;
 static Config config{};
 bool is_dse = false;
 
@@ -130,6 +130,20 @@ void config_valid() {
 
 void config_load() {
     memcpy(&config, flash_config(), sizeof(Config));
+
+    // First boot after the sector move: carry saved settings over from the
+    // old last-sector location if they're intact (magic + CRC), then persist.
+    if (config.magic != CONFIG_MAGIC) {
+        Config legacy{};
+        memcpy(&legacy, reinterpret_cast<const Config *>(XIP_BASE + LEGACY_CONFIG_FLASH_OFFSET), sizeof(Config));
+        if (legacy.magic == CONFIG_MAGIC && legacy.crc32 == calc_config_crc(legacy)) {
+            printf("[Config] Migrating config from the legacy sector\n");
+            config = legacy;
+            config_valid();
+            config_save();
+            return;
+        }
+    }
 
     config_valid();
 }

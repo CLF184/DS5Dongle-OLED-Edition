@@ -26,6 +26,8 @@
 
 // Pico SDK speciifically for waiting on conditions
 #include "pico/critical_section.h"
+#include "hardware/sync.h"
+#include "pico/multicore.h"
 
 uint8_t reportSeqCounter = 0; // 4-bit BT output sequence, shared with audio.cpp
 uint8_t packetCounter = 0;
@@ -329,6 +331,30 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
 
 // Invoked when received SET_REPORT control request or
 // received data on OUT endpoint ( Report ID = 0, Type = 0 )
+// Flash-write and host feature-report counters for the 0xF5 diagnostics.
+volatile uint32_t g_fse_calls = 0;     // flash_safe_execute() calls (any caller)
+volatile uint32_t g_fse_fail = 0;      // ...that returned non-PICO_OK
+volatile uint32_t g_setfeat_count = 0; // SET_REPORT with a non-zero report ID
+volatile uint32_t g_setfeat_last = 0;  // last one: report_id | buffer[0] << 8 | bufsize << 16
+
+extern "C" int __real_flash_safe_execute(void (*func)(void *), void *param, uint32_t enter_exit_timeout_ms);
+extern "C" int __wrap_flash_safe_execute(void (*func)(void *), void *param, uint32_t enter_exit_timeout_ms) {
+    g_fse_calls++;
+    // Before core1 registers for lockout (boot: BTstack TLV init, *_load
+    // repairs) the SDK refuses with PICO_ERROR_NOT_PERMITTED and the write is
+    // silently lost. Core1 isn't running audio yet, so masking core0's IRQs is
+    // enough.
+    if (!multicore_lockout_victim_is_initialized(1)) {
+        const uint32_t irq = save_and_disable_interrupts();
+        func(param);
+        restore_interrupts(irq);
+        return PICO_OK;
+    }
+    const int rc = __real_flash_safe_execute(func, param, enter_exit_timeout_ms);
+    if (rc != PICO_OK) g_fse_fail++;
+    return rc;
+}
+
 void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer,
                            uint16_t bufsize) {
     (void) itf;
@@ -336,6 +362,11 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
     (void) report_type;
     (void) buffer;
     (void) bufsize;
+
+    if (report_id != 0) {
+        g_setfeat_count++;
+        g_setfeat_last = report_id | (bufsize ? buffer[0] : 0) << 8 | (uint32_t) bufsize << 16;
+    }
 
     if (is_pico_cmd(report_id)) {
         printf("[HID] Receive 0xf6 setting config, funcid:0x%02X\n", buffer[0]);

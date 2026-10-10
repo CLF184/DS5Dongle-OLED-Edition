@@ -7,7 +7,8 @@
 import fcntl, glob, os, struct, sys, time
 
 FIELDS = ["usb_frames", "bt_out", "drop_raw", "drop_enc", "drop_hap",
-          "c1_loops", "c1_enc", "raw_push", "hap_push", "mic_frames", "mic_plc"]
+          "c1_loops", "c1_enc", "raw_push", "hap_push", "mic_frames", "mic_plc",
+          "flash_wr", "flash_fail", "setfeat_n", "setfeat_last"]
 SIZE = 1 + 4 * len(FIELDS)
 
 def find_dongle():
@@ -30,9 +31,10 @@ def query(dev):
 dev = find_dongle()
 a = query(dev)
 if len(sys.argv) < 2:
-    for k in FIELDS: print(f"{k:11} {a[k]}")
+    for k in FIELDS: print(f"{k:11} {a[k]:#x}" if k == "setfeat_last" else f"{k:11} {a[k]}")
     sys.exit()
 secs = float(sys.argv[1]); time.sleep(secs); b = query(dev)
 print(f"{'field':11} {'before':>10} {'after':>10} {'per s':>9}")
 for k in FIELDS:
+    if k == "setfeat_last": print(f"{k:11} {a[k]:>#10x} {b[k]:>#10x}"); continue
     print(f"{k:11} {a[k]:>10} {b[k]:>10} {(b[k]-a[k])/secs:>9.1f}")

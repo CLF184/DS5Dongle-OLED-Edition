@@ -9,6 +9,7 @@
 
 #include "hardware/flash.h"
 #include "flash_safe.h"
+#include "flash_layout.h"
 #include "hardware/sync.h"
 
 namespace {
@@ -33,7 +34,6 @@ constexpr uint8_t kUp = 0, kUpRight = 1, kRight = 2, kDownRight = 3, kDown = 4,
                   kDownLeft = 5, kLeft = 6, kUpLeft = 7, kNeutral = 8;
 
 constexpr uint32_t REMAP_MAGIC = 0x44533503u; // "DS5\x03"
-constexpr uint32_t REMAP_FLASH_OFFSET = PICO_FLASH_SIZE_BYTES - 3u * FLASH_SECTOR_SIZE;
 
 struct __attribute__((packed)) RemapData {
     uint32_t magic;
