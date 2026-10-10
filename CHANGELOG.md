@@ -29,6 +29,11 @@ Headline: **the controller speaker is clean over the dongle.** The residual crac
 - Haptics gain is applied after the 48 kHz → 3 kHz resampler, as upstream (`a55fd46`).
 - **Haptics gain now goes up to 6.0** (was 2.0), in 0.5 steps on the OLED `Gain` item, for when HD haptics feel weaker than wired.
 
+### Known issues
+
+- Saving a setting while audio is playing causes one short pop: core1 is paused for the flash erase and one 10 ms audio frame is lost. (Before this release, saving during audio could crash the dongle.)
+- After the controller stops charging, the lightbar keeps the last amber frame of the charging pulse until a lightbar mode is chosen or the game sets a color.
+
 ### Added
 
 - **Audio pipeline diagnostics over USB:** new `0xF5` feature report (USB-in / BT-out rates, drops, core1 liveness, queue counts, mic frames, flash writes / failures, last host feature report), read with `scripts/audio_diag.py` (one snapshot, or `scripts/audio_diag.py 5` for rates over 5 s). The Diagnostics screen gains matching `c1` and `raw/hap` rows.

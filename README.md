@@ -329,7 +329,8 @@ Tilt the controller on each axis to dial in R / G / B; the firmware sends the re
 <img src="./assets/oled/oled_sc03.jpg" alt="Lightbar color picker on the OLED" width="420">
 
 - Press **△ ◯ ✕ □** on the controller to **save** the current color into favorite slot 0 / 1 / 2 / 3
-- Press **R1** on the controller to cycle the mode tag: `[LIVE]` → `[FAV0]` → `[FAV1]` → `[FAV2]` → `[FAV3]` → effects (Breathing / Rainbow / Fade) → back to `[LIVE]`
+- Press **R1** on the controller to cycle the mode tag: `[LIVE]` → `[FAV0]` → `[FAV1]` → `[FAV2]` → `[FAV3]` → effects (Breathing / Rainbow / Fade) → `[HOST]` → back to `[LIVE]`
+- `[HOST]` (the default) hands the lightbar to the PC / game; the dongle sets no color. Any other mode keeps the dongle's color, whatever the game sends
 - Default favorites: Red, Green, Blue, White
 
 #### 4. Trigger Test
