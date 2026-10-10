@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+> **After updating, re-pair your controller(s)** (hold Create + PS). The config, pairing-slot and remap flash sectors moved (see Fixed); saved settings are migrated automatically, but pairing slots and button remaps start fresh.
+
 Headline: **the controller speaker is clean over the dongle.** The residual crackle left after the 0.6.x RX-buffer fix traced to core1 missing its Opus-encode deadline: libopus ran from flash, and core0's BT/USB/OLED code kept evicting the shared XIP cache, so ~7 % of 10.7 ms speaker chunks were dropped (measured with the new `Drop` diagnostic row). This release ports upstream awalol's audio-path work (RAM-resident audio, packed `0x39` audio reports, core1 mic decode) and keeps the OLED Edition's own additions on top. A/B'd by ear against upstream's current build on the same controller.
 
 ### Fixed
@@ -16,7 +18,9 @@ Headline: **the controller speaker is clean over the dongle.** The residual crac
 - **Speaker no longer pinned at full amp volume.** Every audio frame forced the DS5 amp to `VolumeSpeaker=0x64` regardless of the host slider. The host's UAC1 speaker volume now drives the amp (0 dB → 0x64 … −100 dB → 0), as upstream (`aa5e012`).
 - **Mic stutter with the mic on (#13).** Mic Opus decode moved from core0's USB/BT pump to core1. Mic PCM now goes to USB in 1 ms slices as the IN FIFO frees up, following the host clock — the old 1920-byte frame writes never fit the ~784-byte FIFO and were silently truncated. The mic only streams while the host has the mic interface open (upstream `370032e`, `8d25a38`). Packet-loss concealment (Opus PLC) is kept and now runs on core1.
 - **Constant trigger buzz (#11).** Host output reports are forwarded to the controller as-is, with the host's own allow bits, instead of a latched copy of trigger state re-sent at the audio rate.
-- **Saving settings during audio could crash the dongle.** Config, remap and slot flash writes now park core1 via `flash_safe_execute()` (upstream `6a52b5e`); BTstack's link-key storage gets the same protection.
+- **Saving settings during audio could crash the dongle.** Config, remap and slot flash writes now park core1 via `flash_safe_execute()` (upstream `6a52b5e`); BTstack's link-key storage gets the same protection. Required now that core1's audio path runs from RAM: without it, core1 died on the first flash write after pairing.
+- **Flash sectors overlapped Bluetooth's link-key storage.** On RP2350 BTstack keeps pairing keys in the two sectors below the last one, exactly where the pairing slots and button remap lived, so each side overwrote the other (flaky pairing, BTstack rewriting its storage at every boot). Config, slots and remap now sit below BTstack's bank (`src/flash_layout.h`), as upstream did for its config (#244). Saved config is migrated from the old location once. Flash writes made before core1 starts no longer get silently refused.
+- **Lightbar stayed on the player indicator after connecting.** The controller ignores the startup state sent while it is still answering the dongle's feature requests; the state is now sent again once the host has enumerated the dongle.
 
 ### Changed
 
@@ -27,6 +31,7 @@ Headline: **the controller speaker is clean over the dongle.** The residual crac
 
 ### Added
 
+- **Audio pipeline diagnostics over USB:** new `0xF5` feature report (USB-in / BT-out rates, drops, core1 liveness, queue counts, mic frames, flash writes / failures, last host feature report), read with `scripts/audio_diag.py` (one snapshot, or `scripts/audio_diag.py 5` for rates over 5 s). The Diagnostics screen gains matching `c1` and `raw/hap` rows.
 - **`Drop r/e/h` row on the OLED Diagnostics screen** — audio chunks dropped because core1 fell behind (`r`), because Bluetooth fell behind (`e`), or while a haptic frame waited for its speaker pair (`h`). Replaces the `trig fold` row, which no longer applies.
 
 ---
