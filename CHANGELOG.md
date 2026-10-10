@@ -6,7 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ---
 
-## [Unreleased]
+## [0.7.0-oled-edition] — 2026-10-10
 
 > **After updating, re-pair your controller(s)** (hold Create + PS). The config, pairing-slot and remap flash sectors moved (see Fixed); saved settings are migrated automatically, but pairing slots and button remaps start fresh.
 
