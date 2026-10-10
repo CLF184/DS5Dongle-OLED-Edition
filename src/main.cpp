@@ -213,7 +213,7 @@ void on_bt_data(CHANNEL_TYPE channel, uint8_t *data, uint16_t len) {
     // would copy Opus bytes into interrupt_in_data and corrupt sticks/buttons.
     if (channel == INTERRUPT && data[1] == 0x31 && ((data[2] >> 1) & 1)
         && len >= 75) {
-        if (get_config().bt_mic_enable) mic_add_queue(data + 4);
+        mic_add_queue(data + 4); // drops it unless the host is recording
         return;
     }
 
@@ -304,6 +304,11 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
     return feature_data.empty() ? 0 : feature_data.size() - 1;
 }
 
+// Unplug / host reset: no SET_INTERFACE alt 0 arrives, so close the mic here.
+void tud_umount_cb(void) {
+    audio_set_mic_active(false);
+}
+
 bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_request) {
     (void) rhport;
     uint8_t const itf = tu_u16_low(p_request->wIndex); // wInterface
@@ -312,6 +317,10 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
     if (itf == 1) {
         printf("[AUDIO] Set interface Speaker to alternate setting %d\n", alt);
         spk_active = alt;
+    }
+    if (itf == 2) { // ITF_NUM_AUDIO_STREAMING_IN (microphone)
+        printf("[AUDIO] Set interface Microphone to alternate setting %d\n", alt);
+        audio_set_mic_active(alt != 0);
     }
 
     return true;
