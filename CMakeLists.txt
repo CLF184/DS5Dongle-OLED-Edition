@@ -91,6 +91,7 @@ add_executable(ds5-bridge
         src/oled.cpp
         src/slots.cpp
         src/remap.cpp
+        src/ram_mem.c
 )
 
 if (ENABLE_BATT_LED)
@@ -108,6 +109,59 @@ target_include_directories(wdl_resampler PUBLIC
 # Opus
 #set(OPUS_FIXED_POINT ON)
 add_subdirectory(lib/opus)
+
+# --- Core1 audio path in RAM (ported from upstream awalol Phases A.1-A.3, B.4
+# queue ops, B.5). Running libopus and the resampler from flash left core1
+# stalled on the XIP cache, which core0 (BTstack, TinyUSB, OLED) keeps evicting;
+# the OLED Diagnostics "Drop r" counter showed ~7% of speaker chunks dropped
+# because core1 couldn't encode in time. The Pico SDK linker places
+# .time_critical.* in RAM (loaded from flash at boot).
+
+# A.3: rename libopus .text/.rodata to .time_critical.* (~220 KB of RAM).
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/opus_ram_relocate.stamp
+    COMMAND ${CMAKE_OBJCOPY} --rename-section .text=.time_critical.opus_text --rename-section .rodata=.time_critical.opus_rodata --rename-section .rodata.str1.4=.time_critical.opus_strings $<TARGET_FILE:opus>
+    COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_BINARY_DIR}/opus_ram_relocate.stamp
+    DEPENDS $<TARGET_FILE:opus>
+    COMMENT "Relocating libopus to .time_critical.* sections"
+    VERBATIM
+)
+add_custom_target(opus_ram_relocate ALL DEPENDS ${CMAKE_BINARY_DIR}/opus_ram_relocate.stamp)
+add_dependencies(ds5-bridge opus_ram_relocate)
+
+# A.2: the two WDL_Resampler methods called every audio frame.
+target_compile_options(wdl_resampler PRIVATE -ffunction-sections)
+add_custom_command(TARGET wdl_resampler POST_BUILD
+    COMMAND ${CMAKE_OBJCOPY}
+        --rename-section .text._ZN13WDL_Resampler11ResampleOutEPfiii=.time_critical.WDL_ResampleOut
+        --rename-section .text._ZN13WDL_Resampler15ResamplePrepareEiiPPf=.time_critical.WDL_ResamplePrepare
+        $<TARGET_FILE:wdl_resampler>
+    COMMENT "Relocating WDL_Resampler hot-path methods to .time_critical.*"
+)
+
+# Rename hot .text.<fn> sections of an SDK object (located by path suffix) at
+# PRE_LINK; see cmake/relocate_to_ram.cmake.
+function(relocate_to_ram _suffix _renames _comment)
+    add_custom_command(TARGET ds5-bridge PRE_LINK
+        COMMAND ${CMAKE_COMMAND}
+            "-DOBJROOT=${CMAKE_BINARY_DIR}/CMakeFiles/ds5-bridge.dir"
+            "-DOBJCOPY=${CMAKE_OBJCOPY}"
+            "-DSUFFIX=${_suffix}"
+            "-DRENAMES=${_renames}"
+            -P "${CMAKE_SOURCE_DIR}/cmake/relocate_to_ram.cmake"
+        COMMENT "${_comment}"
+        VERBATIM)
+endfunction()
+
+# B.4 (queue part): queue add/remove back the inter-core audio FIFOs.
+relocate_to_ram(src/common/pico_util/queue.c.o
+    ".text.queue_try_add=.time_critical.queue_try_add|.text.queue_try_remove=.time_critical.queue_try_remove"
+    "pico_util queue add/remove -> RAM")
+
+# B.5: RAM memcpy/memset/memmove (newlib's live in flash; libopus calls them
+# every frame). Must not be lowered back into calls to themselves.
+set_source_files_properties(src/ram_mem.c PROPERTIES COMPILE_OPTIONS
+        "-fno-builtin;-fno-tree-loop-distribute-patterns")
 
 target_compile_options(wdl_resampler PRIVATE -fsigned-char)
 target_compile_options(ds5-bridge PRIVATE -fsigned-char)

@@ -466,7 +466,7 @@ static WDL_Resampler resampler_audio;
 
 // Speaker path: USB OUT PCM (core0 audio_fifo) -> resample -> Opus encode ->
 // audio_spk_fifo for audio_bt_task. Non-blocking so core1 can also run the mic.
-static void speaker_proc() {
+static void __not_in_flash_func(speaker_proc)() {
     static audio_raw_element audio_element{};
     if (!queue_try_remove(&audio_fifo, &audio_element)) return;
     // 将 512 frames 重采样成 480 frames 以解决噪音问题。感谢 @Junhoo
@@ -492,7 +492,7 @@ static void speaker_proc() {
 
 static OpusDecoder *mic_decoder = nullptr;
 
-static void mic_push_decoded(const mic_decoded_element &dec) {
+static void __not_in_flash_func(mic_push_decoded)(const mic_decoded_element &dec) {
     if (queue_is_full(&mic_decode_fifo)) queue_try_remove(&mic_decode_fifo, NULL);
     queue_try_add(&mic_decode_fifo, &dec);
 }
@@ -500,7 +500,7 @@ static void mic_push_decoded(const mic_decoded_element &dec) {
 // Mic path: Opus from the controller (mic_fifo) -> decode -> jitter buffer.
 // If real packets stop mid-session, conceal one frame per missed 10 ms slot
 // via Opus PLC; after MIC_SESSION_US of silence the session is over.
-static bool mic_proc() {
+static bool __not_in_flash_func(mic_proc)() {
     static mic_element pkt{};
     static mic_decoded_element dec{};
     static uint32_t last_out_us = 0;
@@ -537,7 +537,7 @@ static bool mic_proc() {
     return false;
 }
 
-void core1_entry() {
+void __not_in_flash_func(core1_entry)() {
     // Let core0's flash_safe_execute() park this core in RAM during flash
     // erase/program (config, remap, slots, BT link keys) — see flash_safe.h.
     flash_safe_execute_core_init();
