@@ -246,8 +246,27 @@ void on_bt_data(CHANNEL_TYPE channel, uint8_t *data, uint16_t len) {
 // Invoked when received GET_REPORT control request
 // Application must fill buffer report's content and return its length.
 // Return zero will cause the stack to STALL request
+static uint16_t get_report_impl(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer,
+                                uint16_t reqlen);
+
+// Ring of the last 16 host GET_REPORT requests (report id, bytes answered) for
+// the 0xF2 diagnostic — shows what a game polls right before it gives up.
+uint8_t g_get_ring[16][2]{};
+volatile uint32_t g_get_count = 0;
+
 uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer,
                                uint16_t reqlen) {
+    const uint16_t n = get_report_impl(itf, report_id, report_type, buffer, reqlen);
+    if (report_id < 0xF2) { // don't record our own diagnostic reads
+        const uint32_t i = g_get_count++ % 16;
+        g_get_ring[i][0] = report_id;
+        g_get_ring[i][1] = n > 255 ? 255 : static_cast<uint8_t>(n);
+    }
+    return n;
+}
+
+static uint16_t get_report_impl(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer,
+                                uint16_t reqlen) {
     (void) itf;
     (void) report_id;
     (void) report_type;
@@ -336,6 +355,9 @@ volatile uint32_t g_fse_calls = 0;     // flash_safe_execute() calls (any caller
 volatile uint32_t g_fse_fail = 0;      // ...that returned non-PICO_OK
 volatile uint32_t g_setfeat_count = 0; // SET_REPORT with a non-zero report ID
 volatile uint32_t g_setfeat_last = 0;  // last one: report_id | buffer[0] << 8 | bufsize << 16
+// Copies of host 0x02 output reports (SetStateData, 47 bytes) for 0xF3/0xF4.
+uint8_t g_last_out02[47]{};       // most recent
+uint8_t g_last_out02_trig[47]{};  // most recent with an Allow*TriggerFFB bit
 
 extern "C" int __real_flash_safe_execute(void (*func)(void *), void *param, uint32_t enter_exit_timeout_ms);
 extern "C" int __wrap_flash_safe_execute(void (*func)(void *), void *param, uint32_t enter_exit_timeout_ms) {
@@ -383,6 +405,10 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
                 // Bits 2 & 3 are AllowRight/LeftTriggerFFB.
                 if (bufsize > 1 && (buffer[1] & 0x0C)) {
                     g_host_out02_trig_allow++;
+                }
+                if (bufsize - 1 >= sizeof(g_last_out02)) {
+                    memcpy(g_last_out02, buffer + 1, sizeof(g_last_out02));
+                    if (buffer[1] & 0x0C) memcpy(g_last_out02_trig, buffer + 1, sizeof(g_last_out02_trig));
                 }
                 // state[] still tracks the host's state for the OLED (LED readout,
                 // trigger screens) and the BT-connect init.

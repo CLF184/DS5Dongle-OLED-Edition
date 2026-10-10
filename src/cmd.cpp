@@ -71,9 +71,16 @@ extern volatile uint32_t g_fse_calls;
 extern volatile uint32_t g_fse_fail;
 extern volatile uint32_t g_setfeat_count;
 extern volatile uint32_t g_setfeat_last;
+extern uint8_t g_last_out02[47];
+extern uint8_t g_get_ring[16][2];
+extern volatile uint32_t g_get_count;
+extern uint8_t g_last_out02_trig[47];
 
 bool is_pico_cmd(uint8_t report_id) {
-    if (report_id == 0xf5 ||  // audio pipeline counters
+    if (report_id == 0xf2 ||  // last 16 host GET_REPORT requests
+        report_id == 0xf3 ||  // last host 0x02 output report
+        report_id == 0xf4 ||  // last host 0x02 output report with trigger FFB
+        report_id == 0xf5 ||  // audio pipeline counters
         report_id == 0xf6 ||
         report_id == 0xf7 ||
         report_id == 0xf8 ||
@@ -210,6 +217,24 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         buffer[8] = vcode;
         memcpy(buffer + 9, &temp_raw,        2);
         return want;
+    }
+    if (report_id == 0xf2) {
+        // [0..3] uint32 total GET_REPORTs, [4] next ring index, then 16 x
+        // (report id, bytes answered), oldest first starting at [4].
+        const uint32_t c = g_get_count;
+        if (reqlen < 37) return 0;
+        memcpy(buffer, &c, 4);
+        buffer[4] = static_cast<uint8_t>(c % 16);
+        memcpy(buffer + 5, g_get_ring, 32);
+        return 37;
+    }
+    if (report_id == 0xf3 || report_id == 0xf4) {
+        // Raw SetStateData (47 bytes) of the last host 0x02 report, or of the last
+        // one that set Allow{Right,Left}TriggerFFB — for scripts/out02_dump.py.
+        const uint8_t *src = report_id == 0xf3 ? g_last_out02 : g_last_out02_trig;
+        const uint16_t len = reqlen < 47 ? reqlen : 47;
+        memcpy(buffer, src, len);
+        return len;
     }
     if (report_id == 0xf5) {
         // Audio pipeline counters (scripts/audio_diag.py), all uint32 LE:
