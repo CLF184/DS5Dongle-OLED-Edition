@@ -69,7 +69,8 @@ extern volatile uint32_t g_host_out02_trig_allow;
 extern volatile uint32_t g_host_out02_to_bt;
 
 bool is_pico_cmd(uint8_t report_id) {
-    if (report_id == 0xf6 ||
+    if (report_id == 0xf5 ||  // audio pipeline counters
+        report_id == 0xf6 ||
         report_id == 0xf7 ||
         report_id == 0xf8 ||
         report_id == 0xf9 ||
@@ -205,6 +206,24 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         buffer[8] = vcode;
         memcpy(buffer + 9, &temp_raw,        2);
         return want;
+    }
+    if (report_id == 0xf5) {
+        // Audio pipeline counters (scripts/audio_diag.py), all uint32 LE:
+        //   [0] USB audio frames in   [1] BT audio reports out
+        //   [2] drop raw  [3] drop enc  [4] drop hap
+        //   [5] core1 loops  [6] core1 speaker frames encoded
+        //   [7] raw PCM frames queued  [8] haptic frames queued
+        //   [9] mic frames decoded  [10] mic PLC frames
+        const uint32_t v[] = {
+            audio_usb_frames(), audio_bt_packets(),
+            audio_fifo_drops(), opus_fifo_drops(), audio_hap_drops(),
+            audio_c1_loops(), audio_c1_enc(), audio_raw_push(), audio_hap_push(),
+            audio_mic_frames(), audio_mic_plc_frames(),
+        };
+        const uint16_t want = sizeof(v);
+        const uint16_t len = (reqlen < want) ? reqlen : want;
+        memcpy(buffer, v, len);
+        return len;
     }
     if (report_id == 0xfd) {
         // Bridge-diagnostics feature report. 44-byte payload.

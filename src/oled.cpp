@@ -870,7 +870,7 @@ void sample_diag_rates() {
 
 // Row list ordered by relevance: always-useful at top, parked-mic-investigation
 // data at bottom. To add a row, bump kNumDiagRows and add a case.
-constexpr int kNumDiagRows = 12;
+constexpr int kNumDiagRows = 14;
 __attribute__((noinline))
 void format_diag_row(int idx, char* line, size_t n) {
     switch (idx) {
@@ -925,6 +925,14 @@ void format_diag_row(int idx, char* line, size_t n) {
                      pfx[0], pfx[1], pfx[2], pfx[3], pfx[4], pfx[5]);
             break;
         }
+        case 12:
+            snprintf(line, n, "c1 %lu e%lu", (unsigned long)(audio_c1_loops() >> 10),
+                     (unsigned long)audio_c1_enc());
+            break;
+        case 13:
+            snprintf(line, n, "raw%lu hap%lu", (unsigned long)audio_raw_push(),
+                     (unsigned long)audio_hap_push());
+            break;
         default:
             line[0] = '\0';
             break;

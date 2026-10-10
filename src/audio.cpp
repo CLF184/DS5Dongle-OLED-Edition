@@ -125,6 +125,13 @@ static volatile uint32_t g_drop_hap = 0;
 uint32_t audio_fifo_drops() { return g_drop_raw; }
 uint32_t opus_fifo_drops() { return g_drop_enc; }
 uint32_t audio_hap_drops() { return g_drop_hap; }
+// Pipeline liveness counters (Diag rows "c1" / "raw"): core1 loop iterations,
+// speaker frames core1 encoded, raw PCM frames core0 queued, haptic frames queued.
+static volatile uint32_t g_c1_loops = 0, g_c1_enc = 0, g_raw_push = 0, g_hap_push = 0;
+uint32_t audio_c1_loops() { return g_c1_loops; }
+uint32_t audio_c1_enc() { return g_c1_enc; }
+uint32_t audio_raw_push() { return g_raw_push; }
+uint32_t audio_hap_push() { return g_hap_push; }
 
 // Monotonic byte-flow counters for the OLED Diagnostics screen and the web
 // emulator's USB / BT rate display. Updated below.
@@ -365,6 +372,7 @@ void audio_loop() {
                 queue_try_remove(&audio_fifo,NULL);
                 g_drop_raw++;
             }
+            g_raw_push++;
             if (!queue_try_add(&audio_fifo, &element)) {
                 printf("[Audio] Warning: audio_fifo add failed\n");
             }
@@ -436,6 +444,7 @@ void audio_loop() {
             queue_try_remove(&haptics_fifo, NULL);
             g_drop_hap++;
         }
+        g_hap_push++;
         queue_try_add(&haptics_fifo, &element);
         haptic_buf_pos = 0;
     }
@@ -481,6 +490,7 @@ static void __not_in_flash_func(speaker_proc)() {
     static audio_spk_element spk{};
     const int encoded = opus_encode_float(encoder, out_buf, 480, spk.data, SPEAKER_OPUS_SIZE);
     if (encoded <= 0) return;
+    g_c1_enc++;
     if (encoded < SPEAKER_OPUS_SIZE) memset(spk.data + encoded, 0, SPEAKER_OPUS_SIZE - encoded);
     if (queue_is_full(&audio_spk_fifo)) {
         queue_try_remove(&audio_spk_fifo, NULL);
@@ -561,6 +571,7 @@ void __not_in_flash_func(core1_entry)() {
     }
 
     while (true) {
+        g_c1_loops++;
         bool work = false;
 #if !DISABLE_SPEAKER_PROC
         if (!queue_is_empty(&audio_fifo)) { speaker_proc(); work = true; }
