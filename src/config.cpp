@@ -85,8 +85,8 @@ void config_valid() {
         printf("[Config] current_slot is invalid\n");
     }
     if (body->auto_haptics_enable > 3) {
-        body->auto_haptics_enable = 1; // Fallback default
-        printf("[Config] auto_haptics_enable invalid, defaulting to 1 (Fallback)\n");
+        body->auto_haptics_enable = 0; // Off: only vibrate when the game sends haptics
+        printf("[Config] auto_haptics_enable invalid, defaulting to 0 (Off)\n");
     }
     if (body->auto_haptics_gain > 200) {
         body->auto_haptics_gain = 100;
