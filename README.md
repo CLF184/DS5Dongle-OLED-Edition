@@ -74,7 +74,7 @@ Getting a game to drive the controller's **adaptive triggers through the dongle*
 
 3. **Force the Proton:** Steam → right-click the game → **Properties → Compatibility → Force the use of a specific Steam Play compatibility tool → `GE-Proton11-7-DualSense`**. (Heroic: set the game's *Wine version* to it.)
 
-**No launch option is needed** — Wine 11 enables the hidraw native path by default, so the dongle is handed to the game automatically. Just launch — native adaptive triggers fire through the dongle, 1:1 with a wired DualSense (verified flag-free on Cyberpunk 2077, Uncharted, Spider-Man Remastered, The Last of Us Part I, Avatar, Indiana Jones — and on **both Steam and Heroic**). The game must have **native DualSense support** (XInput-only games give rumble but no adaptive triggers — that's an engine limit, not the dongle). First launch under a new Proton does locale/prefix setup and can sit "Not Responding" for a minute — that's setup, not a crash; let it finish.
+**No launch option is needed** — Wine 11 enables the hidraw native path by default, so the dongle is handed to the game automatically. Just launch — native adaptive triggers fire through the dongle, 1:1 with a wired DualSense (verified flag-free on Cyberpunk 2077, Uncharted, Spider-Man Remastered, The Last of Us Part I, Avatar, Indiana Jones, Star Wars: Galactic Racer — and on **both Steam and Heroic**). The game must have **native DualSense support** (XInput-only games give rumble but no adaptive triggers — that's an engine limit, not the dongle). First launch under a new Proton does locale/prefix setup and can sit "Not Responding" for a minute — that's setup, not a crash; let it finish.
 
 ### Heroic (Epic / GOG) — same recipe, two extra requirements
 

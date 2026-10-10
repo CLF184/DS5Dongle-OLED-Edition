@@ -37,6 +37,7 @@ Legend: ✅ = confirmed working **flag-free** through the dongle (this session, 
 | Avatar: Frontiers of Pandora | Steam | ✅ tested flag-free |
 | Assassin's Creed Shadows | Steam | |
 | Indiana Jones and the Great Circle | Steam | ✅ tested flag-free |
+| Star Wars: Galactic Racer | Steam | ✅ tested flag-free — full HD haptics + adaptive triggers (UE 5.7; verified 2026-10-10) |
 | Star Wars Jedi: Fallen Order | Steam | |
 | LEGO Star Wars: The Skywalker Saga | Steam | |
 | Metro Exodus (Enhanced) | Steam | |
