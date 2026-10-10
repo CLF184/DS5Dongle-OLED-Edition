@@ -8,7 +8,6 @@
 #include <algorithm>
 
 #include "hardware/flash.h"
-#include "flash_safe.h"
 #include "hardware/sync.h"
 
 namespace {
@@ -73,10 +72,10 @@ bool save_to_flash() {
     memset(page, 0xff, sizeof(page));
     memcpy(page, &g_remap, sizeof(g_remap));
 
-    if (!flash_sector_write(REMAP_FLASH_OFFSET, page)) {
-        printf("[Flash] core1 lockout timed out, write skipped\n");
-        return false;
-    }
+    const uint32_t interrupts = save_and_disable_interrupts();
+    flash_range_erase(REMAP_FLASH_OFFSET, FLASH_SECTOR_SIZE);
+    flash_range_program(REMAP_FLASH_OFFSET, page, sizeof(page));
+    restore_interrupts(interrupts);
 
     RemapData verify{};
     memcpy(&verify, flash_remap(), sizeof(verify));

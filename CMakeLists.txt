@@ -171,7 +171,7 @@ target_compile_definitions(wdl_resampler PRIVATE
 target_compile_definitions(ds5-bridge PRIVATE
         CYW43_LWIP=0
         ENABLE_SERIAL=${ENABLE_SERIAL_VALUE}
-        PICO_FLASH_ASSUME_CORE1_SAFE=0 # core1 registers for flash lockout (flash_safe.h)
+        PICO_FLASH_ASSUME_CORE1_SAFE=1
         WDL_RESAMPLE_TYPE=float
         CYW43_PIO_CLOCK_DIV_INT=${CYW43_PIO_CLOCK_DIV_VALUE}
         PICO_STDIO_USB_USE_DEFAULT_DESCRIPTORS=0
@@ -230,7 +230,6 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 target_link_libraries(ds5-bridge
         pico_stdlib
         pico_multicore
-        pico_flash
         hardware_watchdog
         hardware_timer
         hardware_flash

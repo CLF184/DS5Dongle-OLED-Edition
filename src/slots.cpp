@@ -7,7 +7,6 @@
 #include <cstdio>
 
 #include "hardware/flash.h"
-#include "flash_safe.h"
 #include "hardware/sync.h"
 
 constexpr uint32_t SLOTS_MAGIC = 0x44533502u;  // "DS5\x02"
@@ -33,10 +32,10 @@ static bool save_slots_to_flash() {
     memset(page, 0xff, sizeof(page));
     memcpy(page, &g_slots, sizeof(g_slots));
 
-    if (!flash_sector_write(SLOTS_FLASH_OFFSET, page)) {
-        printf("[Flash] core1 lockout timed out, write skipped\n");
-        return false;
-    }
+    const uint32_t interrupts = save_and_disable_interrupts();
+    flash_range_erase(SLOTS_FLASH_OFFSET, FLASH_SECTOR_SIZE);
+    flash_range_program(SLOTS_FLASH_OFFSET, page, sizeof(page));
+    restore_interrupts(interrupts);
 
     SlotsData verify{};
     memcpy(&verify, flash_slots(), sizeof(verify));

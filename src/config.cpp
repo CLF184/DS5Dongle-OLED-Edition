@@ -9,7 +9,6 @@
 
 #include "utils.h"
 #include "hardware/flash.h"
-#include "flash_safe.h"
 #include "hardware/sync.h"
 #include "pico/cyw43_arch.h"
 
@@ -149,10 +148,10 @@ bool config_save() {
     memset(page, 0xff, sizeof(page));
     memcpy(page, &config, sizeof(Config));
 
-    if (!flash_sector_write(CONFIG_FLASH_OFFSET, page)) {
-        printf("[Flash] core1 lockout timed out, write skipped\n");
-        return false;
-    }
+    const uint32_t interrupts = save_and_disable_interrupts();
+    flash_range_erase(CONFIG_FLASH_OFFSET, FLASH_SECTOR_SIZE);
+    flash_range_program(CONFIG_FLASH_OFFSET, page, sizeof(page));
+    restore_interrupts(interrupts);
 
     Config verify{};
     memcpy(&verify, flash_config(), sizeof(verify));

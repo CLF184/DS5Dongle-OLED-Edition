@@ -12,7 +12,6 @@
 #include "opus.h"
 #include "utils.h"
 #include "pico/multicore.h"
-#include "pico/flash.h"
 #include "pico/util/queue.h"
 #include "pico/time.h"
 #include "config.h"
@@ -538,9 +537,6 @@ static bool __not_in_flash_func(mic_proc)() {
 }
 
 void __not_in_flash_func(core1_entry)() {
-    // Let core0's flash_safe_execute() park this core in RAM during flash
-    // erase/program (config, remap, slots, BT link keys) — see flash_safe.h.
-    flash_safe_execute_core_init();
     int error = 0;
 #if !DISABLE_SPEAKER_PROC
     encoder = opus_encoder_create(48000, 2,OPUS_APPLICATION_AUDIO, &error);
