@@ -23,7 +23,7 @@ The web tool is a one-stop shop — **no installs, no command line, no `picotool
 
 Works in any Chromium-based browser (Chrome, Edge, Brave, Opera). Firefox + Safari don't expose WebHID or WebUSB, so flashing and live config aren't available there — the OLED Preview still renders with mock data.
 
-> **⚠️ Native-trigger firmware (Unreleased) and the WebHID tabs.** To make games on Linux/Proton recognise the dongle as a genuine DualSense and fire **native adaptive triggers** (see [CHANGELOG.md](./CHANGELOG.md)), the firmware's HID descriptor is now byte-identical to a real DS5 — which meant *un-declaring* the `0xF6`/`0xF7` config reports the browser **Config** and **Remap** tabs depend on. On that firmware those two tabs can't reach the dongle (WebHID refuses undeclared report IDs). **Flash Firmware and OLED Preview still work**, on-dongle OLED config still works, and the same settings can be driven over Linux `hidraw`. Earlier releases are unaffected.
+> **⚠️ Native-trigger firmware (v0.6.12 and later) and the WebHID tabs.** To make games on Linux/Proton recognise the dongle as a genuine DualSense and fire **native adaptive triggers** (see [CHANGELOG.md](./CHANGELOG.md)), the firmware's HID descriptor is now byte-identical to a real DS5 — which meant *un-declaring* the `0xF6`/`0xF7` config reports the browser **Config** and **Remap** tabs depend on. On that firmware those two tabs can't reach the dongle (WebHID refuses undeclared report IDs). **Flash Firmware and OLED Preview still work**, on-dongle OLED config still works, and the same settings can be driven over Linux `hidraw`. Releases before v0.6.12 are unaffected.
 
 > Source for the web tool: **[MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web)** (fork of [awalol/ds5dongle-config-web](https://github.com/awalol/ds5dongle-config-web)).
 
@@ -53,6 +53,7 @@ This project enables the Raspberry Pi Pico2W to function as a Bluetooth bridge f
 - **Persistent settings menu** for the 8 firmware config fields (haptics gain, speaker volume, polling rate, etc.) with hold-to-confirm Reset and Wipe-all-slots actions
 - **OLED idle power ladder** — manual brightness cycle (KEY1 long-press), automatic deep-dim with a small breathing dot at 2 min idle, full display-off at 15 min idle. Wakes instantly on button, controller pair, or input. Real burn-in protection, not just a contrast tweak.
 - **Soft-reboot** without unplugging USB via DS5 `PS + Mute` hold (works headless) or **KEY0 + KEY1 held together for 1 s** on the OLED add-on (replaces the older KEY0 double-click gesture, which was easy to fire by accident while paging quickly)
+- **Clean controller speaker + mic** — core1's audio path (Opus, resampler, mem ops) runs from RAM, audio goes out in upstream's packed `0x39` reports, and the mic is decoded on core1 and paced by the host's USB clock. This removed the long-standing speaker crackle and the mic-on stutter (see [CHANGELOG.md](./CHANGELOG.md)). Adapted from upstream awalol's audio work.
 - **Audit pass on the core bridge** — critical stack-overflow fix in the audio path (resolves long-standing "audio stuttering"), security hardening, watchdog, length validation across HID/L2CAP boundaries (see [CHANGELOG.md](./CHANGELOG.md))
 
 ## 🐧 Linux: native adaptive triggers (Proton)
@@ -385,7 +386,7 @@ Persistent config editor. D-pad ▲▼ moves the selection, ▶◀ adjusts value
 
 <img src="./assets/oled/oled_sc11.jpg" alt="Settings screen on the OLED" width="420">
 
-- **AutoHap Off / Fallback / Mix / Replace** — selects the Audio Auto Haptics mode. Default `Fallback` fires derived rumble only when the game sends no native haptic data (e.g. Ghost of Tsushima on Linux); games that *do* send native haptics (Spider-Man Remastered) pass through unchanged. `Mix` adds derived on top of native, `Replace` ignores native entirely, `Off` disables.
+- **AutoHap Off / Fallback / Mix / Replace** — selects the Audio Auto Haptics mode. Default `Off`: haptics come only from the game. `Fallback` fires derived rumble only when the game sends no native haptic data (e.g. Ghost of Tsushima on Linux) — note it also vibrates along with music and desktop audio; games that *do* send native haptics (Spider-Man Remastered) pass through unchanged. `Mix` adds derived on top of native, `Replace` ignores native entirely.
 - **AH Gain N%** — derived-signal gain, 0–200 % in 10 % steps. Default 100 %.
 - **AH LP 80/160/250/400 Hz** — low-pass cutoff applied to the speaker audio before envelope follow. Lower = more sub-bass, higher = more presence. Default 160 Hz.
 - **Reset to defaults** — hold △ for 2 s to revert all config fields

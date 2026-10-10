@@ -6,6 +6,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ---
 
+## [Unreleased]
+
+Headline: **the controller speaker is clean over the dongle.** The residual crackle left after the 0.6.x RX-buffer fix traced to core1 missing its Opus-encode deadline: libopus ran from flash, and core0's BT/USB/OLED code kept evicting the shared XIP cache, so ~7 % of 10.7 ms speaker chunks were dropped (measured with the new `Drop` diagnostic row). This release ports upstream awalol's audio-path work (RAM-resident audio, packed `0x39` audio reports, core1 mic decode) and keeps the OLED Edition's own additions on top. A/B'd by ear against upstream's current build on the same controller.
+
+### Fixed
+
+- **Speaker crackle.** Core1's audio path now runs from RAM: libopus `.text`/`.rodata`, the two per-frame `WDL_Resampler` methods, `core1_entry` and its speaker/mic routines, the inter-core queue ops, and RAM `memcpy`/`memset`/`memmove` (upstream Phases A.1–A.3, B.4, B.5; `cmake/relocate_to_ram.cmake`, `src/ram_mem.c`). ~380 KB of 520 KB RAM in use; clock unchanged at 320 MHz.
+- **Speaker no longer pinned at full amp volume.** Every audio frame forced the DS5 amp to `VolumeSpeaker=0x64` regardless of the host slider. The host's UAC1 speaker volume now drives the amp (0 dB → 0x64 … −100 dB → 0), as upstream (`aa5e012`).
+- **Mic stutter with the mic on (#13).** Mic Opus decode moved from core0's USB/BT pump to core1. Mic PCM now goes to USB in 1 ms slices as the IN FIFO frees up, following the host clock — the old 1920-byte frame writes never fit the ~784-byte FIFO and were silently truncated. The mic only streams while the host has the mic interface open (upstream `370032e`, `8d25a38`). Packet-loss concealment (Opus PLC) is kept and now runs on core1.
+- **Constant trigger buzz (#11).** Host output reports are forwarded to the controller as-is, with the host's own allow bits, instead of a latched copy of trigger state re-sent at the audio rate.
+- **Saving settings during audio could crash the dongle.** Config, remap and slot flash writes now park core1 via `flash_safe_execute()` (upstream `6a52b5e`); BTstack's link-key storage gets the same protection.
+
+### Changed
+
+- **Audio goes out as upstream's packed `0x39` report** — two haptic + two speaker frames per BT packet, half the packet rate of one `0x36` per frame, with no controller state inside (upstream `8eb8612`). Controller state reaches the DS5 as `0x31` output reports (every host report, forwarded immediately), and volume / mic-stream changes go out as one-off reports. The OLED lightbar now pushes its color during audio too.
+- **Audio Auto Haptics defaults to Off.** In Fallback mode the actuators followed any speaker audio when a game sent no haptics, so music and desktop sound made the controller vibrate constantly. Haptics now come only from the game; Fallback / Mix / Replace stay available in the OLED Settings menu. Existing saved settings are kept — set `AutoHap` to Off on the OLED if yours is on Fallback.
+- Haptics gain is applied after the 48 kHz → 3 kHz resampler, as upstream (`a55fd46`).
+
+### Added
+
+- **`Drop r/e/h` row on the OLED Diagnostics screen** — audio chunks dropped because core1 fell behind (`r`), because Bluetooth fell behind (`e`), or while a haptic frame waited for its speaker pair (`h`). Replaces the `trig fold` row, which no longer applies.
+
+---
+
 ## [0.6.12-oled-edition] — 2026-06-07
 
 > **Supersedes the withdrawn v0.6.11.** v0.6.11 bundled the two OLED quality-of-life features below with two regressions (constant haptics, issue #11; an audio retiming change, issue #12) and is not recommended. v0.6.12 is built on the verified-working native-trigger firmware and folds in **only** the two separable good features — `CtrlWake` and brightness persistence — leaving the trigger and audio code paths byte-identical to the tested build. The v0.6.11 regression changes (the `state_mgr.cpp` trigger-FFB allow-bit mirror and the `audio.cpp` resampler retiming) are intentionally **not** carried over.
