@@ -57,8 +57,10 @@ static int8_t bt_rssi = 0;
 unordered_map<uint8_t, vector<uint8_t> > feature_data;
 queue_t send_fifo;
 
+// Sized to the interrupt MTU like upstream: the 0x39 audio report is 547 bytes
+// (+1 for the 0xA2 header), which overflowed the old 512-byte element.
 struct send_element {
-    uint8_t data[512];
+    uint8_t data[MTU_INTERRUPT];
     size_t len;
 };
 
@@ -692,7 +694,7 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
         case L2CAP_EVENT_CAN_SEND_NOW: {
             // printf("[L2CAP] L2CAP_EVENT_CAN_SEND_NOW\n");
 
-            send_element send_packet{};
+            static send_element send_packet{}; // 680 B: keep it off core0's small stack
             if (queue_try_remove(&send_fifo, &send_packet)) {
                 const uint8_t status = l2cap_send(hid_interrupt_cid, send_packet.data, send_packet.len);
                 if (status != 0) {
@@ -709,8 +711,12 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
 
 void bt_write(const uint8_t *data, const uint16_t len) {
     if (hid_interrupt_cid == 0) return;
+    if (len + 1u > sizeof(send_element::data)) {
+        printf("[L2CAP bt_write] Error: %u-byte report exceeds send buffer\n", len);
+        return;
+    }
     static send_element packet{};
-    memset(packet.data, 0, 512);
+    memset(packet.data, 0, sizeof(packet.data));
     packet.len = len + 1;
     packet.data[0] = 0xA2;
     memcpy(packet.data + 1, data, len);
