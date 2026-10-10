@@ -364,8 +364,10 @@ void audio_loop() {
             if (b > hap_max) hap_max = b;
         }
  #if !DISABLE_SPEAKER_PROC
-        audio_buf[audio_buf_pos++] = raw[i * INPUT_CHANNELS] / 32768.0f * audio_gain;
-        audio_buf[audio_buf_pos++] = raw[i * INPUT_CHANNELS + 1] / 32768.0f * audio_gain;
+        // speaker_volume can boost up to +12 dB: clip at full scale rather than
+        // hand the encoder samples past +-1.
+        audio_buf[audio_buf_pos++] = std::clamp(raw[i * INPUT_CHANNELS] / 32768.0f * audio_gain, -1.0f, 1.0f);
+        audio_buf[audio_buf_pos++] = std::clamp(raw[i * INPUT_CHANNELS + 1] / 32768.0f * audio_gain, -1.0f, 1.0f);
         if (audio_buf_pos == 512 * 2) {
             static audio_raw_element element{};
             memcpy(element.data, audio_buf, 512 * 2 * 4);

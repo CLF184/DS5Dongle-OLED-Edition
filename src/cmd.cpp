@@ -16,6 +16,7 @@
 #include "slots.h"
 #include "remap.h"
 #include "oled.h"
+#include "state_mgr.h"
 #include "hardware/clocks.h"
 #include "hardware/adc.h"
 #include "hardware/vreg.h"
@@ -78,6 +79,7 @@ extern uint8_t g_last_out02[47];
 extern uint8_t g_get_ring[16][2];
 extern volatile uint32_t g_get_count;
 extern uint8_t g_last_out02_trig[47];
+extern uint8_t interrupt_in_data[63]; // main.cpp: latest controller input report
 
 constexpr int kNumTriggerPresets = 7;
 
@@ -170,6 +172,10 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     //   [8..9]  u16 SET sequence    [10] last SET function   [11] its result
     //   [12..15] u32 host config generation
     //   [16] slot count  [17] current slot  [18] BT connected  [19] reserved
+    //   proto 1.1 (when reqlen >= 24):
+    //   [20] controller flags: bit0 charging, bit1 battery full
+    //   [21..23] current lightbar RGB (what the controller is showing)
+    //   [24] battery level in 10% steps 0..10, 0xFF without a controller
     if (report_id == PICO_CMD_IDENTITY) {
         constexpr uint8_t kIdentityFeatures =
             0x01 |  // remap table (0x10)
@@ -191,7 +197,17 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         buffer[16] = kNumSlots;
         buffer[17] = (uint8_t) bt_get_slot();
         buffer[18] = bt_is_connected() ? 1 : 0;
-        return 20;
+        if (reqlen < 25) return 20;
+        if (bt_is_connected()) {
+            const uint8_t pwr = interrupt_in_data[52];   // low nibble level, high nibble power state
+            const uint8_t pstate = pwr >> 4;
+            buffer[20] = (pstate == 1 ? 0x01 : 0) | (pstate == 2 ? 0x02 : 0);
+            state_get_led(&buffer[21], &buffer[22], &buffer[23]);
+            buffer[24] = (uint8_t) ((pwr & 0x0F) > 10 ? 10 : (pwr & 0x0F));
+        } else {
+            buffer[24] = 0xFF;
+        }
+        return 25;
     }
     if (report_id == 0xf7) {
         printf("[HID] Receive 0xf7 getting config\n");

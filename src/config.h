@@ -10,7 +10,7 @@
 struct __attribute__((packed)) Config_body {
     uint8_t config_version; // Config Version
     float haptics_gain; // [1.0,6.0]
-    float speaker_volume; // [-100,0]
+    float speaker_volume; // [-100,+12] dB digital gain on the speaker PCM; >0 boosts (hard-clipped at full scale)
     uint8_t inactive_time; // [5,60] min
     uint8_t disable_inactive_disconnect; // bool: 0 disable,1 enable
     uint8_t disable_pico_led; // bool

@@ -1498,9 +1498,9 @@ void settings_adjust(int delta) {
             c.haptics_gain = v / 10.0f;
             break;
         }
-        case 1: { // speaker_volume  [-100, 0] step 5
+        case 1: { // speaker_volume  [-100, +12] step 5 (ends at +12)
             int v = (int)c.speaker_volume + delta * 5;
-            if (v < -100) v = -100; if (v > 0) v = 0;
+            if (v < -100) v = -100; if (v > 12) v = 12;
             c.speaker_volume = (float)v;
             break;
         }
@@ -1629,7 +1629,7 @@ __attribute__((noinline)) void format_settings_item(int idx, char* line, size_t 
             snprintf(line, n, "%s Hap Gain %d.%dx", cur, g / 10, g % 10);
             break;
         }
-        case 1: snprintf(line, n, "%s Spk Vol %ddB", cur, (int)c.speaker_volume); break;
+        case 1: snprintf(line, n, "%s Spk Vol %+ddB", cur, (int)c.speaker_volume); break;
         case 2: snprintf(line, n, "%s Inact %umin", cur, c.inactive_time); break;
         case 3: snprintf(line, n, "%s InactDC %s", cur, c.disable_inactive_disconnect ? "off" : "on"); break;
         case 4: snprintf(line, n, "%s Pico LED %s", cur, c.disable_pico_led ? "off" : "on"); break;

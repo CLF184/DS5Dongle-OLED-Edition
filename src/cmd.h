@@ -14,7 +14,7 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer,uint16_t bufsize);
 // Configurator protocol (identity report 0xF1, vendor interface only).
 #define PICO_CMD_IDENTITY 0xf1
 #define PICO_PROTO_MAJOR 1
-#define PICO_PROTO_MINOR 0
+#define PICO_PROTO_MINOR 1
 
 // Result of the last 0xF6 SET, reported in 0xF1.
 enum : uint8_t {
