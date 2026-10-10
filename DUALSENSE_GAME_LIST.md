@@ -15,6 +15,9 @@ GE-Proton10-based build); re-verified on GE-Proton11-7-DualSense with Uncharted 
 
 - **Steam running in the background** grabs the pad from non-Steam (Heroic) games. Fully quit Steam,
   or disable Settings → Controller → PlayStation controller support.
+- **A pro-audio profile rule** for the DualSense (WirePlumber/PulseAudio) breaks GE-Proton 11's haptic
+  routing: games send zero-force triggers and no HD haptics. Leave the card on its default HiFi profile.
+  (Found 2026-10-10 with Avatar: zero force on pro-audio, full triggers + haptics on HiFi.)
 - **A global `PROTON_PREFER_SDL=1`** forces the SDL/Xbox path and *suppresses* native triggers. Keep
   it off (or per-game only). It's how you get a generic Xbox pad when a game lacks native DualSense.
 - **XInput-only games can't do adaptive triggers — period.** XInput has no trigger-resistance API, so

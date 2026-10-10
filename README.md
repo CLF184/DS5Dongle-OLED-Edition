@@ -77,6 +77,8 @@ Getting a game to drive the controller's **adaptive triggers through the dongle*
 
 **No launch option is needed** — Wine 11 enables the hidraw native path by default, so the dongle is handed to the game automatically. Just launch — native adaptive triggers fire through the dongle, 1:1 with a wired DualSense (verified flag-free on Cyberpunk 2077, Uncharted, Spider-Man Remastered, The Last of Us Part I, Avatar, Indiana Jones, Star Wars: Galactic Racer — and on **both Steam and Heroic**). The game must have **native DualSense support** (XInput-only games give rumble but no adaptive triggers — that's an engine limit, not the dongle). First launch under a new Proton does locale/prefix setup and can sit "Not Responding" for a minute — that's setup, not a crash; let it finish.
 
+**Leave the controller's audio on its default profile.** GE-Proton 11 routes DualSense haptics itself and expects the card on the standard **HiFi** profile. A WirePlumber/PulseAudio rule that forces the DualSense onto **pro-audio** (a common tip for older Proton builds) made Avatar send zero-force triggers and lose HD haptics (verified; other Sony-ported games likely behave the same). Remove such a rule, or check with `pactl list cards` that the DualSense shows `Active Profile: HiFi (...)`.
+
 ### Heroic (Epic / GOG) — same recipe, two extra requirements
 
 Native triggers work identically on Heroic, but non-Steam launchers are sensitive to two host-side things that silently steal the controller:
