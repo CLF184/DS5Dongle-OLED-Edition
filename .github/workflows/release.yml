@@ -171,6 +171,12 @@ jobs:
     name: Publish the release
     needs: [firmware, app]
     runs-on: ubuntu-latest
+    # Build provenance: each file gets a signed attestation that it was built
+    # by this workflow from this tag (gh attestation verify FILE -R this repo).
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -185,7 +191,25 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Notes, checksums, draft release, publish when complete
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(dist/*.AppImage dist/*-win-x64.exe dist/*-mac-universal.zip dist/ds5-bridge-oled-*.uf2)
+          [ "${#files[@]}" -eq 4 ] || { echo "expected 4 files, got: ${files[*]}"; exit 1; }
+          ( cd dist && sha256sum "${files[@]##*/}" > SHA256SUMS.txt && cat SHA256SUMS.txt )
+      # Build provenance, before the release is visible: a signed attestation
+      # per file that this workflow built it from this tag.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/*.AppImage
+            dist/*-win-x64.exe
+            dist/*-mac-universal.zip
+            dist/ds5-bridge-oled-*.uf2
+            dist/SHA256SUMS.txt
+      - name: Notes, draft release, publish when complete
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -200,10 +224,11 @@ jobs:
             echo "## Configurator app $app"
             section app/CHANGELOG.md "$app"
           } > notes.md
-          shopt -s nullglob
           files=(dist/*.AppImage dist/*-win-x64.exe dist/*-mac-universal.zip dist/ds5-bridge-oled-*.uf2)
-          [ "${#files[@]}" -eq 4 ] || { echo "expected 4 files, got: ${files[*]}"; exit 1; }
-          ( cd dist && sha256sum "${files[@]##*/}" > SHA256SUMS.txt && cat SHA256SUMS.txt )
+          {
+            echo
+            echo "**Verify a download** (optional): \`gh attestation verify FILE -R ${GITHUB_REPOSITORY}\` shows it was built by this repository's release workflow from this tag."
+          } >> notes.md
           gh release create "$tag" --draft --verify-tag --title "${tag%-oled-edition} — OLED Edition" --notes-file notes.md
           gh release upload "$tag" "${files[@]}" dist/SHA256SUMS.txt
           gh release edit "$tag" --draft=false --latest
@@ -212,3 +237,4 @@ jobs:
     name: Refresh latest.json
     needs: publish
     uses: ./.github/workflows/manifest.yml
+    secrets: inherit

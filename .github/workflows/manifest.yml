@@ -7,6 +7,9 @@ name: Update manifest
 
 on:
   workflow_call:
+    secrets:
+      MANIFEST_SIGNING_KEY:
+        required: true
   workflow_dispatch:
   schedule:
     - cron: "17 6 * * *"
@@ -31,12 +34,17 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         # Exit 2 = no unified app + firmware release yet: nothing to publish.
         run: node tools/build_manifest.mjs --out latest.json || [ $? -eq 2 ]
+      # The app refuses an unsigned feed (tools/sign_manifest.mjs).
+      - name: Sign latest.json
+        env:
+          MANIFEST_SIGNING_KEY: ${{ secrets.MANIFEST_SIGNING_KEY }}
+        run: if [ -f latest.json ]; then node tools/sign_manifest.mjs latest.json; fi
       - name: Commit if changed
         run: |
-          if [ -f latest.json ] && [ -n "$(git status --porcelain latest.json)" ]; then
+          if [ -f latest.json ] && [ -n "$(git status --porcelain latest.json latest.json.sig)" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add latest.json
+            git add latest.json latest.json.sig
             git commit -m "chore(release): update latest.json"
             git push origin HEAD:master
           else
