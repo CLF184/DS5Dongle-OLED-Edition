@@ -1498,8 +1498,12 @@ void settings_adjust(int delta) {
             c.haptics_gain = v / 10.0f;
             break;
         }
-        case 1: { // speaker_volume  [-100, +12] step 5 (ends at +12)
-            int v = (int)c.speaker_volume + delta * 5;
+        case 1: { // speaker_volume  [-100, +12] step 5 on multiples of 5 (ends at +12)
+            // On the 5 dB grid, so stepping down from +12 reaches 10, 5, 0.
+            const auto floor5 = [](int x) { return x >= 0 ? x / 5 * 5 : -((-x + 4) / 5 * 5); };
+            const auto ceil5 = [](int x) { return x >= 0 ? (x + 4) / 5 * 5 : -((-x) / 5 * 5); };
+            int v = (int)c.speaker_volume;
+            for (int i = 0; i < (delta < 0 ? -delta : delta); i++) v = delta > 0 ? floor5(v) + 5 : ceil5(v) - 5;
             if (v < -100) v = -100; if (v > 12) v = 12;
             c.speaker_volume = (float)v;
             break;

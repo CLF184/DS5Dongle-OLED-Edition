@@ -109,11 +109,16 @@ static void defer(uint8_t func, uint8_t arg, uint32_t delay_ms) {
 // READ_SERIAL_NUMBER], then GET 0x81 until status 2 = complete); characters
 // 5-6 of it are the colorway code ("02" = Cosmic Red ...). Read once per
 // connection, ~1.5 s after it comes up (after the connect-time feature reads).
-// Only this one read action is ever sent on that channel (it also carries
-// calibration writes), and only the two colorway characters are kept: the
-// serial itself is a unique id the app has no use for.
+// The dongle itself only ever sends this one read action on that channel (it
+// also carries calibration writes; host test commands are still passed
+// through), and only the two colorway characters are kept: the serial itself
+// is a unique id the app has no use for, so the cached 0x81 reply holding it is
+// dropped as soon as it has been read (and for a moment after, in case a late
+// reply to one of our polls lands). Only built with the configurator
+// interface, the only way to read the result.
+#if ENABLE_COMPANION_VENDOR
 namespace {
-enum class ColorRead : uint8_t { Idle, Waiting, Polling, Done };
+enum class ColorRead : uint8_t { Idle, Waiting, Polling, Scrub, Done };
 ColorRead s_color_state = ColorRead::Idle;
 uint64_t s_color_due_us = 0;
 uint64_t s_color_deadline_us = 0;
@@ -128,6 +133,9 @@ void controller_info_task() {
         s_colorway[0] = s_colorway[1] = 0;
         s_color_state = connected ? ColorRead::Waiting : ColorRead::Idle;
         s_color_due_us = now + 1500 * 1000;
+        // The last report of a controller that went away must not show up as
+        // the next one's state (0xF0, battery in 0xF1) before it sends its own.
+        if (!connected) memset(interrupt_in_data, 0, sizeof(interrupt_in_data));
     }
     if (!connected) return;
     switch (s_color_state) {
@@ -147,15 +155,25 @@ void controller_info_task() {
                 const char a = (char) r[4 + 4], b = (char) r[4 + 5];
                 const auto ok = [](char c) { return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z'); };
                 if (ok(a) && ok(b)) { s_colorway[0] = a; s_colorway[1] = b; }
-                s_color_state = ColorRead::Done;
+                bt_drop_feature(0x81);
+                s_color_state = ColorRead::Scrub;
+                s_color_deadline_us = now + 1000 * 1000;
                 return;
             }
             if (now > s_color_deadline_us) {  // older controller firmware: no answer, no color
-                s_color_state = ColorRead::Done;
+                bt_drop_feature(0x81);
+                s_color_state = ColorRead::Scrub;
+                s_color_deadline_us = now + 1000 * 1000;
                 return;
             }
             (void) get_feature_data(0x81, 64);  // ask again; the answer lands in the feature cache
             s_color_due_us = now + 40 * 1000;
+            return;
+        }
+        case ColorRead::Scrub: {
+            const std::vector<uint8_t> r = bt_peek_feature(0x81);
+            if (r.size() >= 3 && r[1] == 0x01 && r[2] == 0x13) bt_drop_feature(0x81);
+            if (now > s_color_deadline_us) s_color_state = ColorRead::Done;
             return;
         }
         default:
@@ -163,9 +181,12 @@ void controller_info_task() {
     }
 }
 }  // namespace
+#endif
 
 void cmd_task() {
+#if ENABLE_COMPANION_VENDOR
     controller_info_task();
+#endif
     if (!s_pending || time_us_64() < s_pending_due_us) return;
     s_pending = false;
     uint8_t result = CMD_RESULT_OK;
@@ -189,11 +210,17 @@ void cmd_task() {
         case 0x08:
             reset_usb_boot(0, 0);
             break;
-        case 0x09:
+        case 0x09: {
+            // Defaults, but the active slot stays (pairings are kept, and the
+            // radio is on it); applied like a host config write (Pico LED).
             config_default();
+            Config_body body = get_config();
+            body.current_slot = (uint8_t) bt_get_slot();
+            set_config((const uint8_t *) &body, sizeof(body));
             result = config_save() ? CMD_RESULT_OK : CMD_RESULT_FAILED;
             s_host_gen++;
             break;
+        }
         case 0x0A:
             if (bt_is_connected()) oled_send_trigger_preset(s_pending_arg);
             else result = CMD_RESULT_FAILED;
@@ -202,14 +229,26 @@ void cmd_task() {
             result = CMD_RESULT_INVALID;
             break;
     }
+    s_last_func = s_pending_func;
     s_last_result = result;
 }
 
+bool is_debug_cmd(uint8_t report_id) {
+    return report_id == 0xf2 ||  // last 16 host GET_REPORT requests
+           report_id == 0xf3 ||  // last host 0x02 output report
+           report_id == 0xf4;    // last host 0x02 output report with trigger FFB
+}
+
+// Ids the dongle answers itself instead of the controller. 0xF2 and 0xF4 are
+// also real DualSense feature reports, so the debug reports above are only
+// taken over on the HID path in serial (debug) builds; release builds pass them
+// through to the controller and serve the debug reports on the configurator
+// interface only.
 bool is_pico_cmd(uint8_t report_id) {
-    if (report_id == 0xf2 ||  // last 16 host GET_REPORT requests
-        report_id == 0xf3 ||  // last host 0x02 output report
-        report_id == 0xf4 ||  // last host 0x02 output report with trigger FFB
-        report_id == 0xf5 ||  // audio pipeline counters
+#if ENABLE_SERIAL
+    if (is_debug_cmd(report_id)) return true;
+#endif
+    if (report_id == 0xf5 ||  // audio pipeline counters
         report_id == 0xf6 ||
         report_id == 0xf7 ||
         report_id == 0xf8 ||
@@ -232,14 +271,16 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     //   [6]     sizeof(Config_body) [7] feature bits (see kIdentityFeatures)
     //   [8..9]  u16 SET sequence    [10] last SET function   [11] its result
     //   [12..15] u32 host config generation
-    //   [16] slot count  [17] current slot  [18] BT connected  [19] reserved
-    //   proto 1.1 (when reqlen >= 24):
+    //   [16] slot count  [17] current slot  [18] BT connected
+    //   [19] flags: bit0 settings in RAM differ from flash (proto 1.2, feature 0x40)
+    //   proto 1.1 (when reqlen >= 25):
     //   [20] controller flags: bit0 charging, bit1 battery full
     //   [21..23] current lightbar RGB (what the controller is showing)
     //   [24] battery level in 10% steps 0..10, 0xFF without a controller
     //   proto 1.2 (when reqlen >= 26):
     //   [25] player indicator LEDs set by the host, bits 0..4 left to right
-    //   [26] controller model: 0 DualSense, 1 DualSense Edge (when reqlen >= 29)
+    //   [26] controller model: 0 DualSense, 1 DualSense Edge, 0xFF not known
+    //        yet (when reqlen >= 29)
     //   [27..28] colorway code from the factory serial, ASCII ("02" = Cosmic
     //            Red), 0 0 while unknown or on controllers that don't answer
     // 0xF0 live input (vendor interface only, proto 1.2): the controller's
@@ -248,9 +289,9 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     // polls it ~30 Hz for the live controller view. Same core and context as
     // the Bluetooth writer, so the copy is consistent. Zeros without a controller.
     if (report_id == PICO_CMD_LIVE_INPUT) {
-        if (!bt_is_connected()) return reqlen < 63 ? reqlen : 63;
         const uint16_t n = reqlen < 63 ? reqlen : 63;
-        memcpy(buffer, interrupt_in_data, n);
+        if (bt_is_connected()) memcpy(buffer, interrupt_in_data, n);
+        else memset(buffer, 0, n);
         return n;
     }
     if (report_id == PICO_CMD_IDENTITY) {
@@ -260,9 +301,10 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
             0x04 |  // reboot / BOOTSEL (0x07, 0x08)
             0x08 |  // factory reset (0x09)
             0x10 |  // trigger preset preview (0x0A)
-            0x20;   // live input report (0xF0)
+            0x20 |  // live input report (0xF0)
+            0x40;   // unsaved-settings flag (identity [19] bit 0)
         if (reqlen < 20) return 0;
-        memset(buffer, 0, 20);
+        memset(buffer, 0, reqlen);
         buffer[0] = 'D'; buffer[1] = 'S'; buffer[2] = '5'; buffer[3] = 'O';
         buffer[4] = PICO_PROTO_MAJOR;
         buffer[5] = PICO_PROTO_MINOR;
@@ -275,6 +317,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         buffer[16] = kNumSlots;
         buffer[17] = (uint8_t) bt_get_slot();
         buffer[18] = bt_is_connected() ? 1 : 0;
+        buffer[19] = config_unsaved() ? 0x01 : 0;
         if (reqlen < 25) return 20;
         if (bt_is_connected()) {
             const uint8_t pwr = interrupt_in_data[52];   // low nibble level, high nibble power state
@@ -288,9 +331,14 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         if (reqlen < 26) return 25;
         buffer[25] = bt_is_connected() ? state_get_player_leds() : 0;
         if (reqlen < 29) return 26;
-        buffer[26] = (bt_is_connected() && is_dse) ? 1 : 0;
-        buffer[27] = (uint8_t) s_colorway[0];
-        buffer[28] = (uint8_t) s_colorway[1];
+#if ENABLE_COMPANION_VENDOR
+        // Reported once the colorway read has finished: by then the model
+        // (0x70 at connect) is the new controller's, not the previous one's.
+        const bool known = bt_is_connected() && (s_color_state == ColorRead::Scrub || s_color_state == ColorRead::Done);
+        buffer[26] = known ? (is_dse ? 1 : 0) : 0xFF;  // 0xFF: not known yet
+        buffer[27] = known ? (uint8_t) s_colorway[0] : 0;
+        buffer[28] = known ? (uint8_t) s_colorway[1] : 0;
+#endif
         return 29;
     }
     if (report_id == 0xf7) {
@@ -517,23 +565,25 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
 }
 
 void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
-    (void) report_id;
-    if (bufsize == 0) {
+    // Only 0xF6 carries commands; the other ids are read-only status reports.
+    if (report_id != PICO_CMD_SET || bufsize == 0) {
         return;
     }
 
     const uint8_t func = buffer[0];
     const uint8_t arg = bufsize >= 2 ? buffer[1] : 0xFF;
     s_cmd_seq++;
+
     s_last_func = func;
 
-    // Functions that run later in cmd_task() can't stack: a host must wait for
-    // 0xF1 to leave PENDING before sending the next one.
-    const bool deferred = func == 0x02 || (func >= 0x04 && func <= 0x0A);
-    if (deferred && s_pending) {
+    // While a deferred function is waiting to run in cmd_task(), every other
+    // SET is refused with BUSY (a host must wait for 0xF1 to leave PENDING
+    // first); cmd_task() reports the deferred one's result under its own id.
+    if (s_pending) {
         s_last_result = CMD_RESULT_BUSY;
         return;
     }
+    const bool deferred = func == 0x02 || (func >= 0x04 && func <= 0x0A);
 
     //   0x01 update config in RAM          0x02 write config to flash (deferred)
     //   0x03 reconnect tinyusb device      0x04 [slot] switch slot (deferred)
@@ -545,7 +595,15 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     switch (func) {
         case 0x01:
             printf("[CMD] Enter config set func\n");
-            set_config(buffer + 1, bufsize - 1);
+        {
+            // The active slot only changes through 0x04 (bt_set_slot): a host
+            // writing a config it read earlier must not move it back.
+            Config_body body = get_config();
+            const uint16_t n = bufsize - 1 < sizeof(body) ? bufsize - 1 : sizeof(body);
+            memcpy(&body, buffer + 1, n);
+            body.current_slot = (uint8_t) bt_get_slot();
+            set_config((const uint8_t *) &body, sizeof(body));
+        }
             s_host_gen++;
             break;
         case 0x02:
@@ -602,10 +660,18 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
             s_last_result = CMD_RESULT_INVALID;
             return;
         }
-        if (remap_set(buffer + 4)) printf("[CMD] remap set ok (rev=%u)\n", remap_revision());
-        else {
-            printf("[CMD] remap set rejected (invalid table)\n");
-            s_last_result = CMD_RESULT_INVALID;
+        switch (remap_set(buffer + 4)) {
+            case RemapSet::Ok:
+                printf("[CMD] remap set ok (rev=%u)\n", remap_revision());
+                break;
+            case RemapSet::Invalid:
+                printf("[CMD] remap set rejected (invalid table)\n");
+                s_last_result = CMD_RESULT_INVALID;
+                break;
+            case RemapSet::NotSaved:  // active now, but not in flash
+                printf("[CMD] remap applied, flash save failed\n");
+                s_last_result = CMD_RESULT_FAILED;
+                break;
         }
     }
 }

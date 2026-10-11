@@ -154,8 +154,9 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
         return false;
     }
     uint8_t const id = tu_u16_low(req->wValue);
-    // 0xF0/0xF1 exist only here (not on the HID path) and are GET-only.
-    bool const vendor_only = id == PICO_CMD_IDENTITY || id == PICO_CMD_LIVE_INPUT;
+    // 0xF0/0xF1 exist only here (not on the HID path), and the 0xF2-0xF4 debug
+    // reports only here in release builds; all are GET-only.
+    bool const vendor_only = id == PICO_CMD_IDENTITY || id == PICO_CMD_LIVE_INPUT || is_debug_cmd(id);
     if (!vendor_only && !is_pico_cmd(id)) return false;
     if (vendor_only && req->bRequest != VENDOR_REQ_GET) return false;
 

@@ -30,8 +30,11 @@ void remap_load();
 void remap_apply(uint8_t *report);
 
 // Validate + store + persist a new 16-entry table (each entry < 16, or 0xFF =
-// disabled). Bumps the revision on success. Returns false if the table is invalid.
-bool remap_set(const uint8_t *table);
+// disabled). Bumps the revision whenever the table is applied.
+enum class RemapSet : uint8_t { Ok, Invalid, NotSaved };
+// Applies a table (in RAM at once) and saves it. NotSaved: applied, but the
+// flash write failed, so it's lost at power-off.
+RemapSet remap_set(const uint8_t *table);
 
 // Copy the current 16-entry table out.
 void remap_get(uint8_t out[kRemapCount]);

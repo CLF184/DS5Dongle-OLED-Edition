@@ -128,13 +128,13 @@ void remap_get(uint8_t out[kRemapCount]) { memcpy(out, g_remap.table, kRemapCoun
 
 uint16_t remap_revision() { return g_revision; }
 
-bool remap_set(const uint8_t *table) {
-    if (!valid_table(table)) return false;
+RemapSet remap_set(const uint8_t *table) {
+    if (!valid_table(table)) return RemapSet::Invalid;
     memcpy(g_remap.table, table, kRemapCount);
     g_remap.magic = REMAP_MAGIC;
     recompute_active();
     g_revision++;
-    return save_to_flash();
+    return save_to_flash() ? RemapSet::Ok : RemapSet::NotSaved;
 }
 
 void remap_apply(uint8_t *report) {

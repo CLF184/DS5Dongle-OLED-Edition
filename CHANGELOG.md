@@ -10,6 +10,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ### Changed
 
+- **Configurator: only `0xF6` runs commands.** A SET to any other configurator id (e.g. `0xF2`, `0xF4`, which are also real DualSense feature reports) no longer runs `0xF6` functions such as wipe, BOOTSEL or factory reset. While a command is pending, every other one answers `BUSY`. The `0xF2`–`0xF4` debug reports are on the HID path only in serial (debug) builds; release builds pass `0xF2`/`0xF4` through to the controller like a real DualSense.
+- **The controller's serial number is not kept.** The cached reply that carries it is dropped as soon as the colorway is read, and the read only happens in builds with the configurator interface.
+- A config write or factory reset from the app no longer changes the active pairing slot (factory reset used to switch to slot 0 at the next boot).
+
 - **Releases now ship the configurator app with the firmware.** Each `vX.Y.Z-oled-edition` release has the app for Linux, Windows and macOS (with this firmware built in) plus the UF2. Release builds turn on the configurator USB interface. Built by `.github/workflows/release.yml` from one tag pushed by `tools/release.sh`; other releases (Proton builds) are no longer touched by it.
 - The app's update feed (`latest.json`) now lives in this repo (`tools/build_manifest.mjs`).
 
@@ -23,6 +27,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 - **Configurator commands.** An identity report (`0xF1`) with protocol version and last-command result; switch/forget/wipe pairing slots, reboot, reboot into BOOTSEL, factory reset and trigger preset preview over `0xF6`. Saving now reports success or failure.
 
 ### Fixed
+
+- The OLED's speaker level steps on a 5 dB grid again, so it can come back down from +12 dB to 0 dB.
+- The identity report no longer shows the previous controller's model, battery or input for the first moments after a different controller connects.
+- An empty USB output transfer is ignored instead of re-sending stale data to the controller.
 
 - **Host config changes now show on the dongle without a reboot.** Lightbar mode and favourites, and OLED brightness, were only read at boot; a dongle-side Settings save could also write its stale snapshot over changes made from the PC.
 

@@ -20,7 +20,7 @@ The app is all you need. Each release includes the matching firmware, so the app
 
 ![The app: your controller live, in its own colors](docs/screenshots/live-controller.png)
 
-Everything is on one screen. Your controller is drawn in its own colors and moves as you use it (buttons, triggers, sticks, touchpad, lightbar, player indicator). Click any part to set it up:
+Everything is on one screen. Your controller is drawn in its own colors and moves as you use it (buttons, triggers, sticks, touchpad, lightbar, player indicator), with live data under it: stick and trigger values, motion graphs, touch points and the link. A hands-on guided tour runs the first time. Click any part to set it up:
 
 - **Lightbar** modes and favorite colors; **L2 / R2** adaptive trigger effects and live pull; **button remapping** for any button or stick; **speaker** level (up to +12 dB) and **haptics** with live meters; the Bluetooth **mic**; the four **pairing slots** (PS button).
 - **Dongle:** OLED display, power, USB mode, diagnostics, and **one-click firmware updates**: the app restarts the dongle into its bootloader, flashes it and checks the result, with no BOOTSEL button and no drive copying.

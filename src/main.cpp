@@ -398,6 +398,9 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
 
     // INTERRUPT OUT
     if (report_id == 0) {
+        // Every report below starts with its id; a zero-length transfer (or a
+        // lone id) carries nothing, and `bufsize - 1` would wrap.
+        if (bufsize < 2) return;
         switch (buffer[0]) {
             case 0x02: {
                 g_host_out02_total++;
@@ -406,14 +409,14 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
                 if (bufsize > 1 && (buffer[1] & 0x0C)) {
                     g_host_out02_trig_allow++;
                 }
-                if (bufsize - 1 >= sizeof(g_last_out02)) {
+                if ((size_t) bufsize - 1 >= sizeof(g_last_out02)) {
                     memcpy(g_last_out02, buffer + 1, sizeof(g_last_out02));
                     if (buffer[1] & 0x0C) memcpy(g_last_out02_trig, buffer + 1, sizeof(g_last_out02_trig));
                 }
                 // state[] still tracks the host's state for the OLED (LED readout,
                 // trigger screens) and the BT-connect init.
                 state_update(buffer + 1, bufsize - 1);
-                if (bufsize - 1 < sizeof(SetStateData)) break;
+                if ((size_t) bufsize - 1 < sizeof(SetStateData)) break;
                 // Forward the host's report as-is, every time, as upstream does.
                 // Audio frames (0x39) no longer carry state, so this is the only
                 // path to the controller; sending the host's own allow bits (not a

@@ -67,6 +67,7 @@ struct __attribute__((packed)) Config {
 void config_default();
 void config_load();
 bool config_save();
+bool config_unsaved();  // RAM settings differ from flash
 const Config_body& get_config();
 void set_config(const uint8_t *new_config, const uint16_t len);
 void config_valid();

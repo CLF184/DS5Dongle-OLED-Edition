@@ -764,6 +764,10 @@ vector<uint8_t> get_feature_data(uint8_t reportId, uint16_t len) {
     return ret;
 }
 
+void bt_drop_feature(uint8_t reportId) {
+    feature_data.erase(reportId);
+}
+
 std::vector<uint8_t> bt_peek_feature(uint8_t reportId) {
     auto it = feature_data.find(reportId);
     return (it != feature_data.end()) ? it->second : std::vector<uint8_t>{};

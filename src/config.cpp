@@ -128,6 +128,14 @@ void config_valid() {
     }
 }
 
+// True when the settings in RAM differ from the ones saved in flash (or
+// nothing valid is saved yet). Core 0 only, like every flash write, so the
+// XIP read never races a write.
+bool config_unsaved() {
+    const Config *saved = flash_config();
+    return saved->magic != CONFIG_MAGIC || memcmp(&saved->body, &config.body, sizeof(Config_body)) != 0;
+}
+
 void config_load() {
     memcpy(&config, flash_config(), sizeof(Config));
 
