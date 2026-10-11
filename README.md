@@ -29,7 +29,7 @@ Everything is on one screen. Your controller is drawn in its own colors and move
 
 The app talks to firmware **v0.8 or newer** through a small configurator USB interface. Games never see it, so the dongle still looks exactly like a real DualSense. App source: **[MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web)**.
 
-> **The browser config tool** ([marcelinevpq.github.io/DS5Dongle-OLED-Config-Web](https://marcelinevpq.github.io/DS5Dongle-OLED-Config-Web/)) can still flash a Pico from Chrome/Edge, but its Config and Remap tabs only work on firmware older than v0.6.12. The desktop app replaces it.
+> **The browser config tool has been retired**: the desktop app does everything it did and more. Its old address, [marcelinevpq.github.io/DS5Dongle-OLED-Config-Web](https://marcelinevpq.github.io/DS5Dongle-OLED-Config-Web/), is now the app's download page. To flash a Pico without the app, hold BOOTSEL while plugging it in and copy the `.uf2` from the release onto the drive that appears.
 
 ---
 
