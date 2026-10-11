@@ -38,6 +38,7 @@ void bt_connection_watchdog_tick();
 
 // OLED add-on accessors.
 bool bt_is_connected();
+bool bt_disconnect();
 void bt_get_addr(uint8_t out[6]);
 uint32_t bt_hci_err_count();
 

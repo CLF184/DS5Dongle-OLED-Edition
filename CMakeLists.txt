@@ -91,8 +91,12 @@ add_executable(ds5-bridge
         src/oled.cpp
         src/slots.cpp
         src/remap.cpp
+        src/voice.cpp
         src/ram_mem.c
 )
+# The narrator's lines (tools/build_voice_bank.py), .incbin'd by voice.cpp.
+target_compile_definitions(ds5-bridge PRIVATE VOICE_BANK_FILE="${CMAKE_CURRENT_SOURCE_DIR}/src/voice_bank.bin")
+set_source_files_properties(src/voice.cpp PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/voice_bank.bin)
 
 if (ENABLE_BATT_LED)
         target_sources(ds5-bridge PRIVATE src/battery_led.cpp)

@@ -11,6 +11,7 @@
 #include "audio.h"
 #include "bt.h"
 #include "config.h"
+#include "voice.h"
 #include "device/usbd.h"
 #include "pico/time.h"
 #include "slots.h"
@@ -225,6 +226,10 @@ void cmd_task() {
             if (bt_is_connected()) oled_send_trigger_preset(s_pending_arg);
             else result = CMD_RESULT_FAILED;
             break;
+        case 0x0B:
+            result = config_save_narrator(s_pending_arg) ? CMD_RESULT_OK : CMD_RESULT_FAILED;
+            s_host_gen++;
+            break;
         default:
             result = CMD_RESULT_INVALID;
             break;
@@ -302,7 +307,8 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
             0x08 |  // factory reset (0x09)
             0x10 |  // trigger preset preview (0x0A)
             0x20 |  // live input report (0xF0)
-            0x40;   // unsaved-settings flag (identity [19] bit 0)
+            0x40 |  // unsaved-settings flag (identity [19] bit 0)
+            0x80;   // narrator firmware lines (0x0B, 0x0C; config narrator_voice)
         if (reqlen < 20) return 0;
         memset(buffer, 0, reqlen);
         buffer[0] = 'D'; buffer[1] = 'S'; buffer[2] = '5'; buffer[3] = 'O';
@@ -583,13 +589,15 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
         s_last_result = CMD_RESULT_BUSY;
         return;
     }
-    const bool deferred = func == 0x02 || (func >= 0x04 && func <= 0x0A);
+    const bool deferred = func == 0x02 || (func >= 0x04 && func <= 0x0B);
 
     //   0x01 update config in RAM          0x02 write config to flash (deferred)
     //   0x03 reconnect tinyusb device      0x04 [slot] switch slot (deferred)
     //   0x05 [slot] forget slot            0x06 wipe all slots
     //   0x07 reboot                        0x08 reboot into BOOTSEL
     //   0x09 factory reset + save          0x0A [preset] trigger preset preview
+    //   0x0B [v] narrator: 0xFF off, 1..7 language; saved (deferred)
+    //   0x0C [line][lang] say a narrator line now (app preview)
     //   0x10 remap table (below)
     s_last_result = CMD_RESULT_OK;
     switch (func) {
@@ -633,6 +641,15 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
         case 0x0A:
             if (arg >= kNumTriggerPresets) s_last_result = CMD_RESULT_INVALID;
             else defer(func, arg, 0);
+            break;
+        case 0x0B:
+            if (arg != 0xFF && (arg < 1 || arg > kVoiceNumLangs)) s_last_result = CMD_RESULT_INVALID;
+            else defer(func, arg, 0);
+            break;
+        case 0x0C:
+            if (bufsize < 3 || arg >= VOICE_NUM_LINES || buffer[2] >= kVoiceNumLangs) s_last_result = CMD_RESULT_INVALID;
+            else if (!bt_is_connected()) s_last_result = CMD_RESULT_FAILED;
+            else voice_say_lang(static_cast<VoiceLine>(arg), buffer[2]);
             break;
         case 0x10:
             break;

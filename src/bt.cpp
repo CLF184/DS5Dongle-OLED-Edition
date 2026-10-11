@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include "bt.h"
+#include "voice.h"
 #include "audio.h"
 #include <queue>
 #include <unordered_map>
@@ -113,8 +114,11 @@ void bt_set_slot(int slot) {
     config_save();
 
     if (bt_is_connected()) {
+        // The narrator names the new slot first (if she's on); then the drop.
         // DISCONNECTION_COMPLETE will restart inquiry under the new filter.
-        bt_disconnect();
+        voice_say(static_cast<VoiceLine>(VOICE_SLOT_0 + slot));
+        if (voice_active()) voice_disconnect_after_line();
+        else bt_disconnect();
     } else {
         gap_inquiry_stop();
         gap_inquiry_start(30);

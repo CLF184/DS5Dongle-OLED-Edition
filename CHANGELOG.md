@@ -8,6 +8,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+### Added
+
+- **Narrator on the dongle.** Short voice lines on the controller's speaker, in 7 languages: "Connected" when the controller connects, the new pairing slot when you switch (before it drops), and a battery warning at 10 % (once per connection). They work without the app, which turns them on and sets the language (off by default). Pre-encoded Opus in flash (`src/voice_bank.bin`, ~600 KB); while a line plays it takes the place of the game's speaker audio for a second or two. Configurator protocol 1.3: feature bit `0x80`, `0xF6` functions `0x0B` (narrator, saved on its own) and `0x0C` (say a line), config byte 37 `narrator_voice`.
+
 ### Changed
 
 - **Configurator: only `0xF6` runs commands.** A SET to any other configurator id (e.g. `0xF2`, `0xF4`, which are also real DualSense feature reports) no longer runs `0xF6` functions such as wipe, BOOTSEL or factory reset. While a command is pending, every other one answers `BUSY`. The `0xF2`–`0xF4` debug reports are on the HID path only in serial (debug) builds; release builds pass `0xF2`/`0xF4` through to the controller like a real DualSense.

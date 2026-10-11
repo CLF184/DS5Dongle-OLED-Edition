@@ -54,6 +54,10 @@ struct __attribute__((packed)) Config_body {
     // preserves the original "any controller activity wakes the screen"
     // behavior. Issues #8 (dim timeout never fired during play) and #9.
     uint8_t controller_wakes_display;
+    // The narrator's firmware lines (src/voice.cpp): 0xFF off (default, also
+    // erased flash), 1..7 = on, in en de fr es pt-BR zh-CN ja. Set by the app
+    // (0xF6 func 0x0B, saved on its own so it never saves other edits).
+    uint8_t narrator_voice;
 };
 
 struct __attribute__((packed)) Config {
@@ -68,6 +72,9 @@ void config_default();
 void config_load();
 bool config_save();
 bool config_unsaved();  // RAM settings differ from flash
+// Set the narrator byte in RAM and in flash, leaving every other saved
+// setting as it is in flash (unsaved edits stay unsaved).
+bool config_save_narrator(uint8_t value);
 const Config_body& get_config();
 void set_config(const uint8_t *new_config, const uint16_t len);
 void config_valid();

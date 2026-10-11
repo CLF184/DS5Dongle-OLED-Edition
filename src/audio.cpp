@@ -18,6 +18,7 @@
 #include "config.h"
 #include "state_mgr.h"
 #include "usb.h"
+#include "voice.h"
 
 #define INPUT_CHANNELS    4
 #define OUTPUT_CHANNELS   2
@@ -254,6 +255,11 @@ static void mic_drain() {
 // (upstream audio_bt_task). Both streams come from the same USB audio at the
 // same rate, so they stay paired; this halves the BT packet rate vs one 0x36
 // per frame.
+// When the host last sent audio through us: while it streams, the narrator's
+// frames ride in its reports; otherwise voice_task() sends them on its own.
+static uint64_t s_host_audio_us = 0;
+bool audio_host_streaming() { return time_us_64() - s_host_audio_us < 60 * 1000; }
+
 static void audio_bt_task() {
     if (queue_get_level(&haptics_fifo) < 2) return;
 #if !DISABLE_SPEAKER_PROC
@@ -294,10 +300,39 @@ static void audio_bt_task() {
     memcpy(pkt + 142, spk.data, SPEAKER_OPUS_SIZE);
     queue_try_remove(&audio_spk_fifo, &spk);
     memcpy(pkt + 142 + SPEAKER_OPUS_SIZE, spk.data, SPEAKER_OPUS_SIZE);
+    // A narrator line takes the speaker's place while it plays.
+    voice_take_frames(pkt + 142, pkt + 142 + SPEAKER_OPUS_SIZE, SPEAKER_OPUS_SIZE);
 #endif
 
     bt_write(pkt, sizeof(pkt));
     g_bt_packets++;
+}
+
+// A report carrying only the narrator: silent haptics, her two frames. For
+// when the host isn't streaming audio (voice_task paces it, 20 ms apart).
+void audio_send_voice_report() {
+#if !DISABLE_SPEAKER_PROC
+    uint8_t pkt[REPORT_SIZE]{};
+    pkt[0] = REPORT_ID;
+    pkt[1] = reportSeqCounter << 4;
+    reportSeqCounter = (reportSeqCounter + 1) & 0x0F;
+    pkt[2] = 0x11 | 0 << 6 | 1 << 7;
+    pkt[3] = 6;
+    pkt[4] = audio_mic_wanted() ? 0b01111111 : 0b01111110;
+    const auto buf_len = get_config().audio_buffer_length;
+    pkt[5] = buf_len;
+    pkt[6] = buf_len;
+    pkt[7] = buf_len;
+    pkt[8] = buf_len;
+    pkt[9] = packetCounter += 2;
+    pkt[10] = 0x12 | 1 << 6 | 1 << 7;
+    pkt[11] = SAMPLE_SIZE;  // haptics: 2 frames of silence
+    pkt[140] = (plug_headset ? 0x16 : 0x13) | 1 << 6 | 1 << 7;
+    pkt[141] = SPEAKER_OPUS_SIZE;
+    if (!voice_take_frames(pkt + 142, pkt + 142 + SPEAKER_OPUS_SIZE, SPEAKER_OPUS_SIZE)) return;
+    bt_write(pkt, sizeof(pkt));
+    g_bt_packets++;
+#endif
 }
 
 void audio_loop() {
@@ -317,6 +352,7 @@ void audio_loop() {
         return;
     }
     g_usb_frames += (uint32_t)frames;
+    s_host_audio_us = time_us_64();
 
     static float audio_buf[512 * 2];
     static uint audio_buf_pos = 0;

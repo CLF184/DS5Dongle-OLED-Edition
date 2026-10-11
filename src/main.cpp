@@ -8,6 +8,7 @@
 #include "utils.h"
 #include "resample.h"
 #include "audio.h"
+#include "voice.h"
 #include "hardware/clocks.h"
 #include "hardware/vreg.h"
 #include "hardware/watchdog.h"
@@ -518,6 +519,7 @@ int main() {
         tud_task();
         cmd_task();
         audio_loop();
+        voice_task();
         interrupt_loop();
         oled_loop();
 #if ENABLE_BATT_LED

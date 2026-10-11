@@ -122,6 +122,7 @@ void config_valid() {
         body->controller_wakes_display = 1;
         printf("[Config] controller_wakes_display invalid, defaulting to 1 (on)\n");
     }
+    if (body->narrator_voice < 1 || body->narrator_voice > 7) body->narrator_voice = 0xFF; // off
     if (body->config_version != CONFIG_VERSION) {
         body->config_version = CONFIG_VERSION;
         printf("[Config] Warning: Config may breaking change\n");
@@ -165,11 +166,11 @@ void config_default() {
     config_valid();
 }
 
-bool config_save() {
-    config.crc32 = calc_config_crc(config);
+static bool write_config(Config &con) {
+    con.crc32 = calc_config_crc(con);
     alignas(4) uint8_t page[FLASH_PAGE_SIZE];
     memset(page, 0xff, sizeof(page));
-    memcpy(page, &config, sizeof(Config));
+    memcpy(page, &con, sizeof(Config));
 
     if (!flash_sector_write(CONFIG_FLASH_OFFSET, page)) {
         printf("[Flash] core1 lockout timed out, write skipped\n");
@@ -179,12 +180,27 @@ bool config_save() {
     Config verify{};
     memcpy(&verify, flash_config(), sizeof(verify));
     const auto verify_crc32 = calc_config_crc(verify);
-    if (verify_crc32 == config.crc32) {
+    if (verify_crc32 == con.crc32) {
         printf("[Config] Config write flash verify success\n");
         return true;
     }
     printf("[Config] Config write flash verify failed\n");
     return false;
+}
+
+bool config_save() { return write_config(config); }
+
+bool config_save_narrator(uint8_t value) {
+    config.body.narrator_voice = value;
+    config_valid();
+    // Flash's copy with only this byte changed; nothing valid saved yet = RAM.
+    const Config *saved = flash_config();
+    Config page = saved->magic == CONFIG_MAGIC ? *saved : config;
+    page.magic = CONFIG_MAGIC;
+    page.version = CONFIG_VERSION;
+    page.size = sizeof(Config_body);  // an older, shorter body grows here
+    page.body.narrator_voice = config.body.narrator_voice;
+    return write_config(page);
 }
 
 const Config_body& get_config() {

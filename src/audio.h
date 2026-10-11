@@ -46,4 +46,8 @@ bool audio_mic_wanted();
 // New BT link: re-send the mic-stream state to the controller.
 void audio_on_bt_connected();
 
+// The narrator (voice.cpp): is the host streaming audio through us, and
+// send one report carrying only her frames.
+bool audio_host_streaming();
+void audio_send_voice_report();
 #endif //DS5_BRIDGE_AUDIO_H
