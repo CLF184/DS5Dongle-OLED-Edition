@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+## [0.8.1-oled-edition] — 2026-10-11
+
 ### Fixed
 
 - **Rumble no longer cancelled by the dongle's own reports.** The lightbar colour (sent ~10× a second while charging or on a non-HOST lightbar mode), volume changes, the trigger preview and the connect state now carry the game's current rumble instead of "no rumble", which could stop rumble in some games (reported in Crimson Desert) while haptics and triggers kept working. The game's rumble is forgotten on disconnect so a reconnect never resumes it.
