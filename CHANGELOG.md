@@ -17,6 +17,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 - **Configurator interface (build flag `ENABLE_COMPANION_VENDOR`, off by default).** A control-only vendor USB interface for the upcoming desktop configurator. Linux's `hid_playstation` leaves it alone, and Windows binds WinUSB to it with no driver install. The gamepad descriptor stays byte-identical to a real DualSense.
 - **Speaker boost up to +12 dB.** The speaker level (app, OLED Settings) now goes above 0 dB, as digital gain on the game audio before encoding; anything past full scale is clipped cleanly. +12 dB was the loudest clean setting on a mastered music test with the desktop volume at 85 %. The UAC volume reported to the PC stays capped at 0 dB.
+- **Controller model, colorway and player indicator (protocol 1.2).** The identity report adds which controller is connected (DualSense or Edge), its colorway code (read once per connection from the controller's factory serial with Sony's read-only test command; only the two colorway characters are kept) and the player-indicator LEDs the PC set.
+- **Live input report (protocol 1.2).** `0xF0` on the configurator interface returns the controller's current input (buttons, sticks, triggers, touchpad, motion, battery) for the desktop app's live controller view.
 - **Identity report 1.1.** `0xF1` also carries charging state, the controller's current lightbar color and battery level, for the desktop app's tray icon.
 - **Configurator commands.** An identity report (`0xF1`) with protocol version and last-command result; switch/forget/wipe pairing slots, reboot, reboot into BOOTSEL, factory reset and trigger preset preview over `0xF6`. Saving now reports success or failure.
 

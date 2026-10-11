@@ -154,8 +154,10 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
         return false;
     }
     uint8_t const id = tu_u16_low(req->wValue);
-    if (id != PICO_CMD_IDENTITY && !is_pico_cmd(id)) return false;
-    if (id == PICO_CMD_IDENTITY && req->bRequest != VENDOR_REQ_GET) return false;
+    // 0xF0/0xF1 exist only here (not on the HID path) and are GET-only.
+    bool const vendor_only = id == PICO_CMD_IDENTITY || id == PICO_CMD_LIVE_INPUT;
+    if (!vendor_only && !is_pico_cmd(id)) return false;
+    if (vendor_only && req->bRequest != VENDOR_REQ_GET) return false;
 
     switch (req->bRequest) {
         case VENDOR_REQ_GET: {

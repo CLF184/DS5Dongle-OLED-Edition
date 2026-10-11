@@ -104,7 +104,68 @@ static void defer(uint8_t func, uint8_t arg, uint32_t delay_ms) {
     s_last_result = CMD_RESULT_PENDING;
 }
 
+// Controller colorway. The DualSense keeps its factory serial number behind
+// Sony's read-only test command (SET 0x80 [device 0x01 SYSTEM, action 0x13
+// READ_SERIAL_NUMBER], then GET 0x81 until status 2 = complete); characters
+// 5-6 of it are the colorway code ("02" = Cosmic Red ...). Read once per
+// connection, ~1.5 s after it comes up (after the connect-time feature reads).
+// Only this one read action is ever sent on that channel (it also carries
+// calibration writes), and only the two colorway characters are kept: the
+// serial itself is a unique id the app has no use for.
+namespace {
+enum class ColorRead : uint8_t { Idle, Waiting, Polling, Done };
+ColorRead s_color_state = ColorRead::Idle;
+uint64_t s_color_due_us = 0;
+uint64_t s_color_deadline_us = 0;
+bool s_was_connected = false;
+char s_colorway[2] = {0, 0};
+
+void controller_info_task() {
+    const bool connected = bt_is_connected();
+    const uint64_t now = time_us_64();
+    if (connected != s_was_connected) {
+        s_was_connected = connected;
+        s_colorway[0] = s_colorway[1] = 0;
+        s_color_state = connected ? ColorRead::Waiting : ColorRead::Idle;
+        s_color_due_us = now + 1500 * 1000;
+    }
+    if (!connected) return;
+    switch (s_color_state) {
+        case ColorRead::Waiting: {
+            if (now < s_color_due_us) return;
+            uint8_t cmd[63] = {0x01, 0x13};  // SYSTEM, READ_SERIAL_NUMBER (checksum added by set_feature_data)
+            set_feature_data(0x80, cmd, sizeof(cmd));
+            s_color_state = ColorRead::Polling;
+            s_color_due_us = now + 40 * 1000;
+            s_color_deadline_us = now + 2000 * 1000;
+            return;
+        }
+        case ColorRead::Polling: {
+            if (now < s_color_due_us) return;
+            const std::vector<uint8_t> r = bt_peek_feature(0x81);  // [0x81, device, action, status, data...]
+            if (r.size() >= 4 + 6 && r[1] == 0x01 && r[2] == 0x13 && r[3] == 2) {
+                const char a = (char) r[4 + 4], b = (char) r[4 + 5];
+                const auto ok = [](char c) { return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z'); };
+                if (ok(a) && ok(b)) { s_colorway[0] = a; s_colorway[1] = b; }
+                s_color_state = ColorRead::Done;
+                return;
+            }
+            if (now > s_color_deadline_us) {  // older controller firmware: no answer, no color
+                s_color_state = ColorRead::Done;
+                return;
+            }
+            (void) get_feature_data(0x81, 64);  // ask again; the answer lands in the feature cache
+            s_color_due_us = now + 40 * 1000;
+            return;
+        }
+        default:
+            return;
+    }
+}
+}  // namespace
+
 void cmd_task() {
+    controller_info_task();
     if (!s_pending || time_us_64() < s_pending_due_us) return;
     s_pending = false;
     uint8_t result = CMD_RESULT_OK;
@@ -176,13 +237,30 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     //   [20] controller flags: bit0 charging, bit1 battery full
     //   [21..23] current lightbar RGB (what the controller is showing)
     //   [24] battery level in 10% steps 0..10, 0xFF without a controller
+    //   proto 1.2 (when reqlen >= 26):
+    //   [25] player indicator LEDs set by the host, bits 0..4 left to right
+    //   [26] controller model: 0 DualSense, 1 DualSense Edge (when reqlen >= 29)
+    //   [27..28] colorway code from the factory serial, ASCII ("02" = Cosmic
+    //            Red), 0 0 while unknown or on controllers that don't answer
+    // 0xF0 live input (vendor interface only, proto 1.2): the controller's
+    // current input report exactly as received over Bluetooth (USB report
+    // 0x01 without the report id, before button remapping), 63 bytes. The app
+    // polls it ~30 Hz for the live controller view. Same core and context as
+    // the Bluetooth writer, so the copy is consistent. Zeros without a controller.
+    if (report_id == PICO_CMD_LIVE_INPUT) {
+        if (!bt_is_connected()) return reqlen < 63 ? reqlen : 63;
+        const uint16_t n = reqlen < 63 ? reqlen : 63;
+        memcpy(buffer, interrupt_in_data, n);
+        return n;
+    }
     if (report_id == PICO_CMD_IDENTITY) {
         constexpr uint8_t kIdentityFeatures =
             0x01 |  // remap table (0x10)
             0x02 |  // slot switch / forget / wipe (0x04-0x06)
             0x04 |  // reboot / BOOTSEL (0x07, 0x08)
             0x08 |  // factory reset (0x09)
-            0x10;   // trigger preset preview (0x0A)
+            0x10 |  // trigger preset preview (0x0A)
+            0x20;   // live input report (0xF0)
         if (reqlen < 20) return 0;
         memset(buffer, 0, 20);
         buffer[0] = 'D'; buffer[1] = 'S'; buffer[2] = '5'; buffer[3] = 'O';
@@ -207,7 +285,13 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         } else {
             buffer[24] = 0xFF;
         }
-        return 25;
+        if (reqlen < 26) return 25;
+        buffer[25] = bt_is_connected() ? state_get_player_leds() : 0;
+        if (reqlen < 29) return 26;
+        buffer[26] = (bt_is_connected() && is_dse) ? 1 : 0;
+        buffer[27] = (uint8_t) s_colorway[0];
+        buffer[28] = (uint8_t) s_colorway[1];
+        return 29;
     }
     if (report_id == 0xf7) {
         printf("[HID] Receive 0xf7 getting config\n");

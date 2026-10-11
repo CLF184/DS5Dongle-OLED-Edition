@@ -17,6 +17,9 @@ void state_update(const uint8_t *data, const uint8_t size);
 // host/audio frame instead of only the transient send_lightbar_color() packet.
 void state_set_led(uint8_t r, uint8_t g, uint8_t b);
 void state_get_led(uint8_t *r, uint8_t *g, uint8_t *b);
+// Player indicator (the 5 white LEDs under the touchpad) as last set by the
+// host: bits 0..4, one per LED left to right.
+uint8_t state_get_player_leds();
 // Controller amp volume (0..0x64 speaker, 0..0x7f headphones). Stored in
 // state[] for the BT-connect init and pushed to the controller immediately.
 void state_set_volume(uint8_t headphones, uint8_t speaker);
