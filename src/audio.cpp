@@ -361,7 +361,8 @@ void audio_loop() {
     int nframes = resampler.ResamplePrepare(frames, OUTPUT_CHANNELS, &in_buf);
 
     const float audio_gain = mute[0] ? 0.0f : powf(10.0f, get_config().speaker_volume / 20.0f);
-    const float haptics_gain = get_config().haptics_gain;
+    const float haptics_gain = get_config().haptics_gain;             // left grip
+    const float haptics_gain_r = get_config().haptics_gain_right;     // right grip
     uint16_t spk_max = g_peak_spk;
     uint16_t hap_max = g_peak_hap;
 
@@ -470,7 +471,7 @@ void audio_loop() {
     for (int i = 0; i < out_frames; i++) {
         // Gain after the resampler, as upstream (a55fd46).
         int val_l = static_cast<int>(out_buf[i * 2] * 127.0f * haptics_gain);
-        int val_r = static_cast<int>(out_buf[i * 2 + 1] * 127.0f * haptics_gain);
+        int val_r = static_cast<int>(out_buf[i * 2 + 1] * 127.0f * haptics_gain_r);
         haptic_buf[haptic_buf_pos++] = (int8_t) clamp(val_l, -128, 127); // 似乎clamp有点多余？还是以防万一吧
         haptic_buf[haptic_buf_pos++] = (int8_t) clamp(val_r, -128, 127);
 

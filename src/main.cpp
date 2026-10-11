@@ -32,6 +32,31 @@
 #include "pico/multicore.h"
 
 uint8_t reportSeqCounter = 0; // 4-bit BT output sequence, shared with audio.cpp
+
+// A rumble motor value times a grip haptics strength [1,6], clamped.
+static uint8_t scale_rumble(uint8_t v, float gain) {
+    const int s = (int) ((float) v * gain + 0.5f);
+    return (uint8_t) (s > 255 ? 255 : s);
+}
+
+// Rumble only (nothing else in the report is allowed to change), for the
+// app's grip test (0xF6 0x0E). Main-loop context, like the host forward.
+void send_rumble(uint8_t left, uint8_t right) {
+    uint8_t outputData[78]{};
+    outputData[0] = 0x31;
+    outputData[1] = reportSeqCounter << 4;
+    reportSeqCounter = (reportSeqCounter + 1) & 0x0F;
+    outputData[2] = 0x10;
+    outputData[3] = 0x03;          // EnableRumbleEmulation | UseRumbleNotHaptics
+    outputData[3 + 2] = right;     // RumbleEmulationRight (light)
+    outputData[3 + 3] = left;      // RumbleEmulationLeft (heavy)
+    bt_write(outputData, sizeof(outputData));
+}
+
+// The grip test's level before the strength (strength 1 = 64, 4+ = full).
+uint8_t grip_test_level(bool left) {
+    return scale_rumble(64, left ? get_config().haptics_gain : get_config().haptics_gain_right);
+}
 uint8_t packetCounter = 0;
 bool spk_active = false;
 extern bool g_lightbar_override; // oled.cpp: OLED owns the lightbar
@@ -433,6 +458,10 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
                 reportSeqCounter = (reportSeqCounter + 1) & 0x0F;
                 outputData[2] = 0x10;
                 memcpy(outputData + 3, buffer + 1, sizeof(SetStateData));
+                // Classic rumble follows the grip haptics strengths too
+                // (SetStateData [2] right / light motor, [3] left / heavy).
+                outputData[3 + 2] = scale_rumble(outputData[3 + 2], get_config().haptics_gain_right);
+                outputData[3 + 3] = scale_rumble(outputData[3 + 3], get_config().haptics_gain);
                 if (g_lightbar_override) {
                     outputData[3 + 1] &= ~0x04; // OLED owns the lightbar: drop AllowLedColor
                 }

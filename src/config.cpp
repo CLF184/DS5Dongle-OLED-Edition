@@ -52,6 +52,9 @@ void config_valid() {
         body->haptics_gain = 1.0f;
         printf("[Config] Haptics Gain value is invalid\n");
     }
+    if (std::isnan(body->haptics_gain_right) || body->haptics_gain_right < 1.0f || body->haptics_gain_right > 6.0f) {
+        body->haptics_gain_right = body->haptics_gain;
+    }
     if (std::isnan(body->speaker_volume) || body->speaker_volume < -100 || body->speaker_volume > 12) {
         body->speaker_volume = 0;  // OLED Edition: 0 dB default (unity); -100 would be silent
         printf("[Config] Speaker Volume is invalid, defaulting to 0 dB\n");
@@ -209,7 +212,11 @@ const Config_body& get_config() {
 
 void set_config(const uint8_t *new_config, const uint16_t len) {
     const auto copy_len = len < sizeof(Config_body) ? len : sizeof(Config_body);
+    // The narrator has its own command (0x0B): a settings write never changes
+    // it, so a body long enough to reach the fields after it is safe to send.
+    const uint8_t narrator = config.body.narrator_voice;
     memcpy(&config.body, new_config, copy_len);
+    config.body.narrator_voice = narrator;
     config_valid();
     if (config.body.disable_pico_led) {
         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);

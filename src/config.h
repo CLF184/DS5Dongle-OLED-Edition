@@ -9,7 +9,7 @@
 
 struct __attribute__((packed)) Config_body {
     uint8_t config_version; // Config Version
-    float haptics_gain; // [1.0,6.0]
+    float haptics_gain; // [1.0,6.0] left grip (and both while the app links them)
     float speaker_volume; // [-100,+12] dB digital gain on the speaker PCM; >0 boosts (hard-clipped at full scale)
     uint8_t inactive_time; // [5,60] min
     uint8_t disable_inactive_disconnect; // bool: 0 disable,1 enable
@@ -58,6 +58,9 @@ struct __attribute__((packed)) Config_body {
     // erased flash), 1..7 = on, in en de fr es pt-BR zh-CN ja. Set by the app
     // (0xF6 func 0x0B, saved on its own so it never saves other edits).
     uint8_t narrator_voice;
+    // Right grip haptics strength [1.0,6.0] (protocol 1.6). Older configs and
+    // erased flash (NaN) take the left value, so both sides stay as they were.
+    float haptics_gain_right;
 };
 
 struct __attribute__((packed)) Config {

@@ -1501,10 +1501,14 @@ void settings_adjust(int delta) {
     Config_body &c = settings_local;
     settings_dirty = true;
     switch (settings_sel) {
-        case 0: { // haptics_gain  [1.0, 6.0] step 0.5
-            int v = (int)(c.haptics_gain * 10.0f + 0.5f) + delta * 5;
-            if (v < 10) v = 10; if (v > 60) v = 60;
-            c.haptics_gain = v / 10.0f;
+        case 0: { // haptics_gain  [1.0, 6.0] step 0.5; both grips move together
+            auto step = [delta](float g) {
+                int v = (int)(g * 10.0f + 0.5f) + delta * 5;
+                if (v < 10) v = 10; if (v > 60) v = 60;
+                return v / 10.0f;
+            };
+            c.haptics_gain = step(c.haptics_gain);
+            c.haptics_gain_right = step(c.haptics_gain_right);
             break;
         }
         case 1: { // speaker_volume  [-100, +12] step 5 on multiples of 5 (ends at +12)
@@ -1639,7 +1643,9 @@ __attribute__((noinline)) void format_settings_item(int idx, char* line, size_t 
     switch (idx) {
         case 0: {
             int g = (int)(c.haptics_gain * 10.0f + 0.5f);
-            snprintf(line, n, "%s Hap Gain %d.%dx", cur, g / 10, g % 10);
+            int r = (int)(c.haptics_gain_right * 10.0f + 0.5f);
+            if (g == r) snprintf(line, n, "%s Hap Gain %d.%dx", cur, g / 10, g % 10);
+            else snprintf(line, n, "%s Hap L%d.%d R%d.%d", cur, g / 10, g % 10, r / 10, r % 10);
             break;
         }
         case 1: snprintf(line, n, "%s Spk Vol %+ddB", cur, (int)c.speaker_volume); break;

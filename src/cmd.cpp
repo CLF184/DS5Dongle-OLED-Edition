@@ -25,6 +25,11 @@
 #include "hardware/watchdog.h"
 #include "pico/bootrom.h"
 
+// main.cpp: the grip test's rumble (0x0E).
+void send_rumble(uint8_t left, uint8_t right);
+uint8_t grip_test_level(bool left);
+static uint64_t s_rumble_stop_us = 0; // a grip test is buzzing until then
+
 uint16_t cpu_temp_raw_smoothed() {
     // One-time ADC bring-up. This is the only place the ADC is initialised
     // now (oled.cpp's CPU screen calls through here too). Runs on core0
@@ -189,6 +194,10 @@ void cmd_task() {
 #if ENABLE_COMPANION_VENDOR
     controller_info_task();
 #endif
+    if (s_rumble_stop_us && time_us_64() >= s_rumble_stop_us) {
+        s_rumble_stop_us = 0;
+        if (bt_is_connected()) send_rumble(0, 0);
+    }
     if (!s_pending || time_us_64() < s_pending_due_us) return;
     s_pending = false;
     uint8_t result = CMD_RESULT_OK;
@@ -226,6 +235,14 @@ void cmd_task() {
         case 0x0A:
             if (bt_is_connected()) oled_send_trigger_preset(s_pending_arg);
             else result = CMD_RESULT_FAILED;
+            break;
+        case 0x0E: // grip test: 0 left, 1 right, 2 both, ~0.5 s at the current strengths
+            if (!bt_is_connected()) {
+                result = CMD_RESULT_FAILED;
+                break;
+            }
+            send_rumble(s_pending_arg != 1 ? grip_test_level(true) : 0, s_pending_arg != 0 ? grip_test_level(false) : 0);
+            s_rumble_stop_us = time_us_64() + 500000;
             break;
         case 0x0B:
             result = config_save_narrator(s_pending_arg) ? CMD_RESULT_OK : CMD_RESULT_FAILED;
@@ -356,7 +373,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
 #endif
         if (reqlen < 30) return 29;
         // proto 1.4: [29] more feature bits. bit0 screen mirror (0xEF).
-        buffer[29] = 0x01 | 0x02;  // bit1: calibration (0xEE get, 0xF6 0x0D set)
+        buffer[29] = 0x01 | 0x02 | 0x04;  // bit1: calibration (0xEE get, 0xF6 0x0D set); bit2: grip test (0x0E, proto 1.6)
         return 30;
     }
     if (report_id == 0xf7) {
@@ -652,6 +669,10 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
             break;
         case 0x0A:
             if (arg >= kNumTriggerPresets) s_last_result = CMD_RESULT_INVALID;
+            else defer(func, arg, 0);
+            break;
+        case 0x0E:
+            if (arg > 2) s_last_result = CMD_RESULT_INVALID;
             else defer(func, arg, 0);
             break;
         case 0x0B:
