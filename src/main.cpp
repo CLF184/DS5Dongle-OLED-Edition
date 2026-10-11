@@ -24,6 +24,7 @@
 #endif
 #include "oled.h"
 #include "remap.h"
+#include "calib.h"
 
 // Pico SDK speciifically for waiting on conditions
 #include "pico/critical_section.h"
@@ -127,6 +128,7 @@ void interrupt_loop() {
         // the reboot combo above and every OLED screen keep seeing physical input.
         uint8_t out[63];
         memcpy(out, interrupt_in_data, 63);
+        calib_apply(out);
         remap_apply(out);
         if (!tud_hid_report(0x01, out, 63)) {
             printf("[USBHID] tud_hid_report error\n");
@@ -148,7 +150,10 @@ void interrupt_loop() {
     critical_section_exit(&report_cs);
 
     // Remap the snapshot, not interrupt_in_data (outgoing copy only — see above).
-    if (should_send) remap_apply(safe_report);
+    if (should_send) {
+        calib_apply(safe_report);
+        remap_apply(safe_report);
+    }
 
     // Only send to TinyUSB if we actually grabbed fresh data
     if (should_send) {
@@ -504,6 +509,7 @@ int main() {
 
     config_load();
     remap_load();
+    calib_load();
 
     bt_init();
     bt_register_data_callback(on_bt_data);

@@ -16,6 +16,7 @@
 #include "pico/time.h"
 #include "slots.h"
 #include "remap.h"
+#include "calib.h"
 #include "oled.h"
 #include "state_mgr.h"
 #include "hardware/clocks.h"
@@ -293,6 +294,12 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     // 0x01 without the report id, before button remapping), 63 bytes. The app
     // polls it ~30 Hz for the live controller view. Same core and context as
     // the Bluetooth writer, so the copy is consistent. Zeros without a controller.
+    // 0xEE calibration (vendor interface only, proto 1.5): the 18-byte CalibBody.
+    if (report_id == PICO_CMD_CALIB) {
+        if (reqlen < kCalibBodySize) return 0;
+        calib_get(buffer);
+        return kCalibBodySize;
+    }
     if (report_id == PICO_CMD_LIVE_INPUT) {
         const uint16_t n = reqlen < 63 ? reqlen : 63;
         if (bt_is_connected()) memcpy(buffer, interrupt_in_data, n);
@@ -347,7 +354,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
 #endif
         if (reqlen < 30) return 29;
         // proto 1.4: [29] more feature bits. bit0 screen mirror (0xEF).
-        buffer[29] = 0x01;
+        buffer[29] = 0x01 | 0x02;  // bit1: calibration (0xEE get, 0xF6 0x0D set)
         return 30;
     }
     if (report_id == 0xf7) {
@@ -601,7 +608,7 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     //   0x09 factory reset + save          0x0A [preset] trigger preset preview
     //   0x0B [v] narrator: 0xFF off, 1..7 language; saved (deferred)
     //   0x0C [line][lang] say a narrator line now (app preview)
-    //   0x10 remap table (below)
+    //   0x0D calibration (below)           0x10 remap table (below)
     s_last_result = CMD_RESULT_OK;
     switch (func) {
         case 0x01:
@@ -654,6 +661,7 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
             else if (!bt_is_connected()) s_last_result = CMD_RESULT_FAILED;
             else voice_say_lang(static_cast<VoiceLine>(arg), buffer[2]);
             break;
+        case 0x0D:
         case 0x10:
             break;
         default:
@@ -668,6 +676,20 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     //   [2]      'M'
     //   [3]      protocol version (must == kRemapProtoVer)
     //   [4..19]  16-byte remap table
+    // 0x0D set calibration (proto 1.5): [0x0D]['C']['L'][ver][18-byte CalibBody].
+    if (buffer[0] == 0x0D) {
+        if (bufsize < 4 + kCalibBodySize || buffer[1] != 'C' || buffer[2] != 'L' || buffer[3] != kCalibProtoVer) {
+            s_last_result = CMD_RESULT_INVALID;
+            return;
+        }
+        switch (calib_set(buffer + 4)) {
+            case CalibSet::Ok: break;
+            case CalibSet::Invalid: s_last_result = CMD_RESULT_INVALID; break;
+            case CalibSet::NotSaved: s_last_result = CMD_RESULT_FAILED; break;
+        }
+        s_host_gen++;
+        return;
+    }
     if (buffer[0] == 0x10) {
         constexpr uint16_t kNeed = 4 + kRemapCount;
         if (bufsize < kNeed) {

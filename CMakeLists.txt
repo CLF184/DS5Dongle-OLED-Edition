@@ -89,6 +89,7 @@ add_executable(ds5-bridge
         src/cmd.cpp
         src/state_mgr.cpp
         src/oled.cpp
+        src/calib.cpp
         src/slots.cpp
         src/remap.cpp
         src/voice.cpp

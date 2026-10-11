@@ -17,8 +17,9 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer,uint16_t bufsize);
 #define PICO_CMD_SET 0xf6        // the only id that carries commands (SET)
 #define PICO_CMD_LIVE_INPUT 0xf0   // vendor interface only (a real DS5 uses F0-F2 for firmware update)
 #define PICO_PROTO_MAJOR 1
+#define PICO_CMD_CALIB 0xee       // vendor interface only, GET, calibration body (proto 1.5)
 #define PICO_CMD_OLED_MIRROR 0xef // vendor interface only, GET, 1028 bytes (proto 1.4)
-#define PICO_PROTO_MINOR 4
+#define PICO_PROTO_MINOR 5
 
 // Result of the last 0xF6 SET, reported in 0xF1.
 enum : uint8_t {
