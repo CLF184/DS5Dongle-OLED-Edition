@@ -533,6 +533,7 @@ int main() {
         audio_loop();
         voice_task();
         interrupt_loop();
+        calib_service();
         oled_loop();
 #if ENABLE_BATT_LED
         battery_led_tick();

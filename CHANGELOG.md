@@ -10,7 +10,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ### Added
 
-- **Calibration in the dongle (protocol 1.5).** Stick center offset, deadzone and full-tilt radius, trigger travel and gyro zero, stored in their own flash sector and applied to the report games receive (the live input the app reads stays raw). Nothing is written to the controller; an identity calibration is a no-op. Set with 0xF6 function 0x0D ['C','L',ver, 18-byte body], read with 0xEE; identity [29] bit 1 announces it.
+- **Calibration in the dongle (protocol 1.5), per pairing slot.** Stick center offset, deadzone and full-tilt radius (each half-axis scaled to its own reach, so full tilt reaches both ends even when the center leans), trigger travel and gyro zero, one set per pairing slot in their own flash sector, applied to the report games receive (the live input the app reads stays raw). Untouched sticks and triggers pass straight through. The gyro zero removes only what's left after the controller's factory bias (which games already subtract). Nothing is written to the controller. Set with 0xF6 function 0x0D ['C','L',2, slot, 18-byte body], read with 0xEE ([slot] + body); identity [29] bit 1 announces it.
+- The OLED brightness saved in Settings now applies from the first frame (the panel started at a fixed contrast the screen mirror didn't report).
 - **Screen mirror for the app (protocol 1.4).** A read-only vendor request (`0xEF`) returns the OLED image exactly as last sent to the panel, with the current screen, contrast and power state, so the app shows the dongle's screen pixel for pixel. Works without the OLED add-on fitted (the firmware draws the same frames either way). Announced by a new feature byte in the identity report ([29] bit 0).
 
 ## [0.8.1-oled-edition] — 2026-10-11

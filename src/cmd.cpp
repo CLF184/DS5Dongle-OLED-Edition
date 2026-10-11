@@ -294,11 +294,13 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     // 0x01 without the report id, before button remapping), 63 bytes. The app
     // polls it ~30 Hz for the live controller view. Same core and context as
     // the Bluetooth writer, so the copy is consistent. Zeros without a controller.
-    // 0xEE calibration (vendor interface only, proto 1.5): the 18-byte CalibBody.
+    // 0xEE calibration (vendor interface only, proto 1.5): [slot] + that
+    // slot's 18-byte CalibBody, for the slot in use now.
     if (report_id == PICO_CMD_CALIB) {
-        if (reqlen < kCalibBodySize) return 0;
-        calib_get(buffer);
-        return kCalibBodySize;
+        if (reqlen < 1 + kCalibBodySize) return 0;
+        buffer[0] = (uint8_t) bt_get_slot();
+        calib_get(buffer[0], buffer + 1);
+        return 1 + kCalibBodySize;
     }
     if (report_id == PICO_CMD_LIVE_INPUT) {
         const uint16_t n = reqlen < 63 ? reqlen : 63;
@@ -676,18 +678,18 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     //   [2]      'M'
     //   [3]      protocol version (must == kRemapProtoVer)
     //   [4..19]  16-byte remap table
-    // 0x0D set calibration (proto 1.5): [0x0D]['C']['L'][ver][18-byte CalibBody].
+    // 0x0D set calibration (proto 1.5): [0x0D]['C']['L'][ver][slot][18-byte
+    // CalibBody]. Not config, so it doesn't bump s_host_gen.
     if (buffer[0] == 0x0D) {
-        if (bufsize < 4 + kCalibBodySize || buffer[1] != 'C' || buffer[2] != 'L' || buffer[3] != kCalibProtoVer) {
+        if (bufsize < 5 + kCalibBodySize || buffer[1] != 'C' || buffer[2] != 'L' || buffer[3] != kCalibProtoVer) {
             s_last_result = CMD_RESULT_INVALID;
             return;
         }
-        switch (calib_set(buffer + 4)) {
+        switch (calib_set(buffer[4], buffer + 5)) {
             case CalibSet::Ok: break;
             case CalibSet::Invalid: s_last_result = CMD_RESULT_INVALID; break;
             case CalibSet::NotSaved: s_last_result = CMD_RESULT_FAILED; break;
         }
-        s_host_gen++;
         return;
     }
     if (buffer[0] == 0x10) {

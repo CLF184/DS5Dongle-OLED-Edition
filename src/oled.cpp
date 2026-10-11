@@ -221,6 +221,7 @@ void sh1107_init() {
     cmd(0xB0);
     cmd(0xDC); cmd(0x00);
     cmd(0x81); cmd(0x6F);
+    current_contrast = 0x6F;  // so the first frame applies the saved brightness level
     cmd(0x21);
     cmd(0xA0);
     cmd(0xC0);
