@@ -10,7 +10,7 @@
 
 ## 🛠️ 快速上手：下载应用
 
-**[→ 下载 DS5 Dongle OLED Edition Configurator](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/latest)**（Linux AppImage、Windows 免安装 exe、macOS）
+**[→ 下载 DS5 Dongle OLED Edition Configurator](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/latest)**（Linux AppImage、Windows 免安装 exe；macOS 版本尚未测试）
 
 只需要这个应用。每个版本都自带对应的固件，应用会把固件装到你的 Pico 上、保持更新，并配置所有功能：
 
@@ -106,7 +106,7 @@ Pico 2 W 与 Waveshare Pico-OLED-1.3 在全球都很容易买到：
 
 有四种方式配置固件：
 
-**配置工具应用（推荐）：** 适用于 Linux、Windows 和 macOS 的 [DS5 Dongle OLED Edition Configurator](#️-配置工具桌面应用)。它会自动找到接收器，修改即时生效，一键保存到接收器闪存。需要 v0.8 及以上固件。
+**配置工具应用（推荐）：** 适用于 Linux 和 Windows（macOS 版本尚未测试）的 [DS5 Dongle OLED Edition Configurator](#️-配置工具桌面应用)。它会自动找到接收器，修改即时生效，一键保存到接收器闪存。需要 v0.8 及以上固件。
 
 **设备端（已装 OLED 插件）：** 使用屏上的**设置**菜单（第 11 个屏幕）。方向键 ▲▼ 移动选择，▶◀ 调整数值，△ 保存到闪存。
 
