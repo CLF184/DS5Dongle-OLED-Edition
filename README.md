@@ -20,14 +20,15 @@ The app is all you need. Each release includes the matching firmware, so the app
 
 ![The app: your controller live, in its own colors](docs/screenshots/live-controller.png)
 
-Everything is on one screen. Your controller is drawn in its own colors and moves as you use it (buttons, triggers, sticks, touchpad, lightbar, player indicator), with live data under it: stick and trigger values, motion graphs, touch points and the link. A hands-on guided tour runs the first time. Click any part to set it up:
+Your controller is drawn in its own colors and moves as you use it; click any part to set it up. The **[step-by-step guide](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web/blob/master/docs/GUIDE.md)** walks through everything, from building the dongle to each setting:
 
-- **Lightbar** modes and favorite colors; **L2 / R2** adaptive trigger effects and live pull; **button remapping** for any button or stick; **speaker** level (up to +12 dB) and **haptics** with live meters; the Bluetooth **mic**; the four **pairing slots** (PS button).
-- **Dongle:** OLED display, power, USB mode, diagnostics, and **one-click firmware updates**: the app restarts the dongle into its bootloader, flashes it and checks the result, with no BOOTSEL button and no drive copying.
-- **Games** (Linux): sets up Steam, Heroic and Lutris for native adaptive triggers and haptics, and installs the DualSense Proton build.
-- A **tray icon** with the controller's state and lightbar color, a **match-desktop theme**, 7 languages, and the changelogs inside the app.
+- **The controller:** lightbar modes and favorites, adaptive trigger effects, **haptics strength per grip** (HD haptics and rumble, with a test), Audio Auto Haptics, speaker and mic (with tests), button remapping, the four pairing slots.
+- **Calibration:** stick drift, sticks or triggers that don't reach full, a creeping gyro, fixed in the dongle (per pairing slot) for every game; nothing is written to the controller.
+- **The dongle:** its OLED screen mirrored live, a diagnostics dashboard (temperature, clock, Bluetooth and USB traffic, the audio pipeline), power, display and USB settings, and **one-click firmware updates** (no BOOTSEL button, no drive copying).
+- **Games** (Linux): your Steam, Heroic and Lutris library with per-game controller profiles, DualSense support per game, and setup fixes plus the DualSense Proton build.
+- **Made yours:** a theme in your controller's colors, Glass, look sliders, color vision modes, Reduce motion, a narrator through the controller's speaker, 7 languages, a tray icon.
 
-The app talks to firmware **v0.8 or newer** through a small configurator USB interface. Games never see it, so the dongle still looks exactly like a real DualSense. App source: **[MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web)**.
+The app talks to firmware **v0.8 or newer** through a small configurator USB interface (calibration and the per-grip haptics need **v0.9**; the app offers the update). Games never see it, so the dongle still looks exactly like a real DualSense. App source: **[MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web)**.
 
 > **The browser config tool has been retired**: the desktop app does everything it did and more. Its old address, [marcelinevpq.github.io/DS5Dongle-OLED-Config-Web](https://marcelinevpq.github.io/DS5Dongle-OLED-Config-Web/), is now the app's download page. To flash a Pico without the app, hold BOOTSEL while plugging it in and copy the `.uf2` from the release onto the drive that appears.
 
@@ -51,7 +52,10 @@ This project enables the Raspberry Pi Pico2W to function as a Bluetooth bridge f
 
 - **Native DualSense adaptive triggers in PC games on Linux/Proton — through the dongle.** Games with native DualSense support drive the controller's adaptive triggers wirelessly via the dongle, **1:1 with a directly-wired DualSense**. Requires a Proton carrying the Wine `winebus.sys` #9034 fix (Wine 11 / current Proton-GE) with Steam Input disabled — **no launch option needed** (Wine 11 enables the hidraw native path by default). Works on **both Steam and Heroic** (Epic/GOG). The firmware makes the dongle byte-for-byte indistinguishable from a real DS5 so the game accepts it (full write-up in [CHANGELOG.md](./CHANGELOG.md)). Trade-off: the browser Config/Remap tabs are disabled on this firmware (see the note above).
 - Optional Pico-OLED-1.3 status display with **11 screens** (status, slots, lightbar, trigger test, gyro tilt, touchpad, diagnostics, CPU/clock, RSSI, VU meters, settings)
-- **Button remapping** — reassign any of the 16 digital controls (face buttons, D-pad, shoulders/triggers, stick clicks, Create/Options) to any other. Stored on the dongle and applied before the host sees the report, so it works in **every game and OS with no host-side software**; identity (no remap) is the default. Edit it visually on the [configurator app](#️-configurator-app)'s **Buttons** page, or headlessly via `scripts/remap_test.py`. Persisted in its own flash sector, survives reboot.
+- **Calibration in the dongle (v0.9)** — stick center offset, deadzone and full-tilt radius, trigger travel and gyro zero, per pairing slot, applied to what games receive (never written to the controller). Set from the app's guided calibration.
+- **Haptics strength per grip (v0.9)** — left and right separately, for HD haptics and classic rumble alike.
+- **OLED screen mirror (v0.9)** — the app shows the dongle's screen pixel for pixel, with or without the OLED add-on.
+- **Button remapping** — reassign any of the 16 digital controls (face buttons, D-pad, shoulders/triggers, stick clicks, Create/Options) to any other. Stored on the dongle and applied before the host sees the report, so it works in **every game and OS with no host-side software**; identity (no remap) is the default. Edit it visually on the [configurator app](#️-get-started-download-the-app)'s **Buttons** page, or headlessly via `scripts/remap_test.py`. Persisted in its own flash sector, survives reboot.
 - **4-slot persistent multi-controller pairing** — bond up to four DualSenses, switch between them from the OLED, slot 0 reconnects automatically on boot
 - **Lightbar color picker** with 4 user favorite slots + breathing / rainbow / fade effect presets
 - **Persistent settings menu** for the 8 firmware config fields (haptics gain, speaker volume, polling rate, etc.) with hold-to-confirm Reset and Wipe-all-slots actions
@@ -147,7 +151,7 @@ The [app](#️-get-started-download-the-app) does this for you. To flash by hand
 
 There are four ways to configure the firmware:
 
-**Configurator app (recommended):** the [DS5 Dongle OLED Edition Configurator](#️-configurator-app) for Linux (Windows and macOS builds included, untested). It finds the dongle by itself, applies changes live, and saves to the dongle's flash with one click. Needs firmware v0.8+.
+**Configurator app (recommended):** the [DS5 Dongle OLED Edition Configurator](#️-get-started-download-the-app) for Linux (Windows and macOS builds included, untested). It finds the dongle by itself, applies changes live, and saves to the dongle's flash with one click. Needs firmware v0.8+.
 
 **On-device (OLED add-on present):** use the on-screen **Settings** menu (10th screen). D-pad ▲▼ moves selection, ▶◀ adjusts values, △ saves to flash.
 
@@ -202,7 +206,7 @@ This was long believed impossible — earlier versions of this fork documented i
 
 - **On by default.** Pair the controller and the mic begins streaming within a second or two — no game audio required (the dongle keeps the stream alive on its own).
 - **Raise the capture volume on the host** — it defaults low. On Linux, find the card with `arecord -l`, then e.g. `amixer -c <DualSense card> sset 'Headset' 90%`. Verify capture with `scripts/mic_diag.sh capture`.
-- **Toggle it off to save controller battery** — OLED **Settings → BT Mic**, or the **BT microphone** switch in the [configurator app](#️-configurator-app). Always-on mic keeps the DS5's audio subsystem awake, which drains its battery noticeably faster, so disable it if you don't use voice.
+- **Toggle it off to save controller battery** — OLED **Settings → BT Mic**, or the **BT microphone** switch in the [configurator app](#️-get-started-download-the-app). Always-on mic keeps the DS5's audio subsystem awake, which drains its battery noticeably faster, so disable it if you don't use voice.
 
 **Caveats:**
 
