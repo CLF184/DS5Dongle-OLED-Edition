@@ -15,6 +15,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 - The controller's last input no longer lingers after it disconnects (a neutral report, upstream 8c8b527).
 - Idle disconnect works with the mic on (only input reports count, upstream d7fb163).
 - SetStateData: the motor power nibbles were swapped, and `UseRumbleNotHaptics2` (byte 38 bit 3, Ninja Gaiden 4) is declared (upstream 8d8255c).
+- **Faster, steadier connecting.** A first-time pair opens its second Bluetooth channel as soon as the first is up instead of waiting for a later event, which could stall pairing until the watchdog retried (upstream 83b4df9); a faster interlaced page scan while no controller is connected makes a known controller reconnect quicker after PS (upstream ade9ea1; back to the normal scan once connected, so it doesn't take radio time from the audio).
 - Pico W SMPS in PWM mode: no coil whine (upstream 23a55da, #207); a short delay before the boot-time USB disconnect (upstream 4f9f485).
 
 ## [0.8.0-oled-edition] — 2026-10-10

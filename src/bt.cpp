@@ -95,6 +95,15 @@ bool bt_disconnect();  // fwd decl — defined further down
 // Keep the dongle discoverable while at least one slot is empty (covers
 // initial setup + partial-wipe states). Once all 4 slots are full, go
 // non-discoverable so a stray phone can't try to pair.
+// Page scanning: fast (continuous 11.25 ms, interlaced) while waiting for a
+// controller so it reconnects quickly after PS (upstream ade9ea1), light
+// (11.25 ms every 1.28 s, the Bluetooth default) while one is connected: the
+// dongle stays connectable, and scanning all the time took radio time from
+// the audio stream (crackling speaker).
+static void page_scan_fast(bool fast) {
+    gap_set_page_scan_activity(fast ? 0x0012 : 0x0800, 0x0012);
+}
+
 static void update_discoverable() {
     if (slots_any_empty()) {
         gap_discoverable_control(1);
@@ -307,6 +316,8 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
             const uint8_t state = btstack_event_state_get_state(packet);
             printf("[BT] State: %u\n", state);
             if (state == HCI_STATE_WORKING) {
+                gap_set_page_scan_type(PAGE_SCAN_MODE_INTERLACED);
+                page_scan_fast(true);
                 printf("[BT] Stack ready, start inquiry\n");
                 gap_inquiry_start(30);
             }
@@ -487,15 +498,13 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
             printf("[HCI] Encryption change handle=0x%04X status=0x%02X enabled=%u\n", handle, status, enabled);
             if (status == ERROR_CODE_SUCCESS && enabled) {
                 printf("[L2CAP] Open HID channels\n");
-                if (new_pair) {
-                    if (hid_control_cid == 0) {
-                        l2cap_create_channel(l2cap_packet_handler, current_device_addr, PSM_HID_CONTROL, MTU_CONTROL,
-                                             &hid_control_cid);
-                    } else if (hid_interrupt_cid == 0) {
-                        l2cap_create_channel(l2cap_packet_handler, current_device_addr, PSM_HID_INTERRUPT,
-                                             MTU_INTERRUPT,
-                                             &hid_interrupt_cid);
-                    }
+                // A fresh pair opens control here and interrupt as soon as
+                // control is open (below): waiting for a second encryption
+                // change could stall the pairing until the watchdog retried.
+                // Upstream 83b4df9.
+                if (new_pair && hid_control_cid == 0) {
+                    l2cap_create_channel(l2cap_packet_handler, current_device_addr, PSM_HID_CONTROL, MTU_CONTROL,
+                                         &hid_control_cid);
                 }
             }
             break;
@@ -534,6 +543,7 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
             // dead after a reconnect (bt_write only asks to send when the
             // queue goes from empty to one). Upstream a1492fd/697ade0.
             while (queue_try_remove(&send_fifo, nullptr)) {}
+            page_scan_fast(true);
             // The controller's last input mustn't linger (a held button or
             // stick showing on the OLED / first report). Upstream 8c8b527.
             if (bt_data_callback) bt_data_callback(INTERRUPT, const_cast<uint8_t *>(kNeutralInput), sizeof(kNeutralInput));
@@ -646,9 +656,16 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
 
                     const auto mtu = l2cap_get_remote_mtu_for_local_cid(hid_control_cid);
                     printf("[L2CAP] Remote Control MTU: %d\n",mtu);
+
+                    if (new_pair && hid_interrupt_cid == 0) {
+                        printf("[L2CAP] Opening interrupt channel\n");
+                        l2cap_create_channel(l2cap_packet_handler, current_device_addr, PSM_HID_INTERRUPT,
+                                             MTU_INTERRUPT, &hid_interrupt_cid);
+                    }
                 } else if (psm == PSM_HID_INTERRUPT) {
                     printf("[L2CAP] HID Interrupt opened cid=0x%04X\n", local_cid);
                     hid_interrupt_cid = local_cid;
+                    page_scan_fast(false);
 
                     if (!get_config().disable_pico_led) {
                         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
