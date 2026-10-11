@@ -345,7 +345,10 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         buffer[27] = known ? (uint8_t) s_colorway[0] : 0;
         buffer[28] = known ? (uint8_t) s_colorway[1] : 0;
 #endif
-        return 29;
+        if (reqlen < 30) return 29;
+        // proto 1.4: [29] more feature bits. bit0 screen mirror (0xEF).
+        buffer[29] = 0x01;
+        return 30;
     }
     if (report_id == 0xf7) {
         printf("[HID] Receive 0xf7 getting config\n");

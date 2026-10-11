@@ -9,12 +9,16 @@
 #include "tusb.h"
 #include "device/usbd_pvt.h"
 #include "cmd.h"
+#include "oled.h"
 
 // {CD1F1B79-799E-44AC-ADFC-A3F2090D1D4A} — the configurator opens the WinUSB
 // device by this interface GUID on Windows.
 #define VENDOR_ITF_GUID u"{CD1F1B79-799E-44AC-ADFC-A3F2090D1D4A}"
 
 static uint8_t s_buf[64];
+// The screen mirror is the one reply longer than a HID-sized report: 1028
+// bytes in a single control transfer (EP0 sends it in 64-byte packets).
+static uint8_t s_mirror[kOledMirrorBytes];
 
 //--------------------------------------------------------------------+
 // Class driver: only claims the interface. TinyUSB routes every VENDOR-type
@@ -154,6 +158,12 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
         return false;
     }
     uint8_t const id = tu_u16_low(req->wValue);
+    if (id == PICO_CMD_OLED_MIRROR) {
+        if (req->bRequest != VENDOR_REQ_GET || req->bmRequestType_bit.direction != TUSB_DIR_IN) return false;
+        if (stage != CONTROL_STAGE_SETUP) return true;
+        uint16_t const n = oled_mirror(s_mirror, sizeof(s_mirror));
+        return tud_control_xfer(rhport, req, s_mirror, tu_min16(n, req->wLength));
+    }
     // 0xF0/0xF1 exist only here (not on the HID path), and the 0xF2-0xF4 debug
     // reports only here in release builds; all are GET-only.
     bool const vendor_only = id == PICO_CMD_IDENTITY || id == PICO_CMD_LIVE_INPUT || is_debug_cmd(id);

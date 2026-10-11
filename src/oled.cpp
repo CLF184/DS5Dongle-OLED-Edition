@@ -52,6 +52,10 @@ constexpr int kRowBytes = kW / 8;
 constexpr int kFbBytes = kRowBytes * kH;
 
 uint8_t fb[kFbBytes];
+// What the panel shows right now (a copy of fb at every flush), for the app's
+// screen mirror (0xEF). Main-loop only, like fb and the USB stack.
+uint8_t fb_shown[kFbBytes];
+uint8_t fb_shown_seq = 0;
 
 uint32_t last_render_us = 0;
 constexpr uint32_t kFrameUs = 100000;
@@ -238,6 +242,8 @@ void sh1107_init() {
 void draw_button_chrome();
 
 void flush_fb_raw() {
+    memcpy(fb_shown, fb, sizeof(fb_shown));
+    fb_shown_seq++;
     cmd(0xB0);
     for (int j = 0; j < kH; j++) {
         const uint8_t col = kH - 1 - j;
@@ -1826,6 +1832,16 @@ void boot_splash() {
 
 // Configurator trigger preview (0xF6 0x0A): the Trigger Test screen's presets.
 void oled_send_trigger_preset(int preset) { send_trigger_effect(preset); }
+
+uint16_t oled_mirror(uint8_t *out, uint16_t cap) {
+    if (cap < kOledMirrorBytes) return 0;
+    out[0] = (uint8_t) oled_power_state;  // 0 on, 1 dimmed (breathing dot), 2 off
+    out[1] = (uint8_t) current_screen;
+    out[2] = current_contrast;
+    out[3] = fb_shown_seq;
+    memcpy(out + 4, fb_shown, sizeof(fb_shown));
+    return kOledMirrorBytes;
+}
 
 void oled_init() {
     spi_init(spi1, 10 * 1000 * 1000);

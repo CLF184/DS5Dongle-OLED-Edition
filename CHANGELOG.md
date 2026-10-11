@@ -8,6 +8,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+### Added
+
+- **Screen mirror for the app (protocol 1.4).** A read-only vendor request (`0xEF`) returns the OLED image exactly as last sent to the panel, with the current screen, contrast and power state, so the app shows the dongle's screen pixel for pixel. Works without the OLED add-on fitted (the firmware draws the same frames either way). Announced by a new feature byte in the identity report ([29] bit 0).
+
 ## [0.8.1-oled-edition] — 2026-10-11
 
 ### Fixed
