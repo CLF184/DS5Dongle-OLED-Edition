@@ -8,9 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
-### Added
-
-- **Narrator on the dongle.** Short voice lines on the controller's speaker, in 7 languages: "Connected" when the controller connects, the new pairing slot when you switch (before it drops), and a battery warning at 10 % (once per connection). They work without the app, which turns them on and sets the language (off by default). Pre-encoded Opus in flash (`src/voice_bank.bin`, ~600 KB); while a line plays it takes the place of the game's speaker audio for a second or two. Configurator protocol 1.3: feature bit `0x80`, `0xF6` functions `0x0B` (narrator, saved on its own) and `0x0C` (say a line), config byte 37 `narrator_voice`.
+## [0.8.0-oled-edition] — 2026-10-10
 
 ### Changed
 
@@ -18,11 +16,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 - **The controller's serial number is not kept.** The cached reply that carries it is dropped as soon as the colorway is read, and the read only happens in builds with the configurator interface.
 - A config write or factory reset from the app no longer changes the active pairing slot (factory reset used to switch to slot 0 at the next boot).
 
-- **Releases now ship the configurator app with the firmware.** Each `vX.Y.Z-oled-edition` release has the app for Linux, Windows and macOS (with this firmware built in) plus the UF2. Release builds turn on the configurator USB interface. Built by `.github/workflows/release.yml` from one tag pushed by `tools/release.sh`; other releases (Proton builds) are no longer touched by it.
+- **Releases now ship the configurator app with the firmware.** Each `vX.Y.Z-oled-edition` release has the app for Linux, Windows and macOS (with this firmware built in) plus the UF2. Release builds turn on the configurator USB interface. Built by `.github/workflows/release.yml` from one tag pushed by `tools/release.sh`; other releases (Proton builds) are no longer touched by it. The update feed (`latest.json`) is signed (`tools/sign_manifest.mjs`, the app refuses an unsigned one), every release file carries a GitHub build-provenance attestation, and a manual dry run of the release workflow builds everything without publishing. The app is tested on Linux; its Windows and macOS builds are included but untested.
 - The app's update feed (`latest.json`) now lives in this repo (`tools/build_manifest.mjs`).
 
 ### Added
 
+- **Narrator on the dongle.** Short voice lines on the controller's speaker, in 7 languages: "Connected" when the controller connects, the new pairing slot when you switch (before it drops), and a battery warning at 10 % (once per connection). They work without the app, which turns them on and sets the language (off by default). Pre-encoded Opus in flash (`src/voice_bank.bin`, ~600 KB); while a line plays it takes the place of the game's speaker audio for a second or two. Configurator protocol 1.3: feature bit `0x80`, `0xF6` functions `0x0B` (narrator, saved on its own) and `0x0C` (say a line), config byte 37 `narrator_voice`.
 - **Configurator interface (build flag `ENABLE_COMPANION_VENDOR`, off by default).** A control-only vendor USB interface for the upcoming desktop configurator. Linux's `hid_playstation` leaves it alone, and Windows binds WinUSB to it with no driver install. The gamepad descriptor stays byte-identical to a real DualSense.
 - **Speaker boost up to +12 dB.** The speaker level (app, OLED Settings) now goes above 0 dB, as digital gain on the game audio before encoding; anything past full scale is clipped cleanly. +12 dB was the loudest clean setting on a mastered music test with the desktop volume at 85 %. The UAC volume reported to the PC stays capped at 0 dB.
 - **Controller model, colorway and player indicator (protocol 1.2).** The identity report adds which controller is connected (DualSense or Edge), its colorway code (read once per connection from the controller's factory serial with Sony's read-only test command; only the two colorway characters are kept) and the player-indicator LEDs the PC set.

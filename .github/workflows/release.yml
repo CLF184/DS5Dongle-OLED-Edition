@@ -184,7 +184,8 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: ${{ github.event_name == 'push' && 'Publish the release' || 'Dry run, release checks (nothing published)' }}
+    # On a dry run only the checks below run (nothing is published).
+    name: Publish the release
     needs: [firmware, app]
     runs-on: ubuntu-latest
     # Build provenance: each file gets a signed attestation that it was built
@@ -236,6 +237,8 @@ jobs:
           section() { awk -v v="$2" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## \[/ {exit} on' "$1"; }
           {
             echo "**Download the app for your system below.** It includes this firmware and installs it on your dongle with one click (new dongles too)."
+            echo
+            echo "Tested on Linux (the AppImage). **The Windows and macOS builds are untested**: they come from the same workflow but haven't been tried on those systems yet. Reports welcome."
             echo
             section CHANGELOG.md "$fw"
             echo
