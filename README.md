@@ -18,11 +18,14 @@ The app is all you need. Each release includes the matching firmware, so the app
 2. Plug the Pico in **while holding its BOOTSEL button** (a brand-new Pico doesn't need the button). The app finds it and installs the firmware with one click; nothing to copy by hand.
 3. Pair your controller: hold **PS + Create** until the light bar flashes. The app shows when it's connected.
 
-- **Controller:** connection, battery and signal at a glance; lightbar modes and favorite colors; the four pairing slots.
-- **Audio & haptics:** haptics strength, speaker level (up to +12 dB), Bluetooth mic, Audio Auto Haptics.
-- **Buttons:** visual button remapping and the adaptive-trigger test.
-- **Dongle:** OLED display, power, USB mode, diagnostics, and **one-click firmware updates**. The app restarts the dongle into its bootloader, flashes it and checks the result: no BOOTSEL button, no drive copying.
-- **Tray icon** that shows the controller's state and lightbar color; **match-desktop theme**; the changelogs inside the app.
+![The app: your controller live, in its own colors](docs/screenshots/live-controller.png)
+
+Everything is on one screen. Your controller is drawn in its own colors and moves as you use it (buttons, triggers, sticks, touchpad, lightbar, player indicator). Click any part to set it up:
+
+- **Lightbar** modes and favorite colors; **L2 / R2** adaptive trigger effects and live pull; **button remapping** for any button or stick; **speaker** level (up to +12 dB) and **haptics** with live meters; the Bluetooth **mic**; the four **pairing slots** (PS button).
+- **Dongle:** OLED display, power, USB mode, diagnostics, and **one-click firmware updates**: the app restarts the dongle into its bootloader, flashes it and checks the result, with no BOOTSEL button and no drive copying.
+- **Games** (Linux): sets up Steam, Heroic and Lutris for native adaptive triggers and haptics, and installs the DualSense Proton build.
+- A **tray icon** with the controller's state and lightbar color, a **match-desktop theme**, 7 languages, and the changelogs inside the app.
 
 The app talks to firmware **v0.8 or newer** through a small configurator USB interface. Games never see it, so the dongle still looks exactly like a real DualSense. App source: **[MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web)**.
 
