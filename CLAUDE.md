@@ -119,18 +119,15 @@ The release tag is the **only** place the version is written. Everything else fl
 - **`src/oled.cpp` `render_screen()`** renders `"DS5 Bridge " FIRMWARE_VERSION` for the Status screen header. No string literal for the version exists anywhere else in the firmware source.
 - **Web preview** (`DS5Dongle-OLED-Config-Web`) reads the same tag at runtime from `public/firmware-latest.json`, which CI bundles in `.github/workflows/deploy.yml`'s "Bundle latest firmware UF2 from GitHub releases" step (it pulls from `MarcelineVPQ/DS5Dongle-OLED-Edition/releases/latest` via the GitHub API). `OledEmulator.tsx` fetches that JSON on mount and writes the short form (suffix `-oled-edition` stripped) into `state.firmwareVersionLabel`, which `screens.ts:renderStatus` consumes.
 
-**The release ritual** is therefore:
+**Releases** ship the firmware *and* the configurator app as one release with one version (user decision 2026-10-10; app ADR-0005):
 
-1. Update `CHANGELOG.md` — move `[Unreleased]` content into a new `[X.Y.Z-oled-edition]` section dated today.
-2. Commit the CHANGELOG bump.
-3. `git tag -a vX.Y.Z-oled-edition -m "..."`
-4. `git push origin master && git push origin vX.Y.Z-oled-edition`
-5. `gh release create vX.Y.Z-oled-edition -R MarcelineVPQ/DS5Dongle-OLED-Edition --title "vX.Y.Z — OLED Edition" --notes "..."`
-6. CI builds the UF2s (~5–7 min), uploads them with SHA256SUMS, edits the release notes to append checksums, and (when `WEB_REPO_DISPATCH_PAT` is configured on the firmware repo — currently unset, see below) fires a `repository_dispatch` event to the web repo to refresh `firmware-latest.json`. Without the secret, the next push to the web repo's `master` does the refresh instead.
+1. CHANGELOGs: move `[Unreleased]` into `## [X.Y.Z-oled-edition]` here and `## [X.Y.Z]` in the app repo; commit both on `master`.
+2. `tools/release.sh X.Y.Z` (expects the app repo at `../DS5Dongle-OLED-Config-Web`, or `--app PATH`). It runs the app's checks and a release-configuration firmware build, sets the app version, then asks before pushing: commits the version bump in the app repo and pushes the tag `vX.Y.Z-oled-edition` to **both** repos. Only run it when the user says "release".
+3. The tag starts `.github/workflows/release.yml`: firmware (with `-DENABLE_COMPANION_VENDOR=ON`), the app on Linux/Windows/macOS with that UF2 bundled in `resources/firmware/`, then one release with everything attached and `SHA256SUMS.txt`, published as a draft first and made public only when complete. Then `manifest.yml` rebuilds `latest.json` (the app's update feed) on `master`.
+
+Other releases here (`proton-*`) are never touched by the workflow: it only runs on `v*-oled-edition` tag pushes.
 
 There is **no other place** to edit the version. If you find a hardcoded version string in source (`"v0.6.0"`, `"v0.5.4"`, etc.), it's a bug — replace it with the macro / JSON lookup.
-
-**Known follow-up:** `WEB_REPO_DISPATCH_PAT` secret is unset on the firmware repo, so the firmware-release → web-rebuild dispatch is currently silently no-op'd (peter-evans/repository-dispatch with continue-on-error). The web bundle still updates via push events to the web repo's master, but not automatically on every firmware release.
 
 ## Git / branch model
 

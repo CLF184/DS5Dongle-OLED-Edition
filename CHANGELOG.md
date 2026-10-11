@@ -8,6 +8,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+### Changed
+
+- **Releases now ship the configurator app with the firmware.** Each `vX.Y.Z-oled-edition` release has the app for Linux, Windows and macOS (with this firmware built in) plus the UF2. Release builds turn on the configurator USB interface. Built by `.github/workflows/release.yml` from one tag pushed by `tools/release.sh`; other releases (Proton builds) are no longer touched by it.
+- The app's update feed (`latest.json`) now lives in this repo (`tools/build_manifest.mjs`).
+
 ### Added
 
 - **Configurator interface (build flag `ENABLE_COMPANION_VENDOR`, off by default).** A control-only vendor USB interface for the upcoming desktop configurator. Linux's `hid_playstation` leaves it alone, and Windows binds WinUSB to it with no driver install. The gamepad descriptor stays byte-identical to a real DualSense.

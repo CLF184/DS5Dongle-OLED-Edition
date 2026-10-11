@@ -8,11 +8,17 @@
 
 ---
 
-## 🛠️ 配置工具（桌面应用）
+## 🛠️ 快速上手：下载应用
 
-**[→ 下载 DS5 Dongle OLED Edition Configurator](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web/releases)**（Linux AppImage、Windows 免安装 exe、macOS）
+**[→ 下载 DS5 Dongle OLED Edition Configurator](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/latest)**（Linux AppImage、Windows 免安装 exe、macOS）
 
-这个桌面应用可以配置固件提供的全部功能，并让应用本身和接收器固件保持最新：
+只需要这个应用。每个版本都自带对应的固件，应用会把固件装到你的 Pico 上、保持更新，并配置所有功能：
+
+1. 组装好接收器（见下方[硬件](#硬件)），然后打开应用。
+2. **按住 BOOTSEL 按钮**把 Pico 插到电脑上（全新的 Pico 不需要按）。应用会发现它，一键安装固件，无需手动拷贝文件。
+3. 配对手柄：按住 **PS + Create** 直到灯条闪烁。连接成功后应用会显示。
+
+应用的功能：
 
 - **手柄：** 一眼看到连接、电量和信号；灯条模式与收藏颜色；四个配对槽位。
 - **音频与触感：** 触感强度、扬声器电平（最高 +12 dB）、蓝牙麦克风、音频自动触感。
@@ -20,7 +26,7 @@
 - **接收器：** OLED 显示、电源、USB 模式、诊断信息，以及**一键固件更新**。应用会把接收器重启到引导程序、写入固件并校验结果，无需按 BOOTSEL，也无需拷贝文件。
 - **托盘图标**实时显示手柄状态和灯条颜色；支持**跟随桌面配色**主题；应用内可直接查看更新日志。
 
-需要 **v0.8 或更新**的固件（新增了一个小型配置用 USB 接口，游戏看不到它，接收器在游戏眼中仍与真正的 DualSense 完全一致）。旧固件请先手动刷写一次 v0.8（见[刷写固件](#刷写固件)），之后由应用负责更新。源码：**[MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web)**。
+应用通过 **v0.8 或更新**固件中的一个小型配置用 USB 接口工作（游戏看不到它，接收器在游戏眼中仍与真正的 DualSense 完全一致）。应用源码：**[MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web)**。
 
 > **浏览器配置工具**（[marcelinevpq.github.io/DS5Dongle-OLED-Config-Web](https://marcelinevpq.github.io/DS5Dongle-OLED-Config-Web/)）仍可在 Chrome/Edge 中刷写 Pico，但其配置和重映射标签页只适用于 v0.6.12 之前的固件。桌面应用将取代它。
 
@@ -82,10 +88,12 @@ Pico 2 W 与 Waveshare Pico-OLED-1.3 在全球都很容易买到：
 
 ### 刷写固件
 
+[应用](#️-快速上手下载应用)会自动完成。如需手动刷写（或使用 Pico W 版本，它是 CI 构建产物）：
+
 1. 按住 Pico2W 上的 BOOTSEL 按钮
 2. 通过 USB 将 Pico2W 连接到电脑
 3. 设备会挂载为 USB 存储设备
-4. 将 .uf2 固件文件拖放到该设备上
+4. 将 .uf2 固件文件（见 [Releases](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases)）拖放到该设备上
 
 ### 配对手柄
 

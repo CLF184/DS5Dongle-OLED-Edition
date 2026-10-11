@@ -8,11 +8,15 @@
 
 ---
 
-## 🛠️ Configurator app
+## 🛠️ Get started: download the app
 
-**[→ Download the DS5 Dongle OLED Edition Configurator](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web/releases)** (Linux AppImage, Windows portable exe, macOS)
+**[→ Download the DS5 Dongle OLED Edition Configurator](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/latest)** (Linux AppImage, Windows portable exe, macOS)
 
-The desktop app configures everything the firmware offers and keeps both itself and the dongle up to date:
+The app is all you need. Each release includes the matching firmware, so the app installs it on your Pico, keeps it up to date, and configures everything:
+
+1. Build the dongle (see [Hardware](#hardware) below) and start the app.
+2. Plug the Pico in **while holding its BOOTSEL button** (a brand-new Pico doesn't need the button). The app finds it and installs the firmware with one click; nothing to copy by hand.
+3. Pair your controller: hold **PS + Create** until the light bar flashes. The app shows when it's connected.
 
 - **Controller:** connection, battery and signal at a glance; lightbar modes and favorite colors; the four pairing slots.
 - **Audio & haptics:** haptics strength, speaker level (up to +12 dB), Bluetooth mic, Audio Auto Haptics.
@@ -20,7 +24,7 @@ The desktop app configures everything the firmware offers and keeps both itself 
 - **Dongle:** OLED display, power, USB mode, diagnostics, and **one-click firmware updates**. The app restarts the dongle into its bootloader, flashes it and checks the result: no BOOTSEL button, no drive copying.
 - **Tray icon** that shows the controller's state and lightbar color; **match-desktop theme**; the changelogs inside the app.
 
-It needs firmware **v0.8 or newer**, which adds a small configurator USB interface. Games never see it, so the dongle still looks exactly like a real DualSense. On older firmware, flash v0.8 once by hand (see [Flashing Firmware](#flashing-firmware)); after that the app handles updates. Source: **[MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web)**.
+The app talks to firmware **v0.8 or newer** through a small configurator USB interface. Games never see it, so the dongle still looks exactly like a real DualSense. App source: **[MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web)**.
 
 > **The browser config tool** ([marcelinevpq.github.io/DS5Dongle-OLED-Config-Web](https://marcelinevpq.github.io/DS5Dongle-OLED-Config-Web/)) can still flash a Pico from Chrome/Edge, but its Config and Remap tabs only work on firmware older than v0.6.12. The desktop app replaces it.
 
@@ -123,10 +127,12 @@ Both the Pico 2 W and the Waveshare Pico-OLED-1.3 are widely available worldwide
 
 ### Flashing Firmware
 
+The [app](#️-get-started-download-the-app) does this for you. To flash by hand instead (or for the Pico W build, which is a CI artifact):
+
 1. Hold the BOOTSEL button on the Pico2W
 2. Connect the Pico2W to your computer via USB
 3. The device will mount as a USB storage device
-4. Drag and drop the .uf2 firmware file onto the device
+4. Drag and drop the .uf2 firmware file (from the [releases](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases)) onto the device
 
 ### Pairing the Controller
 

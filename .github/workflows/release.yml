@@ -1,14 +1,25 @@
-name: Build release firmware
+name: Release (app + firmware)
+
+# One release per version: vX.Y.Z-oled-edition = firmware X.Y.Z + the
+# DS5 Dongle OLED Edition Configurator app X.Y.Z, which bundles that firmware
+# (offline first-time setup and updates). Started by tools/release.sh, which
+# pushes the same tag to this repo and the app repo.
+#
+# Only these tags trigger it: other releases here (e.g. proton-*) are never
+# touched. The release is created as a draft and published only once every
+# file is attached, then latest.json (the apps' update feed) is refreshed.
 
 on:
-  release:
-    types:
-      - published
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+-oled-edition"
 
 env:
   PICO_SDK_REF: 2.2.0
   TINYUSB_REF: 0.20.0
   PICO_SDK_PATH: ${{ github.workspace }}/pico-sdk
+  APP_REPO: MarcelineVPQ/DS5Dongle-OLED-Config-Web
+  NPM: npx -y npm@11.6.2
   APT_PACKAGES: >-
     cmake
     python3
@@ -22,21 +33,15 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build and upload release UF2
+  firmware:
+    name: Build firmware
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout release ref
+      - name: Checkout tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.ref_name }}
           submodules: recursive
-
-      - name: Set firmware version
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: printf 'FIRMWARE_VERSION=%s\n' "$RELEASE_TAG" >> "$GITHUB_ENV"
 
       - name: Prepare build dependency cache
         id: apt-cache
@@ -83,56 +88,127 @@ jobs:
           fi
           git -C "$PICO_SDK_PATH/lib/tinyusb" checkout --detach "$TINYUSB_REF"
 
-      - name: Build standard firmware
+      - name: Build release firmware (with the configurator interface)
         run: |
           cmake -S . -B build/standard -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DPICO_SDK_PATH="$PICO_SDK_PATH" \
-            -DVERSION="$FIRMWARE_VERSION"
+            -DENABLE_COMPANION_VENDOR=ON \
+            -DVERSION="$GITHUB_REF_NAME"
           cmake --build build/standard --target ds5-bridge
           mkdir -p artifacts
-          cp build/standard/ds5-bridge-oled.uf2 "artifacts/ds5-bridge-oled-${{ github.event.release.tag_name }}.uf2"
+          cp build/standard/ds5-bridge-oled.uf2 "artifacts/ds5-bridge-oled-$GITHUB_REF_NAME.uf2"
+          # What the app bundles: the same UF2 plus its version and hash.
+          mkdir -p bundle
+          cp build/standard/ds5-bridge-oled.uf2 bundle/ds5-bridge-oled.uf2
+          printf '{"version":"%s","file":"ds5-bridge-oled.uf2","sha256":"%s"}\n' "$GITHUB_REF_NAME" "$(sha256sum bundle/ds5-bridge-oled.uf2 | cut -d' ' -f1)" > bundle/firmware.json
 
-      # The debug build (ENABLE_SERIAL=ON) compiles out tud_connect/disconnect and
-      # comes up as a serial console rather than a working HID/audio bridge — a
-      # developer diagnostic, not an end-user UF2. It is NOT published as a release
-      # download (footgun) — build it on demand with -DENABLE_SERIAL=ON, or use the
-      # PR-CI compile in build.yml. See CHANGELOG/CLAUDE.md.
+      # The debug build (ENABLE_SERIAL=ON) comes up as a serial console, not a
+      # working bridge: a developer diagnostic, never a release download. The
+      # Pico W build stays a CI artifact (build.yml).
 
-      - name: Compute UF2 checksums + append to release notes
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
-        run: |
-          # Generate SHA256SUMS.txt next to the UF2s
-          ( cd artifacts && sha256sum *.uf2 > SHA256SUMS.txt )
-          cat artifacts/SHA256SUMS.txt
-          # Append the same hashes (markdown-formatted) to the existing release body
-          BODY=$(gh release view "$TAG" --json body --jq .body)
-          {
-            printf '%s\n' "$BODY"
-            printf '\n---\n\n## Checksums\n\n```\n'
-            cat artifacts/SHA256SUMS.txt
-            printf '```\n'
-          } > /tmp/release-notes.md
-          gh release edit "$TAG" --notes-file /tmp/release-notes.md
-
-      - name: Upload UF2 files + SHA256SUMS to release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release upload "${{ github.event.release.tag_name }}" artifacts/*.uf2 artifacts/SHA256SUMS.txt --clobber
-
-      # Notify the web config repo so its GH Pages deploy rebuilds and
-      # bundles this fresh UF2 into the site. If the WEB_REPO_DISPATCH_PAT
-      # secret isn't configured on this repo, the dispatch call fails 401
-      # and continue-on-error swallows it — the web app keeps serving the
-      # previously-bundled UF2 until its own deploy is manually triggered.
-      - name: Trigger web config rebuild
-        continue-on-error: true
-        uses: peter-evans/repository-dispatch@v3
+      - uses: actions/upload-artifact@v4
         with:
-          token: ${{ secrets.WEB_REPO_DISPATCH_PAT }}
-          repository: MarcelineVPQ/DS5Dongle-OLED-Config-Web
-          event-type: firmware-released
-          client-payload: '{"tag": "${{ github.event.release.tag_name }}", "title": "${{ github.event.release.name }}"}'
+          name: firmware-release
+          path: artifacts/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-bundle
+          path: bundle/
+
+  app:
+    name: Build app (${{ matrix.os }})
+    needs: firmware
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: --linux
+          - os: windows-latest
+            target: --win
+          - os: macos-latest
+            target: --mac
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout the app at the same tag
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.APP_REPO }}
+          ref: ${{ github.ref_name }}
+      - name: Bundle this release's firmware
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware-bundle
+          path: resources/firmware
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: ${{ env.NPM }} ci
+        shell: bash
+      - name: Version check (app version must match the tag)
+        shell: bash
+        run: |
+          want="${GITHUB_REF_NAME#v}"; want="${want%-oled-edition}"
+          have="$(node -p 'require("./package.json").version')"
+          [ "$want" = "$have" ] || { echo "app package.json is $have, tag wants $want"; exit 1; }
+      - name: Tests must pass before anything ships
+        run: npx vitest run
+        shell: bash
+      - name: Build
+        run: npx electron-vite build && npx electron-builder ${{ matrix.target }} --publish never
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ matrix.os }}
+          path: |
+            release/*.AppImage
+            release/*-win-x64.exe
+            release/*-mac-universal.zip
+          if-no-files-found: error
+
+  publish:
+    name: Publish the release
+    needs: [firmware, app]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - name: App changelog
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.APP_REPO }}
+          ref: ${{ github.ref_name }}
+          path: app
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Notes, checksums, draft release, publish when complete
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"; fw="${tag#v}"; app="${fw%-oled-edition}"
+          section() { awk -v v="$2" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## \[/ {exit} on' "$1"; }
+          {
+            echo "**Download the app for your system below.** It includes this firmware and installs it on your dongle with one click (new dongles too)."
+            echo
+            section CHANGELOG.md "$fw"
+            echo
+            echo "## Configurator app $app"
+            section app/CHANGELOG.md "$app"
+          } > notes.md
+          shopt -s nullglob
+          files=(dist/*.AppImage dist/*-win-x64.exe dist/*-mac-universal.zip dist/ds5-bridge-oled-*.uf2)
+          [ "${#files[@]}" -eq 4 ] || { echo "expected 4 files, got: ${files[*]}"; exit 1; }
+          ( cd dist && sha256sum "${files[@]##*/}" > SHA256SUMS.txt && cat SHA256SUMS.txt )
+          gh release create "$tag" --draft --verify-tag --title "${tag%-oled-edition} — OLED Edition" --notes-file notes.md
+          gh release upload "$tag" "${files[@]}" dist/SHA256SUMS.txt
+          gh release edit "$tag" --draft=false --latest
+
+  manifest:
+    name: Refresh latest.json
+    needs: publish
+    uses: ./.github/workflows/manifest.yml

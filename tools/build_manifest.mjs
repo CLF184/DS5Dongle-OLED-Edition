@@ -1,0 +1,79 @@
+#!/usr/bin/env node
+// Build latest.json, the update feed the DS5 Dongle OLED Edition Configurator
+// reads (app ADR-0003/0005), from what is ALREADY published on this repo:
+//   - the newest unified release vX.Y.Z-oled-edition: the app for each OS and
+//     the Pico 2 W firmware UF2 it was built with
+//   - the newest proton-* release: the GE-Proton DualSense build the app's
+//     Games page installs (its SHA256SUMS.txt must list the tarball)
+// Every file is downloaded and hashed here, so the feed can never point at a
+// file that doesn't exist or doesn't match.
+//
+//   node tools/build_manifest.mjs [--out latest.json] [--check]
+//
+// Exit 2: no unified release yet (nothing to write). --check exits 1 if the
+// result differs from the existing file. Uses GITHUB_TOKEN when set.
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { selectProton, selectRelease, sumFor } from "./manifest_lib.mjs";
+
+const REPO = "MarcelineVPQ/DS5Dongle-OLED-Edition";
+
+const args = process.argv.slice(2);
+const out = args.includes("--out") ? args[args.indexOf("--out") + 1] : "latest.json";
+const checkOnly = args.includes("--check");
+const headers = { Accept: "application/vnd.github+json", "User-Agent": "ds5-manifest-builder" };
+if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+
+async function releases() {
+  const r = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=50`, { headers });
+  if (!r.ok) throw new Error(`${REPO}: GitHub API returned ${r.status}`);
+  return r.json();
+}
+
+// Download and hash an asset, streamed (the Proton build is ~565 MB).
+async function measure(asset) {
+  const r = await fetch(asset.browser_download_url, { redirect: "follow" });
+  if (!r.ok || !r.body) throw new Error(`${asset.name}: download returned ${r.status}`);
+  const hash = createHash("sha256");
+  let size = 0;
+  for await (const chunk of r.body) {
+    size += chunk.byteLength;
+    hash.update(chunk);
+  }
+  if (size !== asset.size) throw new Error(`${asset.name}: size ${size} != ${asset.size}`);
+  return { url: asset.browser_download_url, size, sha256: hash.digest("hex") };
+}
+
+const all = await releases();
+const unified = selectRelease(all);
+if (!unified) {
+  console.error("No unified app + firmware release yet; not writing a manifest.");
+  process.exit(checkOnly ? 0 : 2);
+}
+
+// "channel" leaves room for an opt-in development channel later.
+const manifest = { channel: "stable" };
+const platforms = {};
+for (const [os, asset] of Object.entries(unified.platforms)) platforms[os] = await measure(asset);
+manifest.app = { version: unified.version, notes_url: unified.release.html_url, platforms };
+if (unified.uf2) manifest.firmware = { version: unified.release.tag_name, notes_url: unified.release.html_url, uf2: await measure(unified.uf2) };
+
+const proton = selectProton(all);
+if (proton) {
+  if (!proton.sums) throw new Error(`${proton.release.tag_name}: no SHA256SUMS.txt in the release`);
+  const measured = await measure(proton.tarball);
+  const r = await fetch(proton.sums.browser_download_url, { redirect: "follow" });
+  if (!r.ok) throw new Error(`SHA256SUMS.txt: download returned ${r.status}`);
+  const listed = sumFor(await r.text(), proton.tarball.name);
+  if (listed !== measured.sha256) throw new Error(`${proton.tarball.name}: SHA256SUMS.txt says ${listed ?? "nothing"}, download hashes to ${measured.sha256}`);
+  manifest.proton = { name: proton.tarball.name.replace(/\.tar\.gz$/, ""), notes_url: proton.release.html_url, tarball: measured };
+}
+
+const text = JSON.stringify(manifest, null, 2) + "\n";
+const current = existsSync(out) ? readFileSync(out, "utf8") : "";
+if (checkOnly) {
+  console.log(text === current ? "latest.json is current." : "latest.json is out of date.");
+  process.exit(text === current ? 0 : 1);
+}
+writeFileSync(out, text);
+console.log(`Wrote ${out}: app ${manifest.app.version} (${Object.keys(platforms).join(", ")}), firmware ${manifest.firmware?.version ?? "none"}, proton ${manifest.proton?.name ?? "none"}`);
