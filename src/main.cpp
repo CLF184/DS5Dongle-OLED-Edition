@@ -459,6 +459,8 @@ int main() {
     };
     tusb_init(BOARD_TUD_RHPORT, &dev_init);
 #if !ENABLE_SERIAL
+    // Give the host a moment to see us before the disconnect (upstream 4f9f485).
+    sleep_ms(150);
     tud_disconnect();
 #endif
     board_init_after_tusb();
@@ -470,6 +472,10 @@ int main() {
         printf("Failed to initialize CYW43\n");
         return 1;
     }
+#ifdef CYW43_WL_GPIO_SMPS_PIN
+    // The Pico W's SMPS in PWM mode: no coil whine under light load (upstream 23a55da, #207).
+    cyw43_arch_gpio_put(CYW43_WL_GPIO_SMPS_PIN, true);
+#endif
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
 
 #if ENABLE_BATT_LED

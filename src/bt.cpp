@@ -53,6 +53,20 @@ static hci_con_handle_t acl_handle = HCI_CON_HANDLE_INVALID;
 static uint16_t hid_control_cid;
 static uint16_t hid_interrupt_cid;
 static bt_data_callback_t bt_data_callback = nullptr;
+
+// A neutral DualSense input report (sticks centred, nothing pressed), fed to
+// the data callback on disconnect. Upstream 8c8b527's state_init_data.
+static const uint8_t kNeutralInput[66] = {
+    0xa2, 0x31, 0x01,
+    0x7f, 0x7d, 0x7f, 0x7e, 0x00, 0x00, 0xa7,
+    0x08, 0x00, 0x00, 0x00, 0x52, 0x43, 0x30, 0x41,
+    0x01, 0x00, 0x0e, 0x00, 0xef, 0xff, 0x03, 0x03,
+    0x7b, 0x1b, 0x18, 0xf0, 0xcc, 0x9c, 0x60, 0x00,
+    0xfc, 0x80, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00,
+    0x00, 0x00, 0x09, 0x09, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0xa7, 0xad, 0x60, 0x00, 0x29, 0x18, 0x00,
+    0x53, 0x9f, 0x28, 0x35, 0xa5, 0xa8, 0x0c, 0x8b
+};
 static bool check_dse = false;
 static int8_t bt_rssi = 0;
 unordered_map<uint8_t, vector<uint8_t> > feature_data;
@@ -516,6 +530,14 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
             hid_control_cid = 0;
             hid_interrupt_cid = 0;
             feature_data.clear();
+            // Packets still queued for the old link would leave every output
+            // dead after a reconnect (bt_write only asks to send when the
+            // queue goes from empty to one). Upstream a1492fd/697ade0.
+            while (queue_try_remove(&send_fifo, nullptr)) {}
+            // The controller's last input mustn't linger (a held button or
+            // stick showing on the OLED / first report). Upstream 8c8b527.
+            if (bt_data_callback) bt_data_callback(INTERRUPT, const_cast<uint8_t *>(kNeutralInput), sizeof(kNeutralInput));
+            state_clear_host_rumble();
             cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
 #if ENABLE_BATT_LED
             battery_led_on_disconnect();
@@ -544,8 +566,10 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
             // printf_hexdump(packet, size);
             bt_data_callback(INTERRUPT, packet, size);
 
-            // 静默检测
-            if (get_config().disable_inactive_disconnect) {
+            // 静默检测. Only input reports count (packet[2] bit 0): the mic's
+            // frames never look idle, so with the mic on the controller was
+            // never disconnected. Upstream d7fb163.
+            if (!(packet[2] & 1) || get_config().disable_inactive_disconnect) {
                 return;
             }
             if (packet[3] < 120 || packet[3] > 140 ||
@@ -718,6 +742,7 @@ void bt_send_state() {
     report32[2] = 0x10 | 0 << 6 | 1 << 7;
     report32[3] = 0x3f; // 63 bytes
     state_set(report32 + 4,sizeof(SetStateData));
+    state_stamp_host_rumble(report32 + 4);
     bt_write(report32, sizeof(report32));
 }
 

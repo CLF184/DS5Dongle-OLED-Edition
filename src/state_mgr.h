@@ -17,6 +17,13 @@ void state_update(const uint8_t *data, const uint8_t size);
 // host/audio frame instead of only the transient send_lightbar_color() packet.
 void state_set_led(uint8_t r, uint8_t g, uint8_t b);
 void state_get_led(uint8_t *r, uint8_t *g, uint8_t *b);
+// Reports the dongle sends on its own (lightbar, volume, trigger preview,
+// connect state) carry the game's current rumble, so they never cancel it:
+// the DualSense takes each output report as the whole rumble state.
+// `ss` points at the SetStateData bytes of the report being built.
+void state_stamp_host_rumble(uint8_t *ss);
+// Forget the game's rumble (controller gone: a reconnect must not resume it).
+void state_clear_host_rumble();
 // Player indicator (the 5 white LEDs under the touchpad) as last set by the
 // host: bits 0..4, one per LED left to right.
 uint8_t state_get_player_leds();

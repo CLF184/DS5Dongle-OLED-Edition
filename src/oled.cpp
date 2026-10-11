@@ -466,6 +466,7 @@ void send_trigger_effect(int preset) {
     pkt[24] = mode;
     for (int i = 0; i < 9; i++) pkt[25 + i] = p[i];
 
+    state_stamp_host_rumble(pkt + 3);
     bt_write(pkt, sizeof(pkt));
 }
 
@@ -1234,6 +1235,7 @@ void send_lightbar_color(uint8_t r, uint8_t g, uint8_t b) {
     pkt[47] = r;   // lightbar_red
     pkt[48] = g;   // lightbar_green
     pkt[49] = b;   // lightbar_blue
+    state_stamp_host_rumble(pkt + 3); // ~10 Hz: must not cancel the game's rumble
     bt_write(pkt, sizeof(pkt));
 }
 

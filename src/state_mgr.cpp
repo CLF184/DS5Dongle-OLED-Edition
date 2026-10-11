@@ -73,7 +73,25 @@ void state_set_volume(uint8_t headphones, uint8_t speaker) {
     pkt[3] = 0x30; // valid_flag0: headphone + speaker volume only
     pkt[3 + offsetof(SetStateData, VolumeHeadphones)] = headphones;
     pkt[3 + offsetof(SetStateData, VolumeSpeaker)] = speaker;
+    state_stamp_host_rumble(pkt + 3);
     bt_write(pkt, sizeof(pkt));
+}
+
+// The host's most recent 0x02 output report (SetStateData), kept by main.cpp.
+extern uint8_t g_last_out02[47];
+
+void state_stamp_host_rumble(uint8_t *ss) {
+    const uint8_t *host = g_last_out02;
+    // flags0 bit 0 EnableRumbleEmulation, bit 1 UseRumbleNotHaptics
+    ss[0] = (uint8_t) ((ss[0] & ~0x03) | (host[0] & 0x03));
+    ss[offsetof(SetStateData, RumbleEmulationRight)] = host[offsetof(SetStateData, RumbleEmulationRight)];
+    ss[offsetof(SetStateData, RumbleEmulationLeft)] = host[offsetof(SetStateData, RumbleEmulationLeft)];
+    // byte 38 bit 2 EnableImprovedRumbleEmulation, bit 3 UseRumbleNotHaptics2
+    ss[38] = (uint8_t) ((ss[38] & ~0x0C) | (host[38] & 0x0C));
+}
+
+void state_clear_host_rumble() {
+    memset(g_last_out02, 0, sizeof(g_last_out02));
 }
 
 void state_get_led(uint8_t *r, uint8_t *g, uint8_t *b) {

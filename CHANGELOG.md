@@ -8,6 +8,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+### Fixed
+
+- **Rumble no longer cancelled by the dongle's own reports.** The lightbar colour (sent ~10× a second while charging or on a non-HOST lightbar mode), volume changes, the trigger preview and the connect state now carry the game's current rumble instead of "no rumble", which could stop rumble in some games (reported in Crimson Desert) while haptics and triggers kept working. The game's rumble is forgotten on disconnect so a reconnect never resumes it.
+- **Output could stay dead after a reconnect.** Packets still queued when the controller dropped are now discarded (upstream a1492fd/697ade0); before, rumble, triggers, lightbar and speaker could all stay silent until the dongle restarted.
+- The controller's last input no longer lingers after it disconnects (a neutral report, upstream 8c8b527).
+- Idle disconnect works with the mic on (only input reports count, upstream d7fb163).
+- SetStateData: the motor power nibbles were swapped, and `UseRumbleNotHaptics2` (byte 38 bit 3, Ninja Gaiden 4) is declared (upstream 8d8255c).
+- Pico W SMPS in PWM mode: no coil whine (upstream 23a55da, #207); a short delay before the boot-time USB disconnect (upstream 4f9f485).
+
 ## [0.8.0-oled-edition] — 2026-10-10
 
 ### Changed
