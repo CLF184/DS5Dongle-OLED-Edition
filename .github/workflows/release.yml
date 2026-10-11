@@ -13,8 +13,22 @@ on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+-oled-edition"
+  # Dry run: everything a release builds, from master, on all three systems,
+  # with the publish job's checks, but no tag, release, attestation or feed.
+  # The builds are left as workflow artifacts (e.g. a Windows build to test).
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build as (X.Y.Z)"
+        required: true
+        default: "0.8.0"
 
 env:
+  # The release's tag, or the one a dry run pretends to build.
+  TAG: ${{ github.event_name == 'push' && github.ref_name || format('v{0}-oled-edition', inputs.version) }}
+  # What to build from: the tag (both repos), or master for a dry run.
+  SRC_REF: ${{ github.event_name == 'push' && github.ref_name || 'master' }}
+  DRY_RUN: ${{ github.event_name != 'push' }}
   PICO_SDK_REF: 2.2.0
   TINYUSB_REF: 0.20.0
   PICO_SDK_PATH: ${{ github.workspace }}/pico-sdk
@@ -40,7 +54,7 @@ jobs:
       - name: Checkout tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ env.SRC_REF }}
           submodules: recursive
 
       - name: Prepare build dependency cache
@@ -94,14 +108,14 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DPICO_SDK_PATH="$PICO_SDK_PATH" \
             -DENABLE_COMPANION_VENDOR=ON \
-            -DVERSION="$GITHUB_REF_NAME"
+            -DVERSION="$TAG"
           cmake --build build/standard --target ds5-bridge
           mkdir -p artifacts
-          cp build/standard/ds5-bridge-oled.uf2 "artifacts/ds5-bridge-oled-$GITHUB_REF_NAME.uf2"
+          cp build/standard/ds5-bridge-oled.uf2 "artifacts/ds5-bridge-oled-$TAG.uf2"
           # What the app bundles: the same UF2 plus its version and hash.
           mkdir -p bundle
           cp build/standard/ds5-bridge-oled.uf2 bundle/ds5-bridge-oled.uf2
-          printf '{"version":"%s","file":"ds5-bridge-oled.uf2","sha256":"%s"}\n' "$GITHUB_REF_NAME" "$(sha256sum bundle/ds5-bridge-oled.uf2 | cut -d' ' -f1)" > bundle/firmware.json
+          printf '{"version":"%s","file":"ds5-bridge-oled.uf2","sha256":"%s"}\n' "$TAG" "$(sha256sum bundle/ds5-bridge-oled.uf2 | cut -d' ' -f1)" > bundle/firmware.json
 
       # The debug build (ENABLE_SERIAL=ON) comes up as a serial console, not a
       # working bridge: a developer diagnostic, never a release download. The
@@ -135,7 +149,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ env.APP_REPO }}
-          ref: ${{ github.ref_name }}
+          ref: ${{ env.SRC_REF }}
       - name: Bundle this release's firmware
         uses: actions/download-artifact@v4
         with:
@@ -149,7 +163,9 @@ jobs:
       - name: Version check (app version must match the tag)
         shell: bash
         run: |
-          want="${GITHUB_REF_NAME#v}"; want="${want%-oled-edition}"
+          want="${TAG#v}"; want="${want%-oled-edition}"
+          # A dry run builds master as that version; a release must match.
+          if [ "$DRY_RUN" = "true" ]; then npm pkg set version="$want"; fi
           have="$(node -p 'require("./package.json").version')"
           [ "$want" = "$have" ] || { echo "app package.json is $have, tag wants $want"; exit 1; }
       - name: Tests must pass before anything ships
@@ -168,7 +184,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: Publish the release
+    name: ${{ github.event_name == 'push' && 'Publish the release' || 'Dry run, release checks (nothing published)' }}
     needs: [firmware, app]
     runs-on: ubuntu-latest
     # Build provenance: each file gets a signed attestation that it was built
@@ -180,12 +196,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ env.SRC_REF }}
       - name: App changelog
         uses: actions/checkout@v4
         with:
           repository: ${{ env.APP_REPO }}
-          ref: ${{ github.ref_name }}
+          ref: ${{ env.SRC_REF }}
           path: app
       - uses: actions/download-artifact@v4
         with:
@@ -201,6 +217,7 @@ jobs:
       # Build provenance, before the release is visible: a signed attestation
       # per file that this workflow built it from this tag.
       - name: Attest build provenance
+        if: env.DRY_RUN != 'true'
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
@@ -210,11 +227,12 @@ jobs:
             dist/ds5-bridge-oled-*.uf2
             dist/SHA256SUMS.txt
       - name: Notes, draft release, publish when complete
+        if: env.DRY_RUN != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag="$GITHUB_REF_NAME"; fw="${tag#v}"; app="${fw%-oled-edition}"
+          tag="$TAG"; fw="${tag#v}"; app="${fw%-oled-edition}"
           section() { awk -v v="$2" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## \[/ {exit} on' "$1"; }
           {
             echo "**Download the app for your system below.** It includes this firmware and installs it on your dongle with one click (new dongles too)."
@@ -236,5 +254,6 @@ jobs:
   manifest:
     name: Refresh latest.json
     needs: publish
+    if: github.event_name == 'push'
     uses: ./.github/workflows/manifest.yml
     secrets: inherit
