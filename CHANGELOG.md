@@ -8,6 +8,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+## [0.9.2-oled-edition] - 2026-10-12
+
+The firmware is unchanged from 0.9.0. This release fixes the app on Windows PCs where a real DualSense was plugged in by USB before: the dongle never connected, and the app now offers **Repair USB driver** (details in the app's CHANGELOG).
+
 ## [0.9.1-oled-edition] - 2026-10-11
 
 The firmware is unchanged from 0.9.0. This release brings the app's opt-in **Development update channel**.
