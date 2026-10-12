@@ -19,8 +19,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 - **The whole version on the OLED Status screen:** the title is now "DS5 B. " and the version without "-oled-edition" ("DS5 B. v0.9.5-dev.4" fits exactly; it used to be cut off after "DS5 Bridge v0.9.5-d"). A longer local build version scrolls slowly back and forth, never over the link icon. The boot splash shows the real version and board too (it said "v0.6.0" and "Pico2W").
 - **Leaner speaker encoder:** libopus is built without its desktop hardening (its fortified `memcpy`/`memset` ran from flash on core1 every frame, the stall the RAM relocation exists to avoid; ~17 KB less RAM and ~13 KB less flash), and the speaker encoder runs CELT-only (`OPUS_APPLICATION_RESTRICTED_CELT`): the same packets the controller got before at these settings, from half the encoder memory (~24 KB more free heap on core1) and 4 ms sooner. `-DOPUS_ENCODER_CELT_ONLY=OFF` brings back the previous encoder mode.
 
+## [0.9.5-dev.4-oled-edition] - 2026-10-12
+
+### Added
+
 - **Stick response curves (protocol 1.10):** a response curve per stick, per pairing slot, applied in the dongle to the report games receive (after calibration, so it works in every game): Linear (default), Precise, Steady, Aggressive, Digital, or Custom with four points. The tilt goes through the curve, the direction stays. Stored with the calibration (older saves read as Linear, and older firmware still reads the calibration). Read with 0xEC, set with 0xF6 0x14 (saved, or temporary for a game's profile: RAM only, ended by 0x12, a reboot or a saved set); identity [29] bit 6 announces it, [19] bit 2 says temporary curves are on.
 - **Remap the DualSense Edge's Fn buttons and back buttons (LB / RB) (protocol 1.9):** four more remap entries (Fn L/R, LB/RB): each can act as any standard button, stay itself (default) or do nothing; a remapped one presses its target instead of itself. Read with 0xED, set with 0xF6 0x13 (saved or temporary, like game layouts). Older saved remaps keep working (the new entries read as "itself").
+
+## [0.9.5-dev.3-oled-edition] - 2026-10-12
+
+## [0.9.5-dev.2-oled-edition] - 2026-10-12
+
+## [0.9.5-dev.1-oled-edition] - 2026-10-12
 
 ## [0.9.4-oled-edition] - 2026-10-12
 
@@ -389,7 +399,7 @@ End-to-end on user's hardware after the rebase:
 
 The full prior CHANGELOG history for `[0.5.4]` and earlier sessions remains accurate and below.
 
-## [Unreleased]
+## Post-0.5.4 work before the 0.6.0 rebase — 2026-05-16
 
 ### Fixed
 
