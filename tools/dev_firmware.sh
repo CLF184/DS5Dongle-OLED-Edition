@@ -47,7 +47,7 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 [ -n "${DEV:-}" ] || { echo "The RP2350 drive didn't appear" >&2; exit 1; }
-MNT="$(findmnt -rn -o TARGET -S "$DEV" | head -1)"
+MNT="$(findmnt -rn -o TARGET -S "$DEV" | head -1 || true)"  # not mounted yet is fine
 [ -n "$MNT" ] || MNT="$(udisksctl mount -b "$DEV" | sed -E 's/.* at (.*)\.?$/\1/')"
 cp "$UF2" "$MNT/" && sync
 echo "Flashed $VERSION. Press PS on the controller."
