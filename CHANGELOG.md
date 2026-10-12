@@ -12,6 +12,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 - **Controller health & info (protocol 1.12):** the configurator can show the connected controller's own firmware (build date, hardware, main / SBL / DSP versions, Bluetooth patch), its lifetime counters (play and charge time, haptics and trigger time, charge cycles, connections, button presses, stick travel) and its battery voltage. GET 0xEB (vendor interface only; wValue's high byte picks the header, the firmware info or a result page) and 0xF6 0x16 [dev, action, pages], which queues one of two read-only Sony test commands (counters 0x70/1, battery voltage 0x04/3; anything else is refused) and runs it from the main loop after the connect-time colorway read, one 0x81 request at a time, never inside a USB transfer. The controller's serial number and the Edge stick modules' serials in the counters block are blanked before the app can read them, and the device-info bytes of report 0x20 are withheld. Identity [46] bit 0 announces it. Counter layout from daidr/dualsense-tester (MIT).
 
+### Changed
+
+- **Redrawn controller on the OLED Status screen:** the drawing is now mirror-symmetric (sticks, L2/R2 bars, L1/R1 and the d-pad / face buttons sit at mirrored positions; the face buttons were 7 px off-center against the d-pad and the right stick box 6 px further out than the left), the face buttons are rounded so they read apart from the d-pad, a stick at full tilt no longer merges into its box's frame, and **Create and Options** now show between L1 and R1 and light when pressed. A host test (`tests/host/test_oled_pad.cpp`) keeps it symmetric.
+
 ## [0.9.5-dev.5-oled-edition] - 2026-10-12
 
 ### Added

@@ -1,6 +1,7 @@
 #include "oled.h"
 #include "oled_font.h"
 #include "oled_flush.h"
+#include "oled_pad.h"
 #include "version_label.h"
 #include "bt.h"
 #include "slots.h"
@@ -755,6 +756,21 @@ void sample_charge_eta() {
     }
 }
 
+// oled_pad::draw on the framebuffer. Its own noinline function so the glyph
+// doesn't grow render_screen's literal pool (see CLAUDE.md).
+struct FbCanvas {
+    void px(int x, int y, bool on) { ::px(x, y, on); }
+    void outline(int x, int y, int w, int h) { rect_outline(x, y, w, h); }
+    void filled(int x, int y, int w, int h) { rect_filled(x, y, w, h); }
+    void invert(int x, int y, int w, int h) { rect_invert(x, y, w, h); }
+};
+static_assert(oled_pad::kW == kW && oled_pad::kLeft >= kContentX, "glyph vs. screen / chrome");
+
+__attribute__((noinline)) void render_status_pad() {
+    FbCanvas c;
+    oled_pad::draw(c, interrupt_in_data);
+}
+
 __attribute__((noinline)) void render_screen() {
     fb_clear();
 
@@ -800,66 +816,9 @@ __attribute__((noinline)) void render_screen() {
             draw_text(94, 18, ebuf);
         }
 
-        // Left-half visuals are shifted right by kContentX so the < button
-        // chrome at (x=0, y=49) doesn't paint over the live stick dot.
-        rect_outline(kContentX, 30, 32, 32);
-        int lx = (kContentX + 2) + (interrupt_in_data[0] * 27) / 255;
-        int ly = 32 + (interrupt_in_data[1] * 27) / 255;
-        rect_filled(lx - 1, ly - 1, 3, 3);
-        // L3 (left stick click) — invert the whole box as a pressed indicator.
-        if (interrupt_in_data[8] & 0x40) rect_invert(kContentX, 30, 32, 32);
-
-        rect_outline(96, 30, 32, 32);
-        int rx = 98 + (interrupt_in_data[2] * 27) / 255;
-        int ry = 32 + (interrupt_in_data[3] * 27) / 255;
-        rect_filled(rx - 1, ry - 1, 3, 3);
-        // R3 (right stick click) — invert the whole box.
-        if (interrupt_in_data[8] & 0x80) rect_invert(96, 30, 32, 32);
-
-        // L2/R2 analog trigger bars (vertical, fill from bottom). L2 sits
-        // just right of the shifted left stick box.
-        rect_outline(kContentX + 32, 33, 4, 29);
-        const int l2_fill = (interrupt_in_data[4] * 27) / 255;
-        if (l2_fill > 0) rect_filled(kContentX + 33, 61 - l2_fill, 2, l2_fill);
-        rect_outline(92, 33, 4, 29);
-        const int r2_fill = (interrupt_in_data[5] * 27) / 255;
-        if (r2_fill > 0) rect_filled(93, 61 - r2_fill, 2, r2_fill);
-
-        const uint8_t b7 = interrupt_in_data[7];
-        const uint8_t b8 = interrupt_in_data[8];
-
-        // D-pad indicator (4 directions; lit for primary + diagonals).
-        // Centered between the left stick column and the face-button cluster.
-        const int dp = b7 & 0x0F;
-        const bool dp_n = (dp == 7 || dp == 0 || dp == 1);
-        const bool dp_e = (dp == 1 || dp == 2 || dp == 3);
-        const bool dp_s = (dp == 3 || dp == 4 || dp == 5);
-        const bool dp_w = (dp == 5 || dp == 6 || dp == 7);
-        const int dcx = 52, dcy = 46;
-        auto dot = [&](int dx, int dy, bool on) {
-            if (on) rect_filled(dcx + dx - 2, dcy + dy - 2, 5, 5);
-            else    rect_outline(dcx + dx - 2, dcy + dy - 2, 5, 5);
-        };
-        dot(0,  -7, dp_n);
-        dot(7,   0, dp_e);
-        dot(0,   7, dp_s);
-        dot(-7,  0, dp_w);
-
-        const int fcx = 64, fcy = 46;
-        auto sq = [&](int dx, int dy, bool on) {
-            if (on) rect_filled(fcx + dx - 2, fcy + dy - 2, 5, 5);
-            else    rect_outline(fcx + dx - 2, fcy + dy - 2, 5, 5);
-        };
-        // shift face buttons right so they don't collide with d-pad
-        const int fcx_off = 18;
-        sq(fcx_off + 0,  -8, b7 & 0x80); // Triangle
-        sq(fcx_off + 8,   0, b7 & 0x40); // Circle
-        sq(fcx_off + 0,   8, b7 & 0x20); // Cross
-        sq(fcx_off - 8,   0, b7 & 0x10); // Square
-
-        // L1 bar shifted to sit between the L2 trigger column and the d-pad.
-        if (b8 & 0x01) rect_filled(42, 30, 8, 3);  else rect_outline(42, 30, 8, 3);  // L1
-        if (b8 & 0x02) rect_filled(80, 30, 12, 3); else rect_outline(80, 30, 12, 3); // R1
+        // The controller glyph (src/oled_pad.h): sticks, L2/R2, L1/R1,
+        // Create/Options, d-pad and face buttons, mirrored around x = 63.5.
+        render_status_pad();
     } else {
         draw_text(kContentX, 14, "Pair your DualSense:");
         draw_text(kContentX, 26, "1. Hold Create + PS");

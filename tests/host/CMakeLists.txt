@@ -13,6 +13,7 @@ add_executable(host_tests
         main.cpp
         fakes.cpp
         test_oled_flush.cpp
+        test_oled_pad.cpp
         test_stick_curve.cpp
         test_calib.cpp
         test_remap.cpp
