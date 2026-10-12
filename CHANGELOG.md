@@ -10,6 +10,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ### Added
 
+- **Stick response curves (protocol 1.10):** a response curve per stick, per pairing slot, applied in the dongle to the report games receive (after calibration, so it works in every game): Linear (default), Precise, Steady, Aggressive, Digital, or Custom with four points. The tilt goes through the curve, the direction stays. Stored with the calibration (older saves read as Linear, and older firmware still reads the calibration). Read with 0xEC, set with 0xF6 0x14 (saved, or temporary for a game's profile: RAM only, ended by 0x12, a reboot or a saved set); identity [29] bit 6 announces it, [19] bit 2 says temporary curves are on.
 - **Remap the DualSense Edge's Fn buttons and back paddles (protocol 1.9):** four more remap entries (Fn L/R, paddle L/R): each can act as any standard button, stay itself (default) or do nothing; a remapped one presses its target instead of itself. Read with 0xED, set with 0xF6 0x13 (saved or temporary, like game layouts). Older saved remaps keep working (the new entries read as "itself").
 
 ## [0.9.4-oled-edition] - 2026-10-12

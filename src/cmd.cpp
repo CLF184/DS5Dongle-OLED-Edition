@@ -320,6 +320,26 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     // 0xED (vendor interface only, proto 1.9): the Edge's extra-button remap
     // entries: ['R','X', ver 1, revision lo, hi, Fn L, Fn R, paddle L, paddle R]
     // (0..15 a standard button, 0xFE nothing, 0xFF itself).
+    // 0xEC (vendor interface only, proto 1.10): the stick response curves of
+    // the slot in use now: ['C','V', ver 1, slot, flags (bit0 a temporary
+    // pair is on), saved left, saved right, active left, active right], each
+    // curve 9 bytes [type, p1x,p1y .. p4x,p4y] (41 bytes).
+    if (report_id == PICO_CMD_CURVES) {
+        constexpr uint16_t kLen = 5 + 4 * sizeof(StickCurve);
+        if (reqlen < kLen) return 0;
+        const uint8_t slot = (uint8_t) bt_get_slot();
+        StickCurve saved[2], active[2];
+        curves_get(slot, saved);
+        const bool tmp = curves_get_active(slot, active);
+        buffer[0] = 'C';
+        buffer[1] = 'V';
+        buffer[2] = kCurveProtoVer;
+        buffer[3] = slot;
+        buffer[4] = tmp ? 0x01 : 0;
+        memcpy(buffer + 5, saved, sizeof(saved));
+        memcpy(buffer + 5 + sizeof(saved), active, sizeof(active));
+        return kLen;
+    }
     if (report_id == PICO_CMD_REMAP_EXTRA) {
         if (reqlen < 5 + kRemapExtraCount) return 0;
         buffer[0] = 'R';
@@ -367,7 +387,8 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         buffer[16] = kNumSlots;
         buffer[17] = (uint8_t) bt_get_slot();
         buffer[18] = bt_is_connected() ? 1 : 0;
-        buffer[19] = (config_unsaved() ? 0x01 : 0) | (remap_temporary() ? 0x02 : 0);  // bit1: temporary remap (proto 1.8)
+        buffer[19] = (config_unsaved() ? 0x01 : 0) | (remap_temporary() ? 0x02 : 0) |  // bit1: temporary remap (proto 1.8)
+                     (curves_temporary() ? 0x04 : 0);                                // bit2: temporary stick curves (proto 1.10)
         if (reqlen < 25) return 20;
         if (bt_is_connected()) {
             const uint8_t pwr = interrupt_in_data[52];   // low nibble level, high nibble power state
@@ -391,7 +412,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
 #endif
         if (reqlen < 30) return 29;
         // proto 1.4: [29] more feature bits. bit0 screen mirror (0xEF).
-        buffer[29] = 0x01 | 0x02 | 0x04 | 0x08 | 0x10 | 0x20;  // bit1: calibration (0xEE get, 0xF6 0x0D set); bit2: grip test (0x0E, proto 1.6); bit3: board name (proto 1.7); bit4: temporary remap (0x11 / 0x12, proto 1.8); bit5: Edge extra-button remap (0xED get, 0xF6 0x13 set, proto 1.9)
+        buffer[29] = 0x01 | 0x02 | 0x04 | 0x08 | 0x10 | 0x20 | 0x40;  // bit1: calibration (0xEE get, 0xF6 0x0D set); bit2: grip test (0x0E, proto 1.6); bit3: board name (proto 1.7); bit4: temporary remap (0x11 / 0x12, proto 1.8); bit5: Edge extra-button remap (0xED get, 0xF6 0x13 set, proto 1.9); bit6: stick response curves (0xEC get, 0xF6 0x14 set, proto 1.10)
         if (reqlen < 30 + kBoardNameLen) return 30;
         // proto 1.7: [30..45] the board this build is for, ASCII, NUL-padded
         // ("Pico 2 W"), so hosts can name the hardware (DS5_BOARD_NAME, CMake).
@@ -654,6 +675,8 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     //   0x0C [line][lang] say a narrator line now (app preview)
     //   0x0D calibration (below)           0x10 remap table (below)
     //   0x11 remap table for now (below)   0x12 back to the saved remap table
+    //                                         (and the saved stick curves)
+    //   0x13 Edge extra buttons (below)    0x14 stick response curves (below)
     s_last_result = CMD_RESULT_OK;
     switch (func) {
         case 0x01:
@@ -714,9 +737,11 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
         case 0x10:
         case 0x11:
         case 0x13:
+        case 0x14:
             break;
         case 0x12:
             remap_revert();
+            curves_revert(); // a game's stick curves end with its layout
             break;
         default:
             s_last_result = CMD_RESULT_INVALID;
@@ -749,6 +774,26 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     // 0x13 (proto 1.9): the Edge's extra-button entries
     //   ['R','X', ver 1, Fn L, Fn R, paddle L, paddle R, temporary 0/1]
     // temporary = a game's layout (RAM only, ended by 0x12, a reboot or a saved set).
+    // 0x14 (proto 1.10): stick response curves
+    //   ['C','V', ver 1, slot, left curve (9), right curve (9), temporary 0/1]
+    // curve = [type 0..5, p1x,p1y .. p4x,p4y]; Custom (5) points must be
+    // non-decreasing. Saved per slot in the calibration sector; temporary =
+    // a game's profile (RAM only, ended by 0x12, a reboot or a saved set).
+    if (buffer[0] == 0x14) {
+        constexpr uint16_t kNeed = 5 + 2 * sizeof(StickCurve) + 1;
+        if (bufsize < kNeed || buffer[1] != 'C' || buffer[2] != 'V' || buffer[3] != kCurveProtoVer || buffer[kNeed - 1] > 1) {
+            s_last_result = CMD_RESULT_INVALID;
+            return;
+        }
+        StickCurve pair[2];
+        memcpy(pair, buffer + 5, sizeof(pair));
+        switch (curves_set(buffer[4], pair, buffer[kNeed - 1] == 1)) {
+            case CalibSet::Ok: break;
+            case CalibSet::Invalid: s_last_result = CMD_RESULT_INVALID; break;
+            case CalibSet::NotSaved: s_last_result = CMD_RESULT_FAILED; break;
+        }
+        return;
+    }
     if (buffer[0] == 0x13) {
         if (bufsize < 4 + kRemapExtraCount + 1 || buffer[1] != 'R' || buffer[2] != 'X' || buffer[3] != 1 || buffer[8] > 1 ||
             !remap_set_extra(buffer + 4, buffer[8] == 1)) {

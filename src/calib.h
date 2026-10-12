@@ -11,6 +11,8 @@
 
 #include <cstdint>
 
+#include "stick_curve.h"
+
 constexpr uint8_t kCalibProtoVer = 2;
 
 struct __attribute__((packed)) CalibStick {
@@ -42,5 +44,19 @@ void calib_apply(uint8_t *report);
 enum class CalibSet : uint8_t { Ok, Invalid, NotSaved };
 CalibSet calib_set(uint8_t slot, const uint8_t *body);
 void calib_get(uint8_t slot, uint8_t out[kCalibBodySize]);
+
+// Stick response curves (proto 1.10), one pair (left, right) per pairing slot,
+// stored after the calibration bodies in the same flash sector (older saves
+// and erased flash read as Linear). Applied in calib_apply after the stick
+// calibration step. A temporary pair (a game's profile) lives in RAM only and
+// ends with curves_revert() (0xF6 0x12), a reboot or a saved set; a saved set
+// never writes the temporary pair.
+constexpr uint8_t kCurveProtoVer = 1;
+// left, right; temporary = RAM only for that slot.
+CalibSet curves_set(uint8_t slot, const StickCurve *pair, bool temporary);
+void curves_get(uint8_t slot, StickCurve out[2]);         // saved pair
+bool curves_get_active(uint8_t slot, StickCurve out[2]);  // in use now; true = temporary
+void curves_revert();
+bool curves_temporary();
 
 #endif // DS5_BRIDGE_CALIB_H

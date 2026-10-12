@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstddef>
 #include <cstring>
 
 #include "bt.h"
@@ -18,8 +19,14 @@ struct __attribute__((packed)) CalibData {
     uint32_t  magic;
     uint8_t   ver;
     CalibBody body[kNumSlots];
+    // proto 1.10: after the bodies, so calibration saved by older firmware
+    // (0xFF here, the rest of the erased page) reads as Linear, and older
+    // firmware still reads this sector's calibration (same magic/ver/bodies).
+    StickCurve curve[kNumSlots][2];
 };
 static_assert(sizeof(CalibData) <= FLASH_PAGE_SIZE);
+// The curves must stay after the bodies older firmware reads.
+static_assert(offsetof(CalibData, curve) == 5 + kNumSlots * sizeof(CalibBody));
 static_assert(CALIB_FLASH_OFFSET % FLASH_SECTOR_SIZE == 0);
 
 CalibData g_cal{};
@@ -27,6 +34,25 @@ CalibData g_cal{};
 // Which parts of each slot's calibration differ from identity (skipped otherwise).
 struct Active { bool stick[2], trigger[2], gyro; };
 Active g_active[kNumSlots]{};
+
+// Applied curves: the saved pair per slot, and a temporary pair (RAM only)
+// for one slot while a game's profile is on.
+StickCurveNodes g_nodes[kNumSlots][2]{};
+StickCurve g_tmp_curve[2]{};
+StickCurveNodes g_tmp_nodes[2]{};
+int g_tmp_slot = -1; // -1: no temporary curves
+
+void build_curves(int slot) {
+    for (int i = 0; i < 2; i++) stick_curve_build(g_cal.curve[slot][i], g_nodes[slot][i]);
+}
+
+void set_linear(StickCurve &c) {
+    c.type = kCurveLinear;
+    // Default custom points (shown when the app switches to Custom): a gentle
+    // slow start, valid on their own.
+    static constexpr uint8_t kPts[8] = {51, 31, 102, 77, 153, 133, 204, 194};
+    for (int i = 0; i < 8; i++) c.pt[i] = kPts[i];
+}
 
 // The connected controller's factory gyro bias (feature report 0x05, words at
 // 1, 3, 5: pitch, yaw, roll; same layout and sanity limit as SDL and oled.cpp).
@@ -111,6 +137,13 @@ void calib_load() {
         g_cal.ver = kCalibProtoVer;
         for (auto &b : g_cal.body) set_identity(b);
     }
+    // Curves are checked one by one: erased (older save) or bad = Linear.
+    for (int i = 0; i < kNumSlots; i++) {
+        for (auto &c : g_cal.curve[i]) {
+            if (!ok || !stick_curve_valid(c)) set_linear(c);
+        }
+        build_curves(i);
+    }
     for (int i = 0; i < kNumSlots; i++) recompute_active(i);
     printf("[Calib] loaded (%s)\n", ok ? "saved" : "identity");
 }
@@ -141,6 +174,10 @@ void calib_apply(uint8_t *r) {
     const CalibBody &b = g_cal.body[slot];
     if (a.stick[0]) stick(r + 0, b.stick[0]);
     if (a.stick[1]) stick(r + 2, b.stick[1]);
+    // Response curves on the calibrated sticks (n == 0: Linear, skipped).
+    const StickCurveNodes *cn = slot == g_tmp_slot ? g_tmp_nodes : g_nodes[slot];
+    stick_curve_apply(r + 0, cn[0]);
+    stick_curve_apply(r + 2, cn[1]);
     for (int i = 0; i < 2; i++) {
         if (!a.trigger[i]) continue;
         const auto &t = b.trigger[i];
@@ -172,3 +209,41 @@ CalibSet calib_set(uint8_t slot, const uint8_t *body) {
 void calib_get(uint8_t slot, uint8_t out[kCalibBodySize]) {
     memcpy(out, &g_cal.body[slot < kNumSlots ? slot : 0], kCalibBodySize);
 }
+
+CalibSet curves_set(uint8_t slot, const StickCurve *pair, bool temporary) {
+    if (slot >= kNumSlots || !stick_curve_valid(pair[0]) || !stick_curve_valid(pair[1])) return CalibSet::Invalid;
+    if (temporary) {
+        // RAM only: g_cal (what saves write) keeps the saved pair.
+        for (int i = 0; i < 2; i++) {
+            g_tmp_curve[i] = pair[i];
+            stick_curve_build(pair[i], g_tmp_nodes[i]);
+        }
+        g_tmp_slot = slot;
+        return CalibSet::Ok;
+    }
+    g_tmp_slot = -1; // a saved set ends the temporary curves
+    g_cal.curve[slot][0] = pair[0];
+    g_cal.curve[slot][1] = pair[1];
+    build_curves(slot);
+    return save() ? CalibSet::Ok : CalibSet::NotSaved;
+}
+
+void curves_get(uint8_t slot, StickCurve out[2]) {
+    const int s = slot < kNumSlots ? slot : 0;
+    out[0] = g_cal.curve[s][0];
+    out[1] = g_cal.curve[s][1];
+}
+
+bool curves_get_active(uint8_t slot, StickCurve out[2]) {
+    if (slot == g_tmp_slot) {
+        out[0] = g_tmp_curve[0];
+        out[1] = g_tmp_curve[1];
+        return true;
+    }
+    curves_get(slot, out);
+    return false;
+}
+
+void curves_revert() { g_tmp_slot = -1; }
+
+bool curves_temporary() { return g_tmp_slot >= 0; }
