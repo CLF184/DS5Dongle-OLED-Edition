@@ -317,6 +317,20 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     // the Bluetooth writer, so the copy is consistent. Zeros without a controller.
     // 0xEE calibration (vendor interface only, proto 1.5): [slot] + that
     // slot's 18-byte CalibBody, for the slot in use now.
+    // 0xED (vendor interface only, proto 1.9): the Edge's extra-button remap
+    // entries: ['R','X', ver 1, revision lo, hi, Fn L, Fn R, paddle L, paddle R]
+    // (0..15 a standard button, 0xFE nothing, 0xFF itself).
+    if (report_id == PICO_CMD_REMAP_EXTRA) {
+        if (reqlen < 5 + kRemapExtraCount) return 0;
+        buffer[0] = 'R';
+        buffer[1] = 'X';
+        buffer[2] = 1;
+        const uint16_t rev = remap_revision();
+        buffer[3] = (uint8_t) (rev & 0xFF);
+        buffer[4] = (uint8_t) (rev >> 8);
+        remap_get_extra(buffer + 5);
+        return 5 + kRemapExtraCount;
+    }
     if (report_id == PICO_CMD_CALIB) {
         if (reqlen < 1 + kCalibBodySize) return 0;
         buffer[0] = (uint8_t) bt_get_slot();
@@ -377,7 +391,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
 #endif
         if (reqlen < 30) return 29;
         // proto 1.4: [29] more feature bits. bit0 screen mirror (0xEF).
-        buffer[29] = 0x01 | 0x02 | 0x04 | 0x08 | 0x10;  // bit1: calibration (0xEE get, 0xF6 0x0D set); bit2: grip test (0x0E, proto 1.6); bit3: board name (proto 1.7); bit4: temporary remap (0x11 / 0x12, proto 1.8)
+        buffer[29] = 0x01 | 0x02 | 0x04 | 0x08 | 0x10 | 0x20;  // bit1: calibration (0xEE get, 0xF6 0x0D set); bit2: grip test (0x0E, proto 1.6); bit3: board name (proto 1.7); bit4: temporary remap (0x11 / 0x12, proto 1.8); bit5: Edge extra-button remap (0xED get, 0xF6 0x13 set, proto 1.9)
         if (reqlen < 30 + kBoardNameLen) return 30;
         // proto 1.7: [30..45] the board this build is for, ASCII, NUL-padded
         // ("Pico 2 W"), so hosts can name the hardware (DS5_BOARD_NAME, CMake).
@@ -699,6 +713,7 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
         case 0x0D:
         case 0x10:
         case 0x11:
+        case 0x13:
             break;
         case 0x12:
             remap_revert();
@@ -731,6 +746,17 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     }
     // 0x11 (proto 1.8): the same framing as 0x10, applied in RAM only (a
     // game's button layout while it runs); 0x12 or a reboot ends it.
+    // 0x13 (proto 1.9): the Edge's extra-button entries
+    //   ['R','X', ver 1, Fn L, Fn R, paddle L, paddle R, temporary 0/1]
+    // temporary = a game's layout (RAM only, ended by 0x12, a reboot or a saved set).
+    if (buffer[0] == 0x13) {
+        if (bufsize < 4 + kRemapExtraCount + 1 || buffer[1] != 'R' || buffer[2] != 'X' || buffer[3] != 1 || buffer[8] > 1 ||
+            !remap_set_extra(buffer + 4, buffer[8] == 1)) {
+            printf("[CMD] 0x13 extra remap rejected or not saved\n");
+            s_last_result = CMD_RESULT_INVALID;
+        }
+        return;
+    }
     if (buffer[0] == 0x11) {
         if (bufsize < 4 + kRemapCount || buffer[1] != 'R' || buffer[2] != 'M' || buffer[3] != kRemapProtoVer || !remap_set_temporary(buffer + 4)) {
             printf("[CMD] 0x11 temporary remap rejected\n");

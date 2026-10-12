@@ -8,6 +8,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+### Added
+
+- **Remap the DualSense Edge's Fn buttons and back paddles (protocol 1.9):** four more remap entries (Fn L/R, paddle L/R): each can act as any standard button, stay itself (default) or do nothing; a remapped one presses its target instead of itself. Read with 0xED, set with 0xF6 0x13 (saved or temporary, like game layouts). Older saved remaps keep working (the new entries read as "itself").
+
 ## [0.9.4-oled-edition] - 2026-10-12
 
 ### Fixed

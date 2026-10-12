@@ -20,6 +20,17 @@ constexpr int kRemapCount = 16;
 // changes so the web tool can refuse a mismatched firmware.
 constexpr uint8_t kRemapProtoVer = 1;
 
+// proto 1.9: the DualSense Edge's extra buttons as remap sources, in input
+// report byte 9 (without the report id): Fn left 0x10, Fn right 0x20, left
+// paddle 0x40, right paddle 0x80 (SDL_hidapi_ps5.c, daidr/dualsense-tester).
+// Each entry: a target 0..15 (a standard button), kRemapExtraOff (nothing),
+// or kRemapExtraSelf (the button itself, the default; erased flash reads so).
+constexpr int kRemapExtraCount = 4;
+constexpr uint8_t kRemapExtraSelf = 0xFF, kRemapExtraOff = 0xFE;
+// Set the four entries, saved (temporary = false) or for now only.
+bool remap_set_extra(const uint8_t *extra, bool temporary);
+void remap_get_extra(uint8_t out[kRemapExtraCount]);
+
 // Load the table from its dedicated flash sector. Call once at boot, after
 // config_load(). A fresh/invalid sector defaults to identity (no remap).
 void remap_load();

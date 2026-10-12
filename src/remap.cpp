@@ -38,6 +38,9 @@ constexpr uint32_t REMAP_MAGIC = 0x44533503u; // "DS5\x03"
 struct __attribute__((packed)) RemapData {
     uint32_t magic;
     uint8_t  table[kRemapCount];
+    // proto 1.9: after the table, so older saves (0xFF here, erased) read as
+    // "each extra button is itself".
+    uint8_t  extra[kRemapExtraCount];
 };
 static_assert(sizeof(RemapData) <= FLASH_PAGE_SIZE);
 static_assert(REMAP_FLASH_OFFSET % FLASH_SECTOR_SIZE == 0);
@@ -60,6 +63,23 @@ void recompute_active() {
     for (int i = 0; i < kRemapCount; i++) {
         if (g_remap.table[i] != i) { g_active = true; return; }
     }
+    for (int i = 0; i < kRemapExtraCount; i++) {
+        if (g_remap.extra[i] != kRemapExtraSelf) { g_active = true; return; }
+    }
+}
+
+bool valid_extra(const uint8_t *e) {
+    for (int i = 0; i < kRemapExtraCount; i++) {
+        if (e[i] >= kRemapCount && e[i] != kRemapExtraSelf && e[i] != kRemapExtraOff) return false;
+    }
+    return true;
+}
+
+// The extra entries saved in flash (all "itself" if missing or invalid).
+void flash_extra(uint8_t out[kRemapExtraCount]) {
+    const RemapData *f = flash_remap();
+    if (f->magic == REMAP_MAGIC && valid_extra(f->extra)) memcpy(out, f->extra, kRemapExtraCount);
+    else memset(out, kRemapExtraSelf, kRemapExtraCount);
 }
 
 bool valid_table(const uint8_t *t) {
@@ -69,10 +89,16 @@ bool valid_table(const uint8_t *t) {
     return true;
 }
 
-bool save_to_flash() {
+// Saves a table + extra entries (not necessarily what's in RAM: a temporary
+// table must never reach flash).
+bool save_with(const uint8_t *table, const uint8_t *extra) {
+    RemapData data{};
+    data.magic = REMAP_MAGIC;
+    memcpy(data.table, table, kRemapCount);
+    memcpy(data.extra, extra, kRemapExtraCount);
     alignas(4) uint8_t page[FLASH_PAGE_SIZE];
     memset(page, 0xff, sizeof(page));
-    memcpy(page, &g_remap, sizeof(g_remap));
+    memcpy(page, &data, sizeof(data));
 
     if (!flash_sector_write(REMAP_FLASH_OFFSET, page)) {
         printf("[Flash] core1 lockout timed out, write skipped\n");
@@ -81,13 +107,15 @@ bool save_to_flash() {
 
     RemapData verify{};
     memcpy(&verify, flash_remap(), sizeof(verify));
-    if (memcmp(&verify, &g_remap, sizeof(g_remap)) == 0) {
+    if (memcmp(&verify, &data, sizeof(data)) == 0) {
         printf("[Remap] flash write verified\n");
         return true;
     }
     printf("[Remap] flash write VERIFY FAILED\n");
     return false;
 }
+
+bool save_to_flash() { return save_with(g_remap.table, g_remap.extra); }
 
 bool dpad_has(uint8_t dir, RemapButton b) {
     switch (b) {
@@ -119,8 +147,10 @@ void remap_load() {
         printf("[Remap] flash sector empty/invalid, defaulting to identity\n");
         g_remap.magic = REMAP_MAGIC;
         set_identity();
+        memset(g_remap.extra, kRemapExtraSelf, kRemapExtraCount);
         save_to_flash();
     }
+    if (!valid_extra(g_remap.extra)) memset(g_remap.extra, kRemapExtraSelf, kRemapExtraCount);
     recompute_active();
     printf("[Remap] loaded (active=%d)\n", g_active);
 }
@@ -143,6 +173,7 @@ void remap_revert() {
     const RemapData *saved = flash_remap();
     if (saved->magic == REMAP_MAGIC && valid_table(saved->table)) memcpy(g_remap.table, saved->table, kRemapCount);
     else set_identity();
+    flash_extra(g_remap.extra);
     g_remap.magic = REMAP_MAGIC;
     recompute_active();
     g_temporary = false;
@@ -151,9 +182,35 @@ void remap_revert() {
 
 bool remap_temporary() { return g_temporary; }
 
+bool remap_set_extra(const uint8_t *extra, bool temporary) {
+    if (!valid_extra(extra)) return false;
+    memcpy(g_remap.extra, extra, kRemapExtraCount);
+    g_remap.magic = REMAP_MAGIC;
+    recompute_active();
+    g_revision++;
+    if (temporary) {
+        g_temporary = true;
+        return true;
+    }
+    // Saved: while a game's table is on (temporary), keep the saved table in
+    // flash, never the temporary one.
+    if (g_temporary) {
+        alignas(4) uint8_t saved_table[kRemapCount];
+        const RemapData *f = flash_remap();
+        if (f->magic == REMAP_MAGIC && valid_table(f->table)) memcpy(saved_table, f->table, kRemapCount);
+        else for (int i = 0; i < kRemapCount; i++) saved_table[i] = (uint8_t) i;
+        return save_with(saved_table, g_remap.extra);
+    }
+    return save_to_flash();
+}
+
+void remap_get_extra(uint8_t out[kRemapExtraCount]) { memcpy(out, g_remap.extra, kRemapExtraCount); }
+
 RemapSet remap_set(const uint8_t *table) {
     if (!valid_table(table)) return RemapSet::Invalid;
     memcpy(g_remap.table, table, kRemapCount);
+    // A game's extra-button entries end with its temporary state too.
+    if (g_temporary) flash_extra(g_remap.extra);
     g_temporary = false;
     g_remap.magic = REMAP_MAGIC;
     recompute_active();
@@ -197,6 +254,22 @@ void remap_apply(uint8_t *report) {
         if (src[s]) tgt[t] = true;
         tgt_analog[t] = std::max(tgt_analog[t], src_analog[s]); // OR digital / max analog
     }
+
+    // proto 1.9: the Edge's Fn buttons and paddles (byte 9). Remapped ones
+    // press their target instead and are cleared, so the game sees only the
+    // button chosen; "itself" leaves the bit alone.
+    static constexpr uint8_t kExtraBits[kRemapExtraCount] = {0x10, 0x20, 0x40, 0x80};
+    uint8_t b9 = report[9];
+    for (int i = 0; i < kRemapExtraCount; i++) {
+        const uint8_t t = g_remap.extra[i];
+        if (t == kRemapExtraSelf || !(b9 & kExtraBits[i])) continue;
+        b9 &= (uint8_t) ~kExtraBits[i];
+        if (t < kRemapCount) {
+            tgt[t] = true;
+            tgt_analog[t] = 0xFF;
+        }
+    }
+    report[9] = b9;
 
     report[4] = tgt_analog[RemapL2];
     report[5] = tgt_analog[RemapR2];
