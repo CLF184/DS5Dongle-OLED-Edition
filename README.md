@@ -22,10 +22,10 @@ The app is all you need. Each release includes the matching firmware, so the app
 
 Your controller is drawn in its own colors and moves as you use it; click any part to set it up. The **[step-by-step guide](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web/blob/master/docs/GUIDE.md)** walks through everything, from building the dongle to each setting:
 
-- **The controller:** lightbar modes and favorites, adaptive trigger effects, **haptics strength per grip** (HD haptics and rumble, with a test), Audio Auto Haptics, speaker and mic (with tests), button remapping, the four pairing slots.
+- **The controller:** lightbar modes and favorites, adaptive trigger effects, **haptics strength per grip** (HD haptics and rumble, with a test), Audio Auto Haptics, speaker and mic (with tests), button remapping (every button in one list, and **saved button layouts** a game can switch in while it runs, never written to flash: firmware v0.9.4), the four pairing slots.
 - **Calibration:** stick drift, sticks or triggers that don't reach full, a creeping gyro, fixed in the dongle (per pairing slot) for every game; nothing is written to the controller.
 - **The dongle:** its OLED screen mirrored live, a diagnostics dashboard (temperature, clock, Bluetooth and USB traffic, the audio pipeline), power, display and USB settings, and **one-click firmware updates** (no BOOTSEL button, no drive copying).
-- **Games** (Linux): your Steam, Heroic and Lutris library with per-game controller profiles, DualSense support per game, and setup fixes plus the DualSense Proton build.
+- **Games:** your Steam, Heroic and Lutris library (Windows: Steam, GOG Galaxy and Epic) as a list and a cover grid, with per-game controller profiles (including a button layout), DualSense support per game, and on Linux setup fixes plus the DualSense Proton build.
 - **Made yours:** a theme in your controller's colors, Glass, look sliders, color vision modes, Reduce motion, a narrator through the controller's speaker, 7 languages, a tray icon.
 
 The app talks to firmware **v0.8 or newer** through a small configurator USB interface (calibration and the per-grip haptics need **v0.9**; the app offers the update). Games never see it, so the dongle still looks exactly like a real DualSense. App source: **[MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web)**.
