@@ -8,6 +8,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+## [0.9.1-oled-edition] - 2026-10-11
+
+The firmware is unchanged from 0.9.0. This release brings the app's opt-in **Development update channel**.
+
+### Added
+
+- **Development builds** (`vX.Y.Z-dev.N-oled-edition`): published as GitHub pre-releases and listed only in the new `latest-dev.json` feed, which the app's Development channel reads. The stable feed (`latest.json`) never lists them.
+
 ## [0.9.0-oled-edition] — 2026-10-11
 
 ### Added
