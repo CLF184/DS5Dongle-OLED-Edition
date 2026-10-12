@@ -21,6 +21,7 @@
 #include "state_mgr.h"
 #include "usb.h"
 #include "voice.h"
+#include "perf.h"
 
 #define INPUT_CHANNELS    4
 #define OUTPUT_CHANNELS   2
@@ -621,6 +622,7 @@ void __not_in_flash_func(core1_entry)() {
     // Let core0's flash_safe_execute() park this core in RAM during flash
     // erase/program (config, remap, slots, BT link keys) — see flash_safe.h.
     flash_safe_execute_core_init();
+    perf_core_init();  // core1's own cycle counter, for the 0xFC timings
     g_c1_flags |= 0x01;
     g_c1_free_heap = free_heap_bytes();
     int error = 0;
@@ -628,7 +630,13 @@ void __not_in_flash_func(core1_entry)() {
     // writes, so every save would fail too (issue #15). Without an encoder
     // the speaker is silent, everything else keeps working.
 #if !DISABLE_SPEAKER_PROC
-    encoder = opus_encoder_create(48000, 2,OPUS_APPLICATION_AUDIO, &error);
+    // CELT only by default (CMake OPUS_ENCODER_CELT_ONLY): the packets are the
+    // same kind AUDIO sends at these settings, with half the encoder state.
+#if OPUS_ENCODER_CELT_ONLY
+    encoder = opus_encoder_create(48000, 2, OPUS_APPLICATION_RESTRICTED_CELT, &error);
+#else
+    encoder = opus_encoder_create(48000, 2, OPUS_APPLICATION_AUDIO, &error);
+#endif
     if (error != 0 || encoder == nullptr) {
         printf("[Audio] OpusEncoder create failed (err=%d, free heap %lu): speaker off\n", error, (unsigned long) g_c1_free_heap);
         encoder = nullptr;
@@ -656,9 +664,20 @@ void __not_in_flash_func(core1_entry)() {
         g_c1_loops++;
         bool work = false;
 #if !DISABLE_SPEAKER_PROC
-        if (g_spk_ready && !queue_is_empty(&audio_fifo)) { speaker_proc(); work = true; }
+        if (g_spk_ready && !queue_is_empty(&audio_fifo)) {
+            const uint32_t t0 = perf_now();
+            speaker_proc();
+            perf_record(PERF_C1_SPEAKER, perf_now() - t0);
+            work = true;
+        }
 #endif
-        if (mic_decoder != nullptr && mic_proc()) work = true;
+        if (mic_decoder != nullptr) {
+            const uint32_t t0 = perf_now();
+            if (mic_proc()) {
+                perf_record(PERF_C1_MIC, perf_now() - t0);
+                work = true;
+            }
+        }
         // Idle without spinning on the queue spinlocks (starves core0's bus).
         if (!work) sleep_us(10);
     }

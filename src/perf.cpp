@@ -1,0 +1,42 @@
+#include "perf.h"
+
+#include <string.h>
+#include "pico/time.h"
+
+PerfStat g_perf[PERF_NUM_STAGES];
+volatile uint32_t g_perf_gen = 0;
+volatile bool g_perf_timer_fallback = false;
+static uint64_t s_window_start_us = 0;
+
+void perf_reset() {
+    s_window_start_us = time_us_64();
+    g_perf_gen = g_perf_gen + 1;
+}
+
+size_t perf_serialize(uint8_t *out, size_t cap) {
+    if (cap < kPerfReportBytes) return 0;
+    const uint64_t secs = (time_us_64() - s_window_start_us) / 1000000u;
+    const uint16_t window = secs > 0xFFFF ? 0xFFFF : (uint16_t) secs;
+    out[0] = 1 | (g_perf_timer_fallback ? 0x80 : 0);  // layout version, bit 7 timer fallback
+    out[1] = PERF_NUM_STAGES;
+    memcpy(out + 2, &window, 2);
+    const uint32_t gen = g_perf_gen;
+    for (int i = 0; i < PERF_NUM_STAGES; i++) {
+        const PerfStat &s = g_perf[i];
+        uint32_t sum = 0, count = 0, max = 0;
+        // The writer may be another core: retry if a sample landed mid-read.
+        for (int tries = 0; tries < 4; tries++) {
+            count = s.count;
+            sum = s.sum;
+            max = s.max;
+            if (s.count == count) break;
+        }
+        if (s.gen != gen) sum = count = max = 0;  // nothing since the reset
+        const uint32_t avg_ns = count ? (uint32_t) ((uint64_t) sum * 1000u / PERF_TICKS_PER_US / count) : 0;
+        const uint32_t max_us_full = (max + PERF_TICKS_PER_US - 1) / PERF_TICKS_PER_US;
+        const uint16_t max_us = max_us_full > 0xFFFF ? 0xFFFF : (uint16_t) max_us_full;
+        memcpy(out + 4 + i * 6, &avg_ns, 4);
+        memcpy(out + 4 + i * 6 + 4, &max_us, 2);
+    }
+    return kPerfReportBytes;
+}

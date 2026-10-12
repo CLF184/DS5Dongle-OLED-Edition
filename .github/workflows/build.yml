@@ -78,6 +78,9 @@ jobs:
           fi
           git -C "$PICO_SDK_PATH/lib/tinyusb" checkout --detach "$TINYUSB_REF"
 
+      - name: Host unit tests (ASan + UBSan)
+        run: tests/host/run.sh build/host-tests
+
       - name: Build standard firmware
         run: |
           cmake -S . -B build/standard -G Ninja \

@@ -24,6 +24,7 @@
 #include "hardware/vreg.h"
 #include "hardware/watchdog.h"
 #include "pico/bootrom.h"
+#include "perf.h"
 
 // main.cpp: the grip test's rumble (0x0E).
 void send_rumble(uint8_t left, uint8_t right);
@@ -412,7 +413,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
 #endif
         if (reqlen < 30) return 29;
         // proto 1.4: [29] more feature bits. bit0 screen mirror (0xEF).
-        buffer[29] = 0x01 | 0x02 | 0x04 | 0x08 | 0x10 | 0x20 | 0x40;  // bit1: calibration (0xEE get, 0xF6 0x0D set); bit2: grip test (0x0E, proto 1.6); bit3: board name (proto 1.7); bit4: temporary remap (0x11 / 0x12, proto 1.8); bit5: Edge extra-button remap (0xED get, 0xF6 0x13 set, proto 1.9); bit6: stick response curves (0xEC get, 0xF6 0x14 set, proto 1.10)
+        buffer[29] = 0x01 | 0x02 | 0x04 | 0x08 | 0x10 | 0x20 | 0x40 | 0x80;  // bit7: per-stage timings in 0xFC [11..62], reset with 0xF6 0x15 (proto 1.11); bit1: calibration (0xEE get, 0xF6 0x0D set); bit2: grip test (0x0E, proto 1.6); bit3: board name (proto 1.7); bit4: temporary remap (0x11 / 0x12, proto 1.8); bit5: Edge extra-button remap (0xED get, 0xF6 0x13 set, proto 1.9); bit6: stick response curves (0xEC get, 0xF6 0x14 set, proto 1.10)
         if (reqlen < 30 + kBoardNameLen) return 30;
         // proto 1.7: [30..45] the board this build is for, ASCII, NUL-padded
         // ("Pico 2 W"), so hosts can name the hardware (DS5_BOARD_NAME, CMake).
@@ -514,6 +515,13 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         //   [9..10] temp_raw uint16  ADC ch4 12-bit reading
         // The web side does the volts/temperature math (same formulas as
         // render_screen_cpu) so the firmware HID path stays float-free.
+        // proto 1.11 (when reqlen >= 63; identity [29] bit 7): per-stage
+        // timings, perf.h / perf_serialize():
+        //   [11] layout version 1 (bit 7: microsecond timer, not cycles)
+        //   [12] stage count (8)  [13..14] u16 seconds since the last reset
+        //   [15 + 6*i] u32 average ns, [19 + 6*i] u16 max us, for stage i =
+        //   loop, cyw43, tud, audio, input, oled, core1 speaker, core1 mic.
+        // Reset (new window) with 0xF6 0x15.
         constexpr uint16_t want = 11;
         if (reqlen < want) {
             printf("[HID] 0xfc reqlen=%u too small for cpu payload (%u)\n", reqlen, want);
@@ -538,6 +546,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         memcpy(buffer + 4, &cached_real_khz, 4);
         buffer[8] = vcode;
         memcpy(buffer + 9, &temp_raw,        2);
+        if (reqlen >= want + kPerfReportBytes) return want + perf_serialize(buffer + want, kPerfReportBytes);
         return want;
     }
     if (report_id == 0xf2) {
@@ -677,6 +686,7 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     //   0x11 remap table for now (below)   0x12 back to the saved remap table
     //                                         (and the saved stick curves)
     //   0x13 Edge extra buttons (below)    0x14 stick response curves (below)
+    //   0x15 reset the timing counters (0xFC [11..62], proto 1.11)
     s_last_result = CMD_RESULT_OK;
     switch (func) {
         case 0x01:
@@ -738,6 +748,9 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
         case 0x11:
         case 0x13:
         case 0x14:
+            break;
+        case 0x15:
+            perf_reset();
             break;
         case 0x12:
             remap_revert();

@@ -93,6 +93,7 @@ add_executable(ds5-bridge
         src/slots.cpp
         src/remap.cpp
         src/voice.cpp
+        src/perf.cpp
         src/ram_mem.c
 )
 # The narrator's lines (tools/build_voice_bank.py), .incbin'd by voice.cpp.
@@ -113,7 +114,35 @@ target_include_directories(wdl_resampler PUBLIC
 
 # Opus
 #set(OPUS_FIXED_POINT ON)
+# libopus' desktop hardening, on by default upstream, costs core1 time every
+# frame: _FORTIFY_SOURCE turns its memcpy/memset into __memcpy_chk /
+# __memset_chk, which live in flash (so core1 leaves RAM for them, the XIP
+# cache stall the RAM relocation below exists to avoid), stack protection adds
+# a guard check to most functions, and ENABLE_HARDENING turns celt_assert into
+# runtime checks that abort (a panic here). Off, before the subdirectory reads them.
+set(OPUS_HARDENING OFF CACHE BOOL "libopus runtime hardening checks" FORCE)
+set(OPUS_STACK_PROTECTOR OFF CACHE BOOL "libopus stack protection" FORCE)
+set(OPUS_FORTIFY_SOURCE OFF CACHE BOOL "libopus _FORTIFY_SOURCE" FORCE)
 add_subdirectory(lib/opus)
+
+# The speaker encoder's Opus application. ON = OPUS_APPLICATION_RESTRICTED_CELT
+# (libopus 1.6): CELT only, no SILK encoder state and no 4 ms SILK look-ahead
+# buffer. At our settings (48 kHz stereo, 10 ms, 160 kbps CBR, complexity 0)
+# OPUS_APPLICATION_AUDIO already sends only CELT full-band 10 ms stereo packets
+# (TOC 0xF4, 200 bytes; checked on a PC over silence, tones, sweeps, noise,
+# speech-like bursts and on/off), so the controller gets the same kind of
+# packet. What changes: the encoder needs ~24 KB less heap on core1 (48.7 ->
+# 24.4 KB) and the speaker is 4 ms earlier. OFF = OPUS_APPLICATION_AUDIO.
+option(OPUS_ENCODER_CELT_ONLY "Speaker encoder: Opus CELT-only application (RESTRICTED_CELT)" ON)
+if (OPUS_ENCODER_CELT_ONLY)
+        set(OPUS_ENCODER_CELT_ONLY_VALUE 1)
+else ()
+        set(OPUS_ENCODER_CELT_ONLY_VALUE 0)
+endif ()
+
+# -fstack-usage on our sources: writes a .su file next to every object, which
+# tools/analyze.sh sums up (deepest frames). Off for normal builds.
+option(ENABLE_STACK_USAGE "Write -fstack-usage .su files for tools/analyze.sh" OFF)
 
 # --- Core1 audio path in RAM (ported from upstream awalol Phases A.1-A.3, B.4
 # queue ops, B.5). Running libopus and the resampler from flash left core1
@@ -196,7 +225,13 @@ target_compile_definitions(ds5-bridge PRIVATE
         ENABLE_BATT_LED=${ENABLE_BATT_LED_VALUE}
         SYS_CLOCK_KHZ=${SYS_CLOCK_KHZ_VALUE}
         DISABLE_SPEAKER_PROC=${DISABLE_SPEAKER_PROC_VALUE}
+        OPUS_ENCODER_CELT_ONLY=${OPUS_ENCODER_CELT_ONLY_VALUE}
 )
+if (ENABLE_STACK_USAGE)
+        target_compile_options(ds5-bridge PRIVATE -fstack-usage)
+        target_compile_options(opus PRIVATE -fstack-usage)
+        target_compile_options(wdl_resampler PRIVATE -fstack-usage)
+endif ()
 
 # Control-only vendor-class USB interface for the desktop configurator
 # (docs: CLAUDE.md "Companion vendor interface"). Linux hid_playstation only

@@ -25,6 +25,7 @@
 #include "oled.h"
 #include "remap.h"
 #include "calib.h"
+#include "perf.h"
 
 // Pico SDK speciifically for waiting on conditions
 #include "pico/critical_section.h"
@@ -551,19 +552,35 @@ int main() {
     watchdog_enable(1000, true);
 #endif
 
+    // Per-stage timing for 0xFC (perf.h): a few cycle-counter reads a pass.
+    perf_core_init();
+    uint32_t loop_start = perf_now();
     while (1) {
+        const uint32_t t0 = perf_now();
+        perf_record(PERF_LOOP, t0 - loop_start);
+        loop_start = t0;
 #if !ENABLE_SERIAL
         watchdog_update();
 #endif
         cyw43_arch_poll();
         bt_connection_watchdog_tick();
+        const uint32_t t1 = perf_now();
+        perf_record(PERF_CYW43, t1 - t0);
         tud_task();
+        const uint32_t t2 = perf_now();
+        perf_record(PERF_TUD, t2 - t1);
         cmd_task();
+        const uint32_t t2c = perf_now();
         audio_loop();
         voice_task();
+        const uint32_t t3 = perf_now();
+        perf_record(PERF_AUDIO, t3 - t2c);
         interrupt_loop();
         calib_service();
+        const uint32_t t4 = perf_now();
+        perf_record(PERF_INPUT, (t4 - t3) + (t2c - t2));
         oled_loop();
+        perf_record(PERF_OLED, perf_now() - t4);
 #if ENABLE_BATT_LED
         battery_led_tick();
 #endif
