@@ -25,6 +25,7 @@
 #include "hardware/watchdog.h"
 #include "pico/bootrom.h"
 #include "perf.h"
+#include "ctrl_info.h"
 
 // main.cpp: the grip test's rumble (0x0E).
 void send_rumble(uint8_t left, uint8_t right);
@@ -191,9 +192,21 @@ void controller_info_task() {
 }  // namespace
 #endif
 
+uint8_t cmd_controller_model() {
+#if ENABLE_COMPANION_VENDOR
+    // Known once the colorway read has finished: by then the model (0x70 at
+    // connect) is the new controller's, not the previous one's.
+    const bool known = bt_is_connected() && (s_color_state == ColorRead::Scrub || s_color_state == ColorRead::Done);
+    return known ? (is_dse ? 1 : 0) : 0xFF;
+#else
+    return 0xFF;
+#endif
+}
+
 void cmd_task() {
 #if ENABLE_COMPANION_VENDOR
     controller_info_task();
+    ctrl_test_task(s_color_state == ColorRead::Done);  // after the colorway read: one test result slot
 #endif
     if (s_rumble_stop_us && time_us_64() >= s_rumble_stop_us) {
         s_rumble_stop_us = 0;
@@ -305,6 +318,8 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     //   [21..23] current lightbar RGB (what the controller is showing)
     //   [24] battery level in 10% steps 0..10, 0xFF without a controller
     //   proto 1.7 (when reqlen >= 46): [30..45] board name, ASCII, NUL-padded
+    //   proto 1.12 (when reqlen >= 47): [46] feature bits 3, bit0 controller
+    //   health & info (0xEB, 0xF6 0x16)
     //   proto 1.2 (when reqlen >= 26):
     //   [25] player indicator LEDs set by the host, bits 0..4 left to right
     //   [26] controller model: 0 DualSense, 1 DualSense Edge, 0xFF not known
@@ -403,11 +418,9 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         if (reqlen < 26) return 25;
         buffer[25] = bt_is_connected() ? state_get_player_leds() : 0;
         if (reqlen < 29) return 26;
+        buffer[26] = cmd_controller_model();  // 0xFF: not known yet
 #if ENABLE_COMPANION_VENDOR
-        // Reported once the colorway read has finished: by then the model
-        // (0x70 at connect) is the new controller's, not the previous one's.
-        const bool known = bt_is_connected() && (s_color_state == ColorRead::Scrub || s_color_state == ColorRead::Done);
-        buffer[26] = known ? (is_dse ? 1 : 0) : 0xFF;  // 0xFF: not known yet
+        const bool known = buffer[26] != 0xFF;
         buffer[27] = known ? (uint8_t) s_colorway[0] : 0;
         buffer[28] = known ? (uint8_t) s_colorway[1] : 0;
 #endif
@@ -418,7 +431,11 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         // proto 1.7: [30..45] the board this build is for, ASCII, NUL-padded
         // ("Pico 2 W"), so hosts can name the hardware (DS5_BOARD_NAME, CMake).
         strncpy((char *) buffer + 30, DS5_BOARD_NAME, kBoardNameLen);
-        return 30 + kBoardNameLen;
+        if (reqlen < 47) return 30 + kBoardNameLen;
+        // proto 1.12: [46] a third feature byte. bit0 controller health &
+        // info (GET 0xEB, 0xF6 0x16; ctrl_info.cpp).
+        buffer[46] = ENABLE_COMPANION_VENDOR ? 0x01 : 0;
+        return 47;
     }
     if (report_id == 0xf7) {
         printf("[HID] Receive 0xf7 getting config\n");
@@ -687,6 +704,8 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     //                                         (and the saved stick curves)
     //   0x13 Edge extra buttons (below)    0x14 stick response curves (below)
     //   0x15 reset the timing counters (0xFC [11..62], proto 1.11)
+    //   0x16 [dev][action][pages] run a controller test command (proto 1.12,
+    //        ctrl_info.cpp; read the answer with GET 0xEB)
     s_last_result = CMD_RESULT_OK;
     switch (func) {
         case 0x01:
@@ -751,6 +770,15 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
             break;
         case 0x15:
             perf_reset();
+            break;
+        case 0x16:
+            // Queued, not deferred: it runs in cmd_task() over a few seconds
+            // without making other commands BUSY. Poll GET 0xEB for the answer.
+#if ENABLE_COMPANION_VENDOR
+            s_last_result = ctrl_test_start(buffer + 1, bufsize - 1);
+#else
+            s_last_result = CMD_RESULT_INVALID;
+#endif
             break;
         case 0x12:
             remap_revert();

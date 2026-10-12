@@ -34,13 +34,13 @@ void settle() {  // let a deferred command run (reboot/BOOTSEL wait 50 ms)
 }
 }  // namespace
 
-TEST(cmd_identity_reports_protocol_1_11) {
+TEST(cmd_identity_reports_protocol_1_12) {
     fresh();
     uint8_t id[46]{};
     CHECK_EQ(pico_cmd_get(PICO_CMD_IDENTITY, id, sizeof(id)), 46);
     CHECK(std::memcmp(id, "DS5O", 4) == 0);
     CHECK_EQ(id[4], 1);
-    CHECK_EQ(id[5], 11);
+    CHECK_EQ(id[5], 12);
     CHECK_EQ(id[6], sizeof(Config_body));
     CHECK(id[29] & 0x80);  // timings in 0xFC
     CHECK(std::memcmp(id + 30, "Host", 5) == 0);
@@ -121,7 +121,7 @@ TEST(cmd_random_sets_never_crash) {
     // Still answering, and still the same protocol.
     uint8_t id[46];
     CHECK_EQ(pico_cmd_get(PICO_CMD_IDENTITY, id, sizeof(id)), 46);
-    CHECK_EQ(id[5], 11);
+    CHECK_EQ(id[5], 12);
 }
 
 TEST(cmd_only_f6_runs_functions) {
