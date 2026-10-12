@@ -244,7 +244,7 @@ jobs:
           {
             echo "**Download the app for your system below.** It includes this firmware and installs it on your dongle with one click (new dongles too)."
             echo
-            echo "Tested on Linux (the AppImage). **The Windows and macOS builds are untested**: they come from the same workflow but haven't been tried on those systems yet. Reports welcome."
+            echo "Tested on Linux (the AppImage) and Windows 11 (the portable exe). **The macOS build is untested**: it comes from the same workflow but hasn't been tried on a Mac yet. Reports welcome. The Games page is Linux-only for now."
             echo
             section CHANGELOG.md "$fw"
             echo
