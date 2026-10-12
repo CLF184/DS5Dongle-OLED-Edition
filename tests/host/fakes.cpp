@@ -90,8 +90,10 @@ uint32_t opus_fifo_drops() { return 2; }
 uint32_t audio_hap_drops() { return 3; }
 uint32_t audio_c1_loops() { return 4; }
 uint32_t audio_c1_enc() { return 5; }
-uint32_t audio_c1_flags() { return 1; }
-uint32_t audio_c1_free_heap() { return 100000; }
+uint32_t g_fake_c1_flags = 1;
+uint32_t g_fake_c1_free_heap = 100000;
+uint32_t audio_c1_flags() { return g_fake_c1_flags; }
+uint32_t audio_c1_free_heap() { return g_fake_c1_free_heap; }
 uint32_t audio_raw_push() { return 6; }
 uint32_t audio_hap_push() { return 7; }
 uint32_t audio_usb_frames() { return 8; }

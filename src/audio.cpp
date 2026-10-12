@@ -141,8 +141,8 @@ static uint32_t free_heap_bytes() {
     const char *top = static_cast<const char *>(sbrk(0));
     return (uint32_t) m.fordblks + (uint32_t) (&__HeapLimit - top);
 }
-// Core1 health (0xF5 [15]): bit0 started, bit1 speaker encoder failed (no
-// memory), bit2 mic decoder failed. Free heap when core1 started ([16]).
+// Core1 health (0xF5 byte [60]): bit0 started, bit1 speaker encoder failed (no
+// memory), bit2 mic decoder failed. Free heap when core1 started ([61..62], KiB).
 static volatile uint32_t g_c1_flags = 0, g_c1_free_heap = 0;
 // The speaker encoder exists: only then does the BT audio report wait for
 // speaker frames (without it, haptics go out alone, like the Pico W build).

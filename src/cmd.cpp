@@ -585,7 +585,8 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         return len;
     }
     if (report_id == 0xf5) {
-        // Audio pipeline counters (scripts/audio_diag.py), all uint32 LE:
+        // Audio pipeline counters (scripts/audio_diag.py), 63 bytes (both
+        // transports cap a reply at 63). Fifteen uint32 LE at [4i]:
         //   [0] USB audio frames in   [1] BT audio reports out
         //   [2] drop raw  [3] drop enc  [4] drop hap
         //   [5] core1 loops  [6] core1 speaker frames encoded
@@ -593,19 +594,35 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         //   [9] mic frames decoded  [10] mic PLC frames
         //   [11] flash_safe_execute calls  [12] ...failed
         //   [13] host SET_REPORT (feature) count  [14] last: id | b0<<8 | len<<16
-        //   [15] core1 flags (bit0 started, bit1 speaker encoder failed,
-        //        bit2 mic decoder failed)  [16] free heap when core1 started
+        // then core1's health:
+        //   byte [60]     flags: bit0 started, bit1 speaker encoder failed,
+        //                 bit2 mic decoder failed, bit7 always set (this layout)
+        //   bytes [61..62] uint16 LE free heap when core1 started, in KiB
+        //                 (0 = not known yet; any free heap reads at least 1;
+        //                 saturates at 65535)
+        // 0.9.4 to 0.9.5-dev.5 sent the health as two more uint32s (68 bytes),
+        // so hosts got the flags' low byte at [60] and zeros at [61..62]:
+        // bit7 tells the layouts apart. The 15 counters never moved.
         const uint32_t v[] = {
             audio_usb_frames(), audio_bt_packets(),
             audio_fifo_drops(), opus_fifo_drops(), audio_hap_drops(),
             audio_c1_loops(), audio_c1_enc(), audio_raw_push(), audio_hap_push(),
             audio_mic_frames(), audio_mic_plc_frames(),
             g_fse_calls, g_fse_fail, g_setfeat_count, g_setfeat_last,
-            audio_c1_flags(), audio_c1_free_heap(),
         };
-        const uint16_t want = sizeof(v);
-        const uint16_t len = (reqlen < want) ? reqlen : want;
-        memcpy(buffer, v, len);
+        static_assert(sizeof(v) == 60, "0xF5 counters moved");
+        const uint32_t flags = audio_c1_flags();
+        const uint32_t heap = audio_c1_free_heap();
+        uint32_t kib = heap / 1024;
+        if (kib == 0 && heap > 0) kib = 1;
+        if (kib > 0xFFFF) kib = 0xFFFF;
+        uint8_t out[63];
+        memcpy(out, v, sizeof(v));
+        out[60] = (uint8_t) ((flags & 0x07) | 0x80);
+        out[61] = (uint8_t) (kib & 0xFF);
+        out[62] = (uint8_t) (kib >> 8);
+        const uint16_t len = (reqlen < sizeof(out)) ? reqlen : sizeof(out);
+        memcpy(buffer, out, len);
         return len;
     }
     if (report_id == 0xfd) {

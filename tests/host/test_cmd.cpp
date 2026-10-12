@@ -100,6 +100,68 @@ TEST(cmd_fc_timings_layout_and_reset) {
     CHECK_EQ(avg, 0u);
 }
 
+TEST(cmd_no_reply_needs_more_than_63_bytes) {
+    // Both transports cap a reply at 63 bytes: a reply that wants more loses
+    // its tail without any error (0xF5 lost core1's health that way). Ask
+    // every id with room to spare and check nothing is cut off. The ids known
+    // to do it are listed (0xFE, the mic-debug frame dump, wants 82: its last
+    // 19 frame bytes never arrive); a new one fails.
+    fresh();
+    const uint8_t known_long[] = {0xFE};
+    for (int rid = 0; rid < 256; rid++) {
+        std::unique_ptr<uint8_t[]> buf(new uint8_t[1024]);
+        const uint16_t n = pico_cmd_get((uint8_t) rid, buf.get(), 1024);
+        bool known = false;
+        for (uint8_t k : known_long) known |= k == rid;
+        if ((n > 63) != known) std::fprintf(stderr, "  GET 0x%02X wants %u bytes (known %d)\n", rid, n, known);
+        CHECK((n > 63) == known);
+    }
+}
+
+TEST(cmd_f5_layout) {
+    fresh();
+    for (uint16_t len = 0; len <= 200; len++) {  // every length: min(len, 63)
+        std::unique_ptr<uint8_t[]> buf(new uint8_t[200]);
+        CHECK_EQ(pico_cmd_get(0xF5, buf.get(), len), len < 63 ? len : 63);
+    }
+    uint8_t r[63]{};
+    auto u32 = [&](int i) {
+        uint32_t x;
+        std::memcpy(&x, r + 4 * i, 4);
+        return x;
+    };
+    auto heap_kib = [&] { return (uint16_t) (r[61] | r[62] << 8); };
+    g_fake_c1_flags = 0x01;
+    g_fake_c1_free_heap = 100000;
+    CHECK_EQ(pico_cmd_get(0xF5, r, 63), 63);
+    // The 15 counters keep their offsets (fakes.cpp values).
+    CHECK_EQ(u32(0), 8u);   // USB frames
+    CHECK_EQ(u32(1), 9u);   // BT out
+    CHECK_EQ(u32(2), 1u);   // drop raw
+    CHECK_EQ(u32(5), 4u);   // core1 loops
+    CHECK_EQ(u32(10), 11u); // mic PLC
+    CHECK_EQ(r[60], 0x81);  // started + this layout
+    CHECK_EQ(heap_kib(), 97);
+    g_fake_c1_flags = 0x01 | 0x02 | 0x04 | 0x10;  // unknown bits stay out
+    g_fake_c1_free_heap = 12 * 1024 + 1023;
+    pico_cmd_get(0xF5, r, 63);
+    CHECK_EQ(r[60], 0x87);
+    CHECK_EQ(heap_kib(), 12);
+    g_fake_c1_free_heap = 500;  // under 1 KiB still reads as known
+    pico_cmd_get(0xF5, r, 63);
+    CHECK_EQ(heap_kib(), 1);
+    g_fake_c1_free_heap = 0xFFFFFFFFu;
+    pico_cmd_get(0xF5, r, 63);
+    CHECK_EQ(heap_kib(), 0xFFFF);
+    g_fake_c1_flags = 0;  // before core1 starts
+    g_fake_c1_free_heap = 0;
+    pico_cmd_get(0xF5, r, 63);
+    CHECK_EQ(r[60], 0x80);
+    CHECK_EQ(heap_kib(), 0);
+    g_fake_c1_flags = 1;
+    g_fake_c1_free_heap = 100000;
+}
+
 TEST(cmd_random_sets_never_crash) {
     fresh();
     std::mt19937 rng(42);
