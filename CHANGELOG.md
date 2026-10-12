@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+## [0.9.4-oled-edition] - 2026-10-12
+
 ### Fixed
 
 - **No haptics and failing saves when the speaker encoder couldn't start (issue #15):** if core1 couldn't get memory for the Opus encoder at startup it returned and stopped for good, so audio frames were never encoded, haptics waited forever for speaker frames, and every flash write (which parks core1) timed out (`Dongle command 0x02 failed`). Core1 now keeps running without the encoder, haptics go out alone (the Pico W layout; the narrator still speaks), saving works, and 0xF5 reports core1's health ([15] flags: started, speaker encoder failed, mic decoder failed; [16] free heap at core1 start). The diag scripts also find a DualSense Edge dongle (054C:0DF2).
