@@ -1,34 +1,34 @@
 {
   "channel": "dev",
   "app": {
-    "version": "0.9.5-dev.2",
-    "notes_url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/tag/v0.9.5-dev.2-oled-edition",
-    "notes": "### Added\n\n- **Joining the Development channel asks first:** what it means (newer, less tested, app and dongle firmware, back to stable any time) and what's in the newest development build (app and firmware versions and its notes), before any development update is offered.\n- **Development builds say so:** \"DEVELOPMENT · 0.9.5-dev.1\" along the side rail (and the exact Git build on a local dev copy); stable releases don't show it.\n- **Edit a game's profile in the controller view and feel it live:** \"Edit in controller view\" on a game's page puts its profile on the controller (never into the dongle's flash) with an \"Editing: … profile\" banner; every panel edits the profile, the Buttons list saves into the game's own layout, and Done brings your normal settings back and returns to the game's page.\n- **My controller's colors:** pick colors for the shell, the black parts, buttons, sticks and outlines, for custom and modded controllers.\n\n### Changed\n\n- **Buttons are one place:** with the Buttons list open, clicking a button on the drawing highlights and focuses its row instead of leaving the list; buttons that only have a remap (face buttons, D-pad, L1/R1, Create, Options) open the list at their row; hovering a row lights the button on the drawing. Triggers, sticks, PS, mute and the touchpad keep their own panels, with \"See all buttons\" opening the list at that button.\n- **Special editions in their real colors** (e.g. Genshin Impact's teal and gold): colors only, no artwork.",
+    "version": "0.9.5-dev.3",
+    "notes_url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/tag/v0.9.5-dev.3-oled-edition",
+    "notes": "### Added\n\n- **Firmware update notice: Update and Details:** Update opens the Pico page's firmware card, Details opens the firmware changes.\n- **Stick tests:** a circularity test (how round each stick's range is, with the error %) and a drift test (does a stick move when you don't touch it), in Calibration.\n- **Joining the Development channel asks first:** what it means (newer, less tested, app and dongle firmware, back to stable any time) and what's in the newest development build (app and firmware versions and its notes), before any development update is offered.\n- **Development builds say so:** \"DEVELOPMENT · 0.9.5-dev.1\" along the side rail (and the exact Git build on a local dev copy); stable releases don't show it.\n- **Edit a game's profile in the controller view and feel it live:** \"Edit in controller view\" on a game's page puts its profile on the controller (never into the dongle's flash) with an \"Editing: … profile\" banner; every panel edits the profile, the Buttons list saves into the game's own layout, and Done brings your normal settings back and returns to the game's page.\n- **My controller's colors:** pick colors for the shell, the black parts, buttons, sticks and outlines, for custom and modded controllers.\n- **The DualSense Edge has its own drawing:** Fn buttons and back paddles light up as you press them (remapping them is coming).\n\n### Changed\n\n- **Buttons are one place:** with the Buttons list open, clicking a button on the drawing highlights and focuses its row instead of leaving the list; buttons that only have a remap (face buttons, D-pad, L1/R1, Create, Options) open the list at their row; hovering a row lights the button on the drawing. Triggers, sticks, PS, mute and the touchpad keep their own panels, with \"See all buttons\" opening the list at that button.\n- **Special editions in their real colors** (e.g. Genshin Impact's teal and gold): colors only, no artwork.",
     "platforms": {
       "linux": {
-        "url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/download/v0.9.5-dev.2-oled-edition/DS5Dongle-OLED-Edition-Configurator-0.9.5-dev.2-linux-x86_64.AppImage",
-        "size": 153248005,
-        "sha256": "376e856ce07c81d346f35ceef89749be9ef69803465d86d9c5262955a9c7db15"
+        "url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/download/v0.9.5-dev.3-oled-edition/DS5Dongle-OLED-Edition-Configurator-0.9.5-dev.3-linux-x86_64.AppImage",
+        "size": 153276871,
+        "sha256": "7cb4e47bd74455b2fed8d97d96add9e74ed9a2e49de29c9f7fc582771228e8f8"
       },
       "windows": {
-        "url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/download/v0.9.5-dev.2-oled-edition/DS5Dongle-OLED-Edition-Configurator-0.9.5-dev.2-win-x64.exe",
-        "size": 122031118,
-        "sha256": "a4705e77a61680bd99eda52ba74adfd134a087b59a55f36136ed3c9e07914bc7"
+        "url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/download/v0.9.5-dev.3-oled-edition/DS5Dongle-OLED-Edition-Configurator-0.9.5-dev.3-win-x64.exe",
+        "size": 122057753,
+        "sha256": "34e35b6ded86c3add0028d54600c29a42c5a806379ae1fbf12f888e4669f99d7"
       },
       "macos": {
-        "url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/download/v0.9.5-dev.2-oled-edition/DS5Dongle-OLED-Edition-Configurator-0.9.5-dev.2-mac-universal.zip",
-        "size": 237757708,
-        "sha256": "3b221c59053fd826025d0816d23efb7a782657890a9324495e79996feb8af6a6"
+        "url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/download/v0.9.5-dev.3-oled-edition/DS5Dongle-OLED-Edition-Configurator-0.9.5-dev.3-mac-universal.zip",
+        "size": 237785298,
+        "sha256": "7198eb322d7c5ba476e950680695224b30d53b65220e4cf32dbd3bed560d6d88"
       }
     }
   },
   "firmware": {
-    "version": "v0.9.5-dev.2-oled-edition",
-    "notes_url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/tag/v0.9.5-dev.2-oled-edition",
+    "version": "v0.9.5-dev.3-oled-edition",
+    "notes_url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/tag/v0.9.5-dev.3-oled-edition",
     "uf2": {
-      "url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/download/v0.9.5-dev.2-oled-edition/ds5-bridge-oled-v0.9.5-dev.2-oled-edition.uf2",
+      "url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/download/v0.9.5-dev.3-oled-edition/ds5-bridge-oled-v0.9.5-dev.3-oled-edition.uf2",
       "size": 2745856,
-      "sha256": "7ab59cdca0a12ade5fd3f38c9284cd67d912e8e24d8bcef8e193a5e0a05e1602"
+      "sha256": "cf17c4734e26221679c3bdb4bcbe0188d9b02cff76effc6cd3949d4044802f48"
     }
   },
   "proton": {
