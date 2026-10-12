@@ -8,6 +8,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+### Added
+
+- **Board name in the identity report (protocol 1.7):** identity [29] bit 3, then [30..45] the board's name as ASCII ("Pico 2 W", "Pico W"), set per build from `PICO_BOARD` (`DS5_BOARD_NAME` in CMake), so the app names the hardware without an app update for each new board.
+
 ## [0.9.2-oled-edition] - 2026-10-12
 
 The firmware is unchanged from 0.9.0. This release fixes the app on Windows PCs where a real DualSense was plugged in by USB before: the dongle never connected, and the app now offers **Repair USB driver** (details in the app's CHANGELOG).

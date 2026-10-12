@@ -287,6 +287,9 @@ bool is_pico_cmd(uint8_t report_id) {
     return false;
 }
 
+static constexpr uint16_t kBoardNameLen = 16;
+static_assert(sizeof(DS5_BOARD_NAME) <= kBoardNameLen + 1, "DS5_BOARD_NAME is longer than 16 characters");
+
 uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     // 0xF1 identity (vendor interface only; a real DS5 uses 0xF1 for its own
     // firmware-update protocol, so the HID path never routes it here).
@@ -300,6 +303,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     //   [20] controller flags: bit0 charging, bit1 battery full
     //   [21..23] current lightbar RGB (what the controller is showing)
     //   [24] battery level in 10% steps 0..10, 0xFF without a controller
+    //   proto 1.7 (when reqlen >= 46): [30..45] board name, ASCII, NUL-padded
     //   proto 1.2 (when reqlen >= 26):
     //   [25] player indicator LEDs set by the host, bits 0..4 left to right
     //   [26] controller model: 0 DualSense, 1 DualSense Edge, 0xFF not known
@@ -373,8 +377,12 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
 #endif
         if (reqlen < 30) return 29;
         // proto 1.4: [29] more feature bits. bit0 screen mirror (0xEF).
-        buffer[29] = 0x01 | 0x02 | 0x04;  // bit1: calibration (0xEE get, 0xF6 0x0D set); bit2: grip test (0x0E, proto 1.6)
-        return 30;
+        buffer[29] = 0x01 | 0x02 | 0x04 | 0x08;  // bit1: calibration (0xEE get, 0xF6 0x0D set); bit2: grip test (0x0E, proto 1.6); bit3: board name (proto 1.7)
+        if (reqlen < 30 + kBoardNameLen) return 30;
+        // proto 1.7: [30..45] the board this build is for, ASCII, NUL-padded
+        // ("Pico 2 W"), so hosts can name the hardware (DS5_BOARD_NAME, CMake).
+        strncpy((char *) buffer + 30, DS5_BOARD_NAME, kBoardNameLen);
+        return 30 + kBoardNameLen;
     }
     if (report_id == 0xf7) {
         printf("[HID] Receive 0xf7 getting config\n");

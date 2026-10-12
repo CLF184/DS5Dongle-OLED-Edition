@@ -173,7 +173,17 @@ target_compile_options(ds5-bridge PRIVATE -fsigned-char)
 target_compile_definitions(wdl_resampler PRIVATE
         WDL_RESAMPLE_TYPE=float
 )
+# The board's name as hosts show it (identity [30..45], protocol 1.7).
+if (PICO_BOARD STREQUAL "pico_w")
+        set(DS5_BOARD_NAME "Pico W")
+elseif (PICO_BOARD STREQUAL "pico2_w")
+        set(DS5_BOARD_NAME "Pico 2 W")
+else ()
+        set(DS5_BOARD_NAME "${PICO_BOARD}")
+endif ()
+
 target_compile_definitions(ds5-bridge PRIVATE
+        DS5_BOARD_NAME="${DS5_BOARD_NAME}"
         CYW43_LWIP=0
         ENABLE_SERIAL=${ENABLE_SERIAL_VALUE}
         PICO_FLASH_ASSUME_CORE1_SAFE=0 # core1 registers for flash lockout (flash_safe.h)

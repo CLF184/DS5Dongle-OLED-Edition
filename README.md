@@ -220,6 +220,7 @@ This was long believed impossible — earlier versions of this fork documented i
 - Overclocking to 320 MHz @ 1.20 V is **required** for stable BT pairing. Dropping voltage to 1.10 V or clock to stock breaks the CYW43 PIO SPI bus and BT stops working. A small heatsink on the RP2350 is recommended for sustained gameplay.
 - HD haptics may not fire in every game on Linux + Steam; this is game-side (some titles only send HD-haptic audio under Windows-specific APIs). Tested working in Spider-Man Remastered; not delivered in Ghost of Tsushima — same firmware, same controller.
 - **USB 3.0 ports can disrupt pairing** — the controller may get stuck on a solid amber/yellow lightbar and never connect, while the same dongle works fine on a USB 2.0 port. This is RF interference, not a firmware bug; see [USB 3.0 ports & Bluetooth interference](#usb-30-ports--bluetooth-interference) below. (As of v0.6.8 the firmware auto-retries a stalled connection instead of hanging, which recovers many — but not all — marginal cases.)
+- **Windows: the app can't open the dongle** on PCs where a real DualSense was plugged in by USB before (the dongle shares its USB IDs, and Windows remembered "no driver needed" for them). From app 0.9.2 the setup screen offers **Repair USB driver**: one admin prompt, then replug. The full PowerShell it runs, line by line, is in the [app's README](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web#repair-usb-driver-exactly-what-it-runs).
 
 ## USB 3.0 ports & Bluetooth interference
 
