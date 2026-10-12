@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+## [0.9.5-dev.5-oled-edition] - 2026-10-12
+
 ### Added
 
 - **Per-stage timings (protocol 1.11):** the dongle times its own work: each pass of the main loop and its parts (Bluetooth, USB, audio, input reports, OLED) and, on core1, every speaker frame encoded and every mic frame decoded, keeping the average and the worst case. Read with 0xFC (63 bytes from a host that asks for them; 11 as before otherwise), reset with 0xF6 0x15; identity [29] bit 7 announces it. For the app's dashboard and for comparing builds on real hardware.
