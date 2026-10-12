@@ -1,5 +1,7 @@
 #include "oled.h"
 #include "oled_font.h"
+#include "oled_flush.h"
+#include "version_label.h"
 #include "bt.h"
 #include "slots.h"
 #include "audio.h"
@@ -189,19 +191,25 @@ void cmd(uint8_t c) {
     gpio_put(kPinCS, 1);
 }
 
-void data_byte(uint8_t d) {
-    gpio_put(kPinDC, 1);
-    gpio_put(kPinCS, 0);
-    spi_write_blocking(spi1, &d, 1);
-    gpio_put(kPinCS, 1);
-}
+// One chip-select frame per call (D/C held), for oled_flush::stream_frame.
+// spi_write_blocking returns only once the last bit is out, so D/C and CS
+// never change under a byte in flight.
+struct SpiSink {
+    static void send(bool is_data, const uint8_t *p, int n) {
+        gpio_put(kPinDC, is_data ? 1 : 0);
+        gpio_put(kPinCS, 0);
+        spi_write_blocking(spi1, p, static_cast<size_t>(n));
+        gpio_put(kPinCS, 1);
+    }
+    void cmd(const uint8_t *p, int n) { send(false, p, n); }
+    void data(const uint8_t *p, int n) { send(true, p, n); }
+};
+static_assert(oled_flush::kW == kW && oled_flush::kH == kH && oled_flush::kFbBytes == kFbBytes,
+              "oled_flush.h and oled.cpp disagree on the framebuffer");
 
-uint8_t reverse_byte(uint8_t b) {
-    b = ((b & 0x55) << 1) | ((b & 0xAA) >> 1);
-    b = ((b & 0x33) << 2) | ((b & 0xCC) >> 2);
-    b = ((b & 0x0F) << 4) | ((b & 0xF0) >> 4);
-    return b;
-}
+// False until the panel holds a frame we sent (its RAM is undefined after
+// reset), so the first flush always goes out in full.
+bool panel_in_sync = false;
 
 void hw_reset() {
     gpio_put(kPinRST, 1); sleep_ms(100);
@@ -242,18 +250,25 @@ void sh1107_init() {
 // lives near the other text-drawing helpers below.
 void draw_button_chrome();
 
+// 129 SPI transactions per frame (was one per byte, ~1,150), and none at all
+// when the frame equals what the panel already shows (static screens, the dim
+// pulse between moves). fb_shown_seq still counts every frame for the mirror.
+// An unchanged frame still goes out every kResendFrames, so a panel whose RAM
+// got disturbed (ESD, a loose ribbon) heals within ~2 s like before.
+constexpr uint8_t kResendFrames = 20;
+uint8_t frames_skipped = 0;
 void flush_fb_raw() {
-    memcpy(fb_shown, fb, sizeof(fb_shown));
     fb_shown_seq++;
-    cmd(0xB0);
-    for (int j = 0; j < kH; j++) {
-        const uint8_t col = kH - 1 - j;
-        cmd(0x00 + (col & 0x0F));
-        cmd(0x10 + (col >> 4));
-        for (int i = 0; i < kRowBytes; i++) {
-            data_byte(reverse_byte(fb[j * kRowBytes + i]));
-        }
+    if (panel_in_sync && frames_skipped < kResendFrames &&
+        memcmp(fb_shown, fb, sizeof(fb_shown)) == 0) {
+        frames_skipped++;
+        return;
     }
+    frames_skipped = 0;
+    memcpy(fb_shown, fb, sizeof(fb_shown));
+    SpiSink sink;
+    oled_flush::stream_frame(fb, sink);
+    panel_in_sync = true;
 }
 
 void flush_fb() {
@@ -307,6 +322,56 @@ void draw_text(int x, int y, const char *s) {
         draw_char(x, y, *s++);
         x += 6;
     }
+}
+
+// draw_text, but only pixels with x in [x_min, x_max) are drawn.
+void draw_text_clipped(int x, int y, const char *s, int x_min, int x_max) {
+    for (; *s; s++, x += 6) {
+        if (x + kFontW <= x_min) continue;
+        if (x >= x_max) break;
+        const char c = *s;
+        if (c < 0x20 || c > 0x7E) continue;
+        const uint8_t *g = kFont5x7[c - 0x20];
+        for (int col = 0; col < kFontW; col++) {
+            const int xx = x + col;
+            if (xx < x_min || xx >= x_max) continue;
+            for (int row = 0; row < kFontH; row++) {
+                if (g[col] & (1 << row)) px(xx, y + row, true);
+            }
+        }
+    }
+}
+
+// The version without "-oled-edition" (version_label.h), for every place the
+// OLED shows it. The Status title is "DS5 B. <version>": a release or dev
+// build ("DS5 B. v0.9.5-dev.4", 19 characters) fits the 114 px between the
+// chrome strip and the link icon exactly.
+constexpr auto kVersionLabel = version_label::make("", FIRMWARE_VERSION);
+constexpr auto kStatusTitle = version_label::make("DS5 B. ", FIRMWARE_VERSION);
+
+// A title longer than its space (local builds, "+local.c3915e0") scrolls
+// ping-pong: one pixel every 200 ms, 1.5 s pauses at each end. A title that
+// fits is drawn once and costs nothing (unchanged frames aren't flushed).
+void draw_title_scrolling(int x_min, int x_max, int y, const char *s, int n) {
+    static int offset = 0, dir = 1;
+    static uint32_t next_us = 0;
+    const int overflow = (n * 6 - 1) - (x_max - x_min);
+    if (overflow <= 0) {
+        draw_text(x_min, y, s);
+        return;
+    }
+    const uint32_t now = time_us_32();
+    if ((int32_t) (now - next_us) >= 0) {
+        offset += dir;
+        uint32_t wait = 200000;
+        if (offset >= overflow || offset <= 0) {
+            offset = offset >= overflow ? overflow : 0;
+            dir = -dir;
+            wait = 1500000;
+        }
+        next_us = now + wait;
+    }
+    draw_text_clipped(x_min - offset, y, s, x_min, x_max);
 }
 
 // Button-chrome strip on the left edge of every screen. KEY0 (top button)
@@ -694,10 +759,9 @@ __attribute__((noinline)) void render_screen() {
 
     const bool connected = bt_is_connected();
 
-    // FIRMWARE_VERSION is set via CMake from -DVERSION=... on the build
-    // command line (release.yml passes the tag name). Local builds get
-    // "dev" so a non-tagged build is visible at a glance.
-    draw_text(kContentX, 0, "DS5 Bridge " FIRMWARE_VERSION);
+    // FIRMWARE_VERSION is set via CMake (the release tag, or a Git stamp for
+    // dev builds); shown without "-oled-edition", scrolling if still too long.
+    draw_title_scrolling(kContentX, 120, 0, kStatusTitle.s, kStatusTitle.n);
     draw_icon(120, 0, connected ? kIconLinkOn : kIconLinkOff, 8, 8);
 
     if (connected) {
@@ -1826,10 +1890,13 @@ void boot_splash() {
         return (128 - (n * 6 - 1)) / 2;
     };
     const char* l1 = "DS5 Bridge";
-    const char* l2 = "v0.6.0";
-    const char* l3 = "Pico2W + OLED";
+    const char* l2 = kVersionLabel.s;  // was a stale hard-coded "v0.6.0"
+    const char* l3 = DS5_BOARD_NAME " + OLED";
     draw_text(cx_for(l1), 16, l1);
-    draw_text(cx_for(l2), 30, l2);
+    // A version too wide to center (local builds) starts at the left edge;
+    // the splash is static, so the end may be cut off there.
+    const int cx2 = (128 - (kVersionLabel.n * 6 - 1)) / 2;
+    draw_text(cx2 < 0 ? 0 : cx2, 30, l2);
     draw_text(cx_for(l3), 44, l3);
     flush_fb();
     sleep_ms(1500);
@@ -1864,6 +1931,7 @@ void oled_init() {
 
     hw_reset();
     sh1107_init();
+    panel_in_sync = false;
     fb_clear();
     boot_splash();
 
