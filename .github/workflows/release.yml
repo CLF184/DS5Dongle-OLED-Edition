@@ -13,6 +13,9 @@ on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+-oled-edition"
+      # Development builds (vX.Y.Z-dev.N-oled-edition): published as a
+      # pre-release, offered only on the app's Development channel.
+      - "v[0-9]+.[0-9]+.[0-9]+-dev.[0-9]+-oled-edition"
   # Dry run: everything a release builds, from master, on all three systems,
   # with the publish job's checks, but no tag, release, attestation or feed.
   # The builds are left as workflow artifacts (e.g. a Windows build to test).
@@ -235,6 +238,9 @@ jobs:
           set -euo pipefail
           tag="$TAG"; fw="${tag#v}"; app="${fw%-oled-edition}"
           section() { awk -v v="$2" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## \[/ {exit} on' "$1"; }
+          dev=false; case "$app" in *-dev.*) dev=true ;; esac
+          # A development build's notes: what's in [Unreleased] so far.
+          if [ "$dev" = true ]; then fw=Unreleased; app_section=Unreleased; else app_section="$app"; fi
           {
             echo "**Download the app for your system below.** It includes this firmware and installs it on your dongle with one click (new dongles too)."
             echo
@@ -243,16 +249,22 @@ jobs:
             section CHANGELOG.md "$fw"
             echo
             echo "## Configurator app $app"
-            section app/CHANGELOG.md "$app"
+            section app/CHANGELOG.md "$app_section"
           } > notes.md
           files=(dist/*.AppImage dist/*-win-x64.exe dist/*-mac-universal.zip dist/ds5-bridge-oled-*.uf2)
           {
             echo
             echo "**Verify a download** (optional): \`gh attestation verify FILE -R ${GITHUB_REPOSITORY}\` shows it was built by this repository's release workflow from this tag."
           } >> notes.md
-          gh release create "$tag" --draft --verify-tag --title "${tag%-oled-edition} — OLED Edition" --notes-file notes.md
+          if [ "$dev" = true ]; then
+            {
+              echo
+              echo "**This is a development build**: newer than the stable release and less tested. The app offers it only on App settings -> Updates -> Development; **Back to stable** there returns to the latest stable app and firmware."
+            } >> notes.md
+          fi
+          gh release create "$tag" --draft --verify-tag $([ "$dev" = true ] && echo --prerelease) --title "${tag%-oled-edition} — OLED Edition" --notes-file notes.md
           gh release upload "$tag" "${files[@]}" dist/SHA256SUMS.txt
-          gh release edit "$tag" --draft=false --latest
+          if [ "$dev" = true ]; then gh release edit "$tag" --draft=false; else gh release edit "$tag" --draft=false --latest; fi
 
   manifest:
     name: Refresh latest.json

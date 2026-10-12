@@ -1,6 +1,7 @@
 name: Update manifest
 
-# Rebuilds latest.json (the configurator app's update feed) from the releases
+# Rebuilds latest.json (the configurator app's update feed) and latest-dev.json
+# (the opt-in Development channel: development pre-releases too) from the releases
 # published on this repo: after every release, daily, and on demand. Files are
 # downloaded and hashed by tools/build_manifest.mjs, so the feed never points
 # at a file that doesn't exist or doesn't match.
@@ -34,18 +35,25 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         # Exit 2 = no unified app + firmware release yet: nothing to publish.
         run: node tools/build_manifest.mjs --out latest.json || [ $? -eq 2 ]
+      - name: Build latest-dev.json (development channel)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node tools/build_manifest.mjs --channel dev --out latest-dev.json || [ $? -eq 2 ]
       # The app refuses an unsigned feed (tools/sign_manifest.mjs).
       - name: Sign latest.json
         env:
           MANIFEST_SIGNING_KEY: ${{ secrets.MANIFEST_SIGNING_KEY }}
-        run: if [ -f latest.json ]; then node tools/sign_manifest.mjs latest.json; fi
+        run: |
+          if [ -f latest.json ]; then node tools/sign_manifest.mjs latest.json; fi
+          if [ -f latest-dev.json ]; then node tools/sign_manifest.mjs latest-dev.json; fi
       - name: Commit if changed
         run: |
-          if [ -f latest.json ] && [ -n "$(git status --porcelain latest.json latest.json.sig)" ]; then
+          if [ -f latest.json ] && [ -n "$(git status --porcelain latest.json latest.json.sig latest-dev.json latest-dev.json.sig)" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add latest.json latest.json.sig
-            git commit -m "chore(release): update latest.json"
+            [ -f latest-dev.json ] && git add latest-dev.json latest-dev.json.sig
+            git commit -m "chore(release): update latest.json / latest-dev.json"
             git push origin HEAD:master
           else
             echo "latest.json unchanged."

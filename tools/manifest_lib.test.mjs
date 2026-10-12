@@ -1,7 +1,7 @@
 // node --test tools/manifest_lib.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { selectProton, selectRelease, sumFor } from "./manifest_lib.mjs";
+import { selectProton, selectRelease, sumFor, versionKey } from "./manifest_lib.mjs";
 
 const asset = (name) => ({ name, size: 1, browser_download_url: `https://github.com/x/releases/download/t/${name}` });
 const rel = (tag_name, names, extra = {}) => ({ tag_name, html_url: `https://github.com/x/releases/tag/${tag_name}`, draft: false, prerelease: false, assets: names.map(asset), ...extra });
@@ -41,4 +41,29 @@ test("finds the proton tarball and its checksum line", () => {
   assert.equal(sumFor(sums, "GE-Proton11-7-DualSense.tar.gz"), "5c73");
   assert.equal(sumFor(sums, "missing.tar.gz"), null);
   assert.equal(sumFor("aa *GE-Proton11-7-DualSense.tar.gz\n", "GE-Proton11-7-DualSense.tar.gz"), "aa");
+});
+
+const devBuild = (v) =>
+  rel(`v${v}-oled-edition`, [`DS5Dongle-OLED-Edition-Configurator-${v}-linux-x86_64.AppImage`, `ds5-bridge-oled-v${v}-oled-edition.uf2`], { prerelease: true });
+const stable090 = rel("v0.9.0-oled-edition", ["DS5Dongle-OLED-Edition-Configurator-0.9.0-linux-x86_64.AppImage", "ds5-bridge-oled-v0.9.0-oled-edition.uf2"]);
+
+test("orders development builds before their release", () => {
+  assert.deepEqual(versionKey("0.9.1-dev.2"), [0, 9, 1, 2]);
+  assert.equal(versionKey("0.9.1")[3], Infinity);
+  assert.equal(versionKey("nope"), null);
+});
+
+test("the stable feed never offers a development build", () => {
+  assert.equal(selectRelease([devBuild("0.9.1-dev.1"), stable090]).version, "0.9.0");
+});
+
+test("the dev feed offers the newest of development and stable releases", () => {
+  const s = selectRelease([devBuild("0.9.1-dev.2"), devBuild("0.9.1-dev.1"), stable090], "dev");
+  assert.equal(s.version, "0.9.1-dev.2");
+  assert.equal(s.uf2.name, "ds5-bridge-oled-v0.9.1-dev.2-oled-edition.uf2");
+  // Once 0.9.1 ships, it wins over its own development builds.
+  const stable091 = rel("v0.9.1-oled-edition", ["DS5Dongle-OLED-Edition-Configurator-0.9.1-linux-x86_64.AppImage"]);
+  assert.equal(selectRelease([stable091, devBuild("0.9.1-dev.2"), stable090], "dev").version, "0.9.1");
+  // No development build yet: the dev feed is the stable release.
+  assert.equal(selectRelease([stable090], "dev").version, "0.9.0");
 });

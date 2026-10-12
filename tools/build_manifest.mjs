@@ -8,7 +8,7 @@
 // Every file is downloaded and hashed here, so the feed can never point at a
 // file that doesn't exist or doesn't match.
 //
-//   node tools/build_manifest.mjs [--out latest.json] [--check]
+//   node tools/build_manifest.mjs [--out latest.json] [--check] [--channel stable|dev]
 //
 // Exit 2: no unified release yet (nothing to write). --check exits 1 if the
 // result differs from the existing file. Uses GITHUB_TOKEN when set.
@@ -21,6 +21,8 @@ const REPO = "MarcelineVPQ/DS5Dongle-OLED-Edition";
 const args = process.argv.slice(2);
 const out = args.includes("--out") ? args[args.indexOf("--out") + 1] : "latest.json";
 const checkOnly = args.includes("--check");
+const channel = args.includes("--channel") ? args[args.indexOf("--channel") + 1] : "stable";
+if (channel !== "stable" && channel !== "dev") throw new Error(`unknown channel ${channel}`);
 const headers = { Accept: "application/vnd.github+json", "User-Agent": "ds5-manifest-builder" };
 if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
 
@@ -45,14 +47,13 @@ async function measure(asset) {
 }
 
 const all = await releases();
-const unified = selectRelease(all);
+const unified = selectRelease(all, channel);
 if (!unified) {
   console.error("No unified app + firmware release yet; not writing a manifest.");
   process.exit(checkOnly ? 0 : 2);
 }
 
-// "channel" leaves room for an opt-in development channel later.
-const manifest = { channel: "stable" };
+const manifest = { channel };
 const platforms = {};
 for (const [os, asset] of Object.entries(unified.platforms)) platforms[os] = await measure(asset);
 manifest.app = { version: unified.version, notes_url: unified.release.html_url, platforms };
