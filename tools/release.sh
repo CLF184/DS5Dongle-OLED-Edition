@@ -10,8 +10,16 @@
 #                                     offered only on the app's Development channel
 #
 # Before running a stable release: both CHANGELOGs have a section for the
-# version (firmware: "## [0.8.0-oled-edition]", app: "## [0.8.0]"). A
-# development build's notes are the CHANGELOGs' [Unreleased] sections.
+# version (firmware: "## [0.8.0-oled-edition]", app: "## [0.8.0]"). For a
+# stable release after development builds (e.g. 0.9.5 after 0.9.5-dev.N), that
+# section is a summary on top; the dev sections stay below it.
+#
+# A development build gets its own CHANGELOG section: this script renames
+# "## [Unreleased]" to "## [X.Y.Z-dev.N-oled-edition] - YYYY-MM-DD" (firmware)
+# and "## [X.Y.Z-dev.N] - YYYY-MM-DD" (app), puts a fresh empty [Unreleased]
+# above it, and commits that in both repos with the release ("chore(release):
+# TAG"). The release notes are those sections. It refuses a development build
+# whose [Unreleased] is empty in both CHANGELOGs.
 set -euo pipefail
 
 VERSION="${1:?usage: tools/release.sh X.Y.Z[-dev.N] [--app PATH]}"
@@ -39,6 +47,22 @@ if [ "$DEV" = false ]; then
   grep -q "^## \[$VERSION\]" "$APP_DIR/CHANGELOG.md" || die "app CHANGELOG.md has no '## [$VERSION]' section"
 fi
 
+# Does CHANGELOG $1 have anything under its (first) [Unreleased] heading?
+unreleased_has_entries() {
+  awk '/^## \[Unreleased\]/ {on=1; next} on && /^## / {exit} on && NF && !/^### / {found=1} END {exit !found}' "$1"
+}
+# Rename CHANGELOG $1's [Unreleased] to "## [$2] - today" under a fresh, empty [Unreleased].
+cut_dev_section() {
+  grep -q "^## \[Unreleased\]" "$1" || die "$1 has no '## [Unreleased]' section"
+  grep -q "^## \[$2\]" "$1" && die "$1 already has a '## [$2]' section"
+  awk -v head="## [$2] - $(date +%F)" '!done && /^## \[Unreleased\]/ {print; print ""; print head; done=1; next} {print}' "$1" > "$1.tmp"
+  mv "$1.tmp" "$1"
+}
+if [ "$DEV" = true ]; then
+  unreleased_has_entries "$FW_DIR/CHANGELOG.md" || unreleased_has_entries "$APP_DIR/CHANGELOG.md" \
+    || die "[Unreleased] is empty in both CHANGELOGs: nothing to release"
+fi
+
 echo "== App checks"
 (cd "$APP_DIR" && npm run check)
 echo "== Firmware build check (release configuration)"
@@ -47,6 +71,12 @@ trap 'rm -rf "$BUILD_DIR"' EXIT
 cmake -S "$FW_DIR" -B "$BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_COMPANION_VENDOR=ON -DVERSION="$TAG" >/dev/null
 cmake --build "$BUILD_DIR" --target ds5-bridge >/dev/null
 
+if [ "$DEV" = true ]; then
+  echo "== CHANGELOGs: [Unreleased] becomes [$VERSION]"
+  cut_dev_section "$FW_DIR/CHANGELOG.md" "$VERSION-oled-edition"
+  cut_dev_section "$APP_DIR/CHANGELOG.md" "$VERSION"
+fi
+
 echo "== App version $VERSION"
 (cd "$APP_DIR" && node tools/update_version.mjs "$VERSION" && node tools/update_version.mjs --verify)
 
@@ -54,20 +84,22 @@ cat <<MSG
 
 Ready to release $TAG:
   - app repo:      commit "chore(release): $TAG", tag $TAG, push master + tag
-  - firmware repo: tag $TAG, push master + tag
+  - firmware repo: $([ "$DEV" = true ] && echo "commit \"chore(release): $TAG\" (CHANGELOG.md), ")tag $TAG, push master + tag
 GitHub Actions then builds and publishes the release on MarcelineVPQ/DS5Dongle-OLED-Edition.
 MSG
 read -r -p "Push now? [y/N] " answer
 if [ "$answer" != y ]; then
   # Leave nothing behind, so the next run starts from a clean tree.
-  git -C "$APP_DIR" checkout -- package.json package-lock.json
-  echo "Not pushed; the app version bump was undone."
+  git -C "$APP_DIR" checkout -- package.json package-lock.json CHANGELOG.md
+  git -C "$FW_DIR" checkout -- CHANGELOG.md
+  echo "Not pushed; the app version bump and the CHANGELOG changes were undone."
   exit 0
 fi
 
 git -C "$APP_DIR" commit -am "chore(release): $TAG"
 git -C "$APP_DIR" tag -a "$TAG" -m "DS5 Dongle OLED Edition $TAG"
 git -C "$APP_DIR" push origin master "$TAG"
+[ "$DEV" = true ] && git -C "$FW_DIR" commit -m "chore(release): $TAG" -- CHANGELOG.md
 git -C "$FW_DIR" tag -a "$TAG" -m "DS5 Dongle OLED Edition $TAG"
 git -C "$FW_DIR" push origin master "$TAG"
 

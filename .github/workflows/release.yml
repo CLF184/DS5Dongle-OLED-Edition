@@ -239,8 +239,14 @@ jobs:
           tag="$TAG"; fw="${tag#v}"; app="${fw%-oled-edition}"
           section() { awk -v v="$2" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## \[/ {exit} on' "$1"; }
           dev=false; case "$app" in *-dev.*) dev=true ;; esac
-          # A development build's notes: what's in [Unreleased] so far.
-          if [ "$dev" = true ]; then fw=Unreleased; app_section=Unreleased; else app_section="$app"; fi
+          app_section="$app"
+          # A development build's notes are its own sections ([X.Y.Z-dev.N-oled-edition]
+          # here, [X.Y.Z-dev.N] in the app; tools/release.sh cuts them from [Unreleased]).
+          # A dev tag made without those sections falls back to [Unreleased].
+          if [ "$dev" = true ]; then
+            grep -q "^## \[$fw\]" CHANGELOG.md || fw=Unreleased
+            grep -q "^## \[$app_section\]" app/CHANGELOG.md || app_section=Unreleased
+          fi
           {
             echo "**Download the app for your system below.** It includes this firmware and installs it on your dongle with one click (new dongles too)."
             echo
