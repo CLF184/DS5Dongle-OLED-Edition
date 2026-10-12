@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+## [0.9.3-oled-edition] - 2026-10-12
+
 ### Added
 
 - **Board name in the identity report (protocol 1.7):** identity [29] bit 3, then [30..45] the board's name as ASCII ("Pico 2 W", "Pico W"), set per build from `PICO_BOARD` (`DS5_BOARD_NAME` in CMake), so the app names the hardware without an app update for each new board.
