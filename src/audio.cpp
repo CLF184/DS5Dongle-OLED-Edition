@@ -2,6 +2,8 @@
 // Created by awalol on 2026/3/5.
 //
 
+#include <malloc.h>
+#include <unistd.h>
 #include "audio.h"
 #include "bt.h"
 #include "resample.h"
@@ -131,6 +133,21 @@ uint32_t audio_hap_drops() { return g_drop_hap; }
 // speaker frames core1 encoded, raw PCM frames core0 queued, haptic frames queued.
 static volatile uint32_t g_c1_loops = 0, g_c1_enc = 0, g_raw_push = 0, g_hap_push = 0;
 uint32_t audio_c1_loops() { return g_c1_loops; }
+// Free heap: what malloc still has plus what it hasn't claimed yet.
+extern "C" char __HeapLimit;
+static uint32_t free_heap_bytes() {
+    const struct mallinfo m = mallinfo();
+    const char *top = static_cast<const char *>(sbrk(0));
+    return (uint32_t) m.fordblks + (uint32_t) (&__HeapLimit - top);
+}
+// Core1 health (0xF5 [15]): bit0 started, bit1 speaker encoder failed (no
+// memory), bit2 mic decoder failed. Free heap when core1 started ([16]).
+static volatile uint32_t g_c1_flags = 0, g_c1_free_heap = 0;
+// The speaker encoder exists: only then does the BT audio report wait for
+// speaker frames (without it, haptics go out alone, like the Pico W build).
+static volatile bool g_spk_ready = false;
+uint32_t audio_c1_flags() { return g_c1_flags; }
+uint32_t audio_c1_free_heap() { return g_c1_free_heap; }
 uint32_t audio_c1_enc() { return g_c1_enc; }
 uint32_t audio_raw_push() { return g_raw_push; }
 uint32_t audio_hap_push() { return g_hap_push; }
@@ -263,7 +280,8 @@ bool audio_host_streaming() { return time_us_64() - s_host_audio_us < 60 * 1000;
 static void audio_bt_task() {
     if (queue_get_level(&haptics_fifo) < 2) return;
 #if !DISABLE_SPEAKER_PROC
-    if (queue_get_level(&audio_spk_fifo) < 2) return;
+    const bool spk_ready = g_spk_ready;
+    if (spk_ready && queue_get_level(&audio_spk_fifo) < 2) return;
 #endif
 
     uint8_t pkt[REPORT_SIZE]{};
@@ -289,6 +307,18 @@ static void audio_bt_task() {
     queue_try_remove(&haptics_fifo, &hap);
     memcpy(pkt + 12 + SAMPLE_SIZE, hap.data, SAMPLE_SIZE);
 #if !DISABLE_SPEAKER_PROC
+    // No speaker encoder (core1 couldn't get its memory, issue #15): haptics
+    // alone, as the Pico W build sends them; the narrator's pre-encoded lines
+    // can still take the speaker block.
+    if (!spk_ready) {
+        if (voice_take_frames(pkt + 142, pkt + 142 + SPEAKER_OPUS_SIZE, SPEAKER_OPUS_SIZE)) {
+            pkt[140] = (plug_headset ? 0x16 : 0x13) | 1 << 6 | 1 << 7;
+            pkt[141] = SPEAKER_OPUS_SIZE;
+        }
+        bt_write(pkt, sizeof(pkt));
+        g_bt_packets++;
+        return;
+    }
     // Speaker Audio Data (2 frames)
     pkt[140] = (plug_headset ? 0x16 : 0x13) | 1 << 6 | 1 << 7; // Speaker: 0x13
     // L Headset Mono: 0x14
@@ -591,33 +621,42 @@ void __not_in_flash_func(core1_entry)() {
     // Let core0's flash_safe_execute() park this core in RAM during flash
     // erase/program (config, remap, slots, BT link keys) — see flash_safe.h.
     flash_safe_execute_core_init();
+    g_c1_flags |= 0x01;
+    g_c1_free_heap = free_heap_bytes();
     int error = 0;
+    // Never return from here: a stopped core1 can't be parked for flash
+    // writes, so every save would fail too (issue #15). Without an encoder
+    // the speaker is silent, everything else keeps working.
 #if !DISABLE_SPEAKER_PROC
     encoder = opus_encoder_create(48000, 2,OPUS_APPLICATION_AUDIO, &error);
-    if (error != 0) {
-        printf("[Audio] OpusEncoder create failed\n");
-        return;
+    if (error != 0 || encoder == nullptr) {
+        printf("[Audio] OpusEncoder create failed (err=%d, free heap %lu): speaker off\n", error, (unsigned long) g_c1_free_heap);
+        encoder = nullptr;
+        g_c1_flags |= 0x02;
+    } else {
+        opus_encoder_ctl(encoder,OPUS_SET_EXPERT_FRAME_DURATION(OPUS_FRAMESIZE_10_MS));
+        opus_encoder_ctl(encoder,OPUS_SET_BITRATE(200 * 8 * 100));
+        opus_encoder_ctl(encoder,OPUS_SET_VBR(false));
+        opus_encoder_ctl(encoder,OPUS_SET_COMPLEXITY(0)); // max 4
+        resampler_audio.SetMode(true, 0, false);
+        resampler_audio.SetRates(51200, 48000);
+        resampler_audio.SetFeedMode(true);
+        resampler_audio.Prealloc(2, 512, 480);
+        g_spk_ready = true;
     }
-    opus_encoder_ctl(encoder,OPUS_SET_EXPERT_FRAME_DURATION(OPUS_FRAMESIZE_10_MS));
-    opus_encoder_ctl(encoder,OPUS_SET_BITRATE(200 * 8 * 100));
-    opus_encoder_ctl(encoder,OPUS_SET_VBR(false));
-    opus_encoder_ctl(encoder,OPUS_SET_COMPLEXITY(0)); // max 4
-    resampler_audio.SetMode(true, 0, false);
-    resampler_audio.SetRates(51200, 48000);
-    resampler_audio.SetFeedMode(true);
-    resampler_audio.Prealloc(2, 512, 480);
 #endif
     mic_decoder = opus_decoder_create(48000, MIC_CHANNELS, &error);
     if (error != 0) {
         printf("[Audio] OpusDecoder create failed (err=%d)\n", error);
         mic_decoder = nullptr;
+        g_c1_flags |= 0x04;
     }
 
     while (true) {
         g_c1_loops++;
         bool work = false;
 #if !DISABLE_SPEAKER_PROC
-        if (!queue_is_empty(&audio_fifo)) { speaker_proc(); work = true; }
+        if (g_spk_ready && !queue_is_empty(&audio_fifo)) { speaker_proc(); work = true; }
 #endif
         if (mic_decoder != nullptr && mic_proc()) work = true;
         // Idle without spinning on the queue spinlocks (starves core0's bus).

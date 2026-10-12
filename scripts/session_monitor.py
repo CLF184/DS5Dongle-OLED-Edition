@@ -24,7 +24,7 @@ def find_dongle():
             ue = open(os.path.join(d, "device/uevent")).read().upper()
         except OSError:
             continue
-        if "054C" in ue and "0CE6" in ue:
+        if "054C" in ue and ("0CE6" in ue or "0DF2" in ue):  # DualSense or Edge
             return "/dev/" + os.path.basename(d)
     return None
 

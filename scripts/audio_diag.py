@@ -8,7 +8,8 @@ import fcntl, glob, os, struct, sys, time
 
 FIELDS = ["usb_frames", "bt_out", "drop_raw", "drop_enc", "drop_hap",
           "c1_loops", "c1_enc", "raw_push", "hap_push", "mic_frames", "mic_plc",
-          "flash_wr", "flash_fail", "setfeat_n", "setfeat_last"]
+          "flash_wr", "flash_fail", "setfeat_n", "setfeat_last",
+          "c1_flags", "c1_free_heap"]  # c1_flags: 1 started, 2 speaker encoder failed, 4 mic decoder failed
 SIZE = 1 + 4 * len(FIELDS)
 
 def find_dongle():
@@ -17,7 +18,7 @@ def find_dongle():
             ue = open(os.path.join(d, "device/uevent")).read().upper()
         except OSError:
             continue
-        if "054C" in ue and "0CE6" in ue:
+        if "054C" in ue and ("0CE6" in ue or "0DF2" in ue):  # DualSense or Edge
             return "/dev/" + os.path.basename(d)
     sys.exit("dongle hidraw not found")
 

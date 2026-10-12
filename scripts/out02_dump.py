@@ -6,7 +6,7 @@ import fcntl, glob, os, sys
 def find_dongle():
     for d in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
         ue = open(os.path.join(d, "device/uevent")).read().upper()
-        if "054C" in ue and "0CE6" in ue:
+        if "054C" in ue and ("0CE6" in ue or "0DF2" in ue):  # DualSense or Edge
             return "/dev/" + os.path.basename(d)
     sys.exit("dongle not found")
 

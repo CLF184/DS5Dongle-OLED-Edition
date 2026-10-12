@@ -532,12 +532,15 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         //   [9] mic frames decoded  [10] mic PLC frames
         //   [11] flash_safe_execute calls  [12] ...failed
         //   [13] host SET_REPORT (feature) count  [14] last: id | b0<<8 | len<<16
+        //   [15] core1 flags (bit0 started, bit1 speaker encoder failed,
+        //        bit2 mic decoder failed)  [16] free heap when core1 started
         const uint32_t v[] = {
             audio_usb_frames(), audio_bt_packets(),
             audio_fifo_drops(), opus_fifo_drops(), audio_hap_drops(),
             audio_c1_loops(), audio_c1_enc(), audio_raw_push(), audio_hap_push(),
             audio_mic_frames(), audio_mic_plc_frames(),
             g_fse_calls, g_fse_fail, g_setfeat_count, g_setfeat_last,
+            audio_c1_flags(), audio_c1_free_heap(),
         };
         const uint16_t want = sizeof(v);
         const uint16_t len = (reqlen < want) ? reqlen : want;

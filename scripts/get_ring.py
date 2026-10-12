@@ -3,7 +3,7 @@
 import fcntl, glob, os, struct, sys
 for d in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
     ue = open(os.path.join(d, "device/uevent")).read().upper()
-    if "054C" in ue and "0CE6" in ue:
+    if "054C" in ue and ("0CE6" in ue or "0DF2" in ue):  # DualSense or Edge
         dev = "/dev/" + os.path.basename(d)
 buf = bytearray(38); buf[0] = 0xF2
 with open(dev, "rb+", buffering=0) as f:
