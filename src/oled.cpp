@@ -350,8 +350,8 @@ constexpr auto kVersionLabel = version_label::make("", FIRMWARE_VERSION);
 constexpr auto kStatusTitle = version_label::make("DS5 B. ", FIRMWARE_VERSION);
 
 // A title longer than its space (local builds, "+local.c3915e0") scrolls
-// ping-pong: one pixel every ~150 ms (frames are 100 ms apart, so steps
-// alternate 100/200 ms), 1.5 s pauses at each end. A title that
+// ping-pong: one pixel per frame (100 ms, ~1.7 characters a second, the
+// readable range for short tickers), 1.5 s pauses at each end. A title that
 // fits is drawn once and costs nothing (unchanged frames aren't flushed).
 void draw_title_scrolling(int x_min, int x_max, int y, const char *s, int n) {
     static int offset = 0, dir = 1;
@@ -364,7 +364,7 @@ void draw_title_scrolling(int x_min, int x_max, int y, const char *s, int n) {
     const uint32_t now = time_us_32();
     if ((int32_t) (now - next_us) >= 0) {
         offset += dir;
-        uint32_t wait = 150000;
+        uint32_t wait = 0; // the next frame (one pixel per frame)
         if (offset >= overflow || offset <= 0) {
             offset = offset >= overflow ? overflow : 0;
             dir = -dir;
