@@ -1,6 +1,8 @@
 // The rest of the firmware, faked for the host tests: flash in RAM, a settable
 // clock, and the Bluetooth / audio / OLED / voice functions src/cmd.cpp calls.
 #include <cstring>
+#include <map>
+#include <vector>
 #include "hardware/flash.h"
 #include "hardware/timer.h"
 #include "pico/flash.h"
@@ -51,10 +53,29 @@ int g_fake_slot = 0;
 bool bt_is_connected() { return g_fake_bt_connected; }
 uint32_t bt_hci_err_count() { return 0; }
 void bt_get_signal_strength(int8_t *rssi) { *rssi = -50; }
-std::vector<uint8_t> get_feature_data(uint8_t, uint16_t) { return {}; }
-std::vector<uint8_t> bt_peek_feature(uint8_t) { return {}; }
-void bt_drop_feature(uint8_t) {}
-void set_feature_data(uint8_t, uint8_t *, uint16_t) {}
+// The feature-report cache (bt.cpp feature_data: [id, data..., crc32]), what
+// was SET to the controller, and a hook standing in for its replies to GETs.
+std::map<uint8_t, std::vector<uint8_t>> g_fake_features;
+std::vector<std::vector<uint8_t>> g_fake_feature_sets;
+int g_fake_feature_gets = 0;
+void (*g_fake_feature_get_hook)(uint8_t id) = nullptr;
+std::vector<uint8_t> get_feature_data(uint8_t id, uint16_t) {
+    auto it = g_fake_features.find(id);
+    std::vector<uint8_t> ret = it != g_fake_features.end() ? it->second : std::vector<uint8_t>{};
+    g_fake_feature_gets++;
+    if (g_fake_feature_get_hook) g_fake_feature_get_hook(id);
+    return ret;
+}
+std::vector<uint8_t> bt_peek_feature(uint8_t id) {
+    auto it = g_fake_features.find(id);
+    return it != g_fake_features.end() ? it->second : std::vector<uint8_t>{};
+}
+void bt_drop_feature(uint8_t id) { g_fake_features.erase(id); }
+void set_feature_data(uint8_t id, uint8_t *data, uint16_t len) {
+    std::vector<uint8_t> v{id};
+    v.insert(v.end(), data, data + len);
+    g_fake_feature_sets.push_back(v);
+}
 int bt_get_slot() { return g_fake_slot; }
 void bt_set_slot(int slot) { g_fake_slot = slot; }
 void bt_forget_slot(int) {}

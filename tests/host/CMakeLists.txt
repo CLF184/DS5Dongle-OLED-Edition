@@ -18,6 +18,7 @@ add_executable(host_tests
         test_remap.cpp
         test_config.cpp
         test_cmd.cpp
+        test_ctrl_info.cpp
         test_perf.cpp
         test_version_label.cpp
         # The firmware sources under test, unmodified.
@@ -26,6 +27,7 @@ add_executable(host_tests
         ${FW}/src/config.cpp
         ${FW}/src/cmd.cpp
         ${FW}/src/perf.cpp
+        ${FW}/src/ctrl_info.cpp
 )
 # stubs/ first so its SDK headers win.
 target_include_directories(host_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/stubs ${FW}/src)

@@ -10,6 +10,7 @@
 #include "device/usbd_pvt.h"
 #include "cmd.h"
 #include "oled.h"
+#include "ctrl_info.h"
 
 // {CD1F1B79-799E-44AC-ADFC-A3F2090D1D4A} — the configurator opens the WinUSB
 // device by this interface GUID on Windows.
@@ -163,6 +164,16 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
         if (stage != CONTROL_STAGE_SETUP) return true;
         uint16_t const n = oled_mirror(s_mirror, sizeof(s_mirror));
         return tud_control_xfer(rhport, req, s_mirror, tu_min16(n, req->wLength));
+    }
+    // Controller health & info (proto 1.12): wValue's high byte picks the
+    // header, the firmware info or a result page (ctrl_info.cpp).
+    if (id == PICO_CMD_CTRL_INFO) {
+        if (req->bRequest != VENDOR_REQ_GET || req->bmRequestType_bit.direction != TUSB_DIR_IN) return false;
+        if (stage != CONTROL_STAGE_SETUP) return true;
+        uint16_t const reqlen = tu_min16(req->wLength, VENDOR_MAX_PAYLOAD);
+        memset(s_buf, 0, sizeof(s_buf));
+        uint16_t const n = ctrl_info_get(tu_u16_high(req->wValue), s_buf, reqlen);
+        return tud_control_xfer(rhport, req, s_buf, tu_min16(n, reqlen));
     }
     // 0xF0/0xF1 exist only here (not on the HID path), and the 0xF2-0xF4 debug
     // reports only here in release builds; all are GET-only.
