@@ -229,19 +229,38 @@ if(WAKE_DEBUG)
             WAKE_DEBUG
     )
 endif()
-set(VERSION "dev" CACHE STRING "Program version string")
-
-# Expose VERSION to firmware C++ as FIRMWARE_VERSION so src/oled.cpp's
-# Status header always reflects the release tag (set by release.yml via
-# -DVERSION="$FIRMWARE_VERSION"). Local builds without -DVERSION show
-# "dev" — visible signal that you're not on a tagged release.
+# The firmware's version string (OLED Status header, the app's firmware
+# version, picotool's program version). Releases pass the tag
+# (release.yml / release.sh: -DVERSION=vX.Y.Z-oled-edition). Anything else is
+# a dev build and says exactly what it was built from, from Git, worked out
+# at every configure (never a stale value kept in an old build folder):
+#   v0.9.3-oled-edition+3.a1b2c3d[.dirty]   3 commits after the tag, at a1b2c3d
+# tools/dev_firmware.sh passes the same string explicitly on every build.
+set(VERSION "" CACHE STRING "Release tag (vX.Y.Z-oled-edition); empty = a dev build, stamped from Git")
+if (VERSION STREQUAL "" OR VERSION STREQUAL "dev")
+        execute_process(
+                COMMAND git describe --tags --match "v*-oled-edition" --long --dirty
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                OUTPUT_VARIABLE GIT_DESCRIBE OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+        if (GIT_DESCRIBE MATCHES "^(v.+-oled-edition)-([0-9]+)-g([0-9a-f]+)(-dirty)?$")
+                set(FW_VERSION "${CMAKE_MATCH_1}+${CMAKE_MATCH_2}.${CMAKE_MATCH_3}")
+                if (CMAKE_MATCH_4)
+                        string(APPEND FW_VERSION ".dirty")
+                endif ()
+        else ()
+                set(FW_VERSION "v0.0.0-oled-edition+unknown")
+        endif ()
+else ()
+        set(FW_VERSION "${VERSION}")
+endif ()
+message(STATUS "Firmware version: ${FW_VERSION}")
 target_compile_definitions(ds5-bridge PRIVATE
-        FIRMWARE_VERSION="${VERSION}"
+        FIRMWARE_VERSION="${FW_VERSION}"
 )
 
 set_target_properties(ds5-bridge PROPERTIES OUTPUT_NAME "ds5-bridge-oled")
 pico_set_program_name(ds5-bridge "ds5-bridge-oled")
-pico_set_program_version(ds5-bridge "${VERSION}")
+pico_set_program_version(ds5-bridge "${FW_VERSION}")
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(ds5-bridge 1)
