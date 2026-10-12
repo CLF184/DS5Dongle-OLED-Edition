@@ -353,7 +353,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         buffer[16] = kNumSlots;
         buffer[17] = (uint8_t) bt_get_slot();
         buffer[18] = bt_is_connected() ? 1 : 0;
-        buffer[19] = config_unsaved() ? 0x01 : 0;
+        buffer[19] = (config_unsaved() ? 0x01 : 0) | (remap_temporary() ? 0x02 : 0);  // bit1: temporary remap (proto 1.8)
         if (reqlen < 25) return 20;
         if (bt_is_connected()) {
             const uint8_t pwr = interrupt_in_data[52];   // low nibble level, high nibble power state
@@ -377,7 +377,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
 #endif
         if (reqlen < 30) return 29;
         // proto 1.4: [29] more feature bits. bit0 screen mirror (0xEF).
-        buffer[29] = 0x01 | 0x02 | 0x04 | 0x08;  // bit1: calibration (0xEE get, 0xF6 0x0D set); bit2: grip test (0x0E, proto 1.6); bit3: board name (proto 1.7)
+        buffer[29] = 0x01 | 0x02 | 0x04 | 0x08 | 0x10;  // bit1: calibration (0xEE get, 0xF6 0x0D set); bit2: grip test (0x0E, proto 1.6); bit3: board name (proto 1.7); bit4: temporary remap (0x11 / 0x12, proto 1.8)
         if (reqlen < 30 + kBoardNameLen) return 30;
         // proto 1.7: [30..45] the board this build is for, ASCII, NUL-padded
         // ("Pico 2 W"), so hosts can name the hardware (DS5_BOARD_NAME, CMake).
@@ -636,6 +636,7 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     //   0x0B [v] narrator: 0xFF off, 1..7 language; saved (deferred)
     //   0x0C [line][lang] say a narrator line now (app preview)
     //   0x0D calibration (below)           0x10 remap table (below)
+    //   0x11 remap table for now (below)   0x12 back to the saved remap table
     s_last_result = CMD_RESULT_OK;
     switch (func) {
         case 0x01:
@@ -694,6 +695,10 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
             break;
         case 0x0D:
         case 0x10:
+        case 0x11:
+            break;
+        case 0x12:
+            remap_revert();
             break;
         default:
             s_last_result = CMD_RESULT_INVALID;
@@ -718,6 +723,15 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
             case CalibSet::Ok: break;
             case CalibSet::Invalid: s_last_result = CMD_RESULT_INVALID; break;
             case CalibSet::NotSaved: s_last_result = CMD_RESULT_FAILED; break;
+        }
+        return;
+    }
+    // 0x11 (proto 1.8): the same framing as 0x10, applied in RAM only (a
+    // game's button layout while it runs); 0x12 or a reboot ends it.
+    if (buffer[0] == 0x11) {
+        if (bufsize < 4 + kRemapCount || buffer[1] != 'R' || buffer[2] != 'M' || buffer[3] != kRemapProtoVer || !remap_set_temporary(buffer + 4)) {
+            printf("[CMD] 0x11 temporary remap rejected\n");
+            s_last_result = CMD_RESULT_INVALID;
         }
         return;
     }

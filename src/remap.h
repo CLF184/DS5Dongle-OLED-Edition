@@ -36,6 +36,15 @@ enum class RemapSet : uint8_t { Ok, Invalid, NotSaved };
 // flash write failed, so it's lost at power-off.
 RemapSet remap_set(const uint8_t *table);
 
+// proto 1.8: a table for now only (a game's layout, set by the app while the
+// game runs): applied in RAM, never written to flash, so a reboot or
+// remap_revert() brings the saved table back. Same validation as remap_set.
+bool remap_set_temporary(const uint8_t *table);
+// Back to the table saved in flash (ends a temporary one).
+void remap_revert();
+// A temporary table is active (identity [19] bit 1).
+bool remap_temporary();
+
 // Copy the current 16-entry table out.
 void remap_get(uint8_t out[kRemapCount]);
 

@@ -10,6 +10,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ### Added
 
+- **Temporary remaps (protocol 1.8):** 0xF6 func `0x11` applies a remap table in RAM only (a game's button layout from the app, so starting and stopping games never rewrites flash), `0x12` goes back to the saved table (as does a reboot); identity [19] bit 1 says a temporary table is active, [29] bit 4 announces the feature. A normal `0x10` set still saves and ends the temporary state.
 - **Dev builds are stamped from Git:** `tools/dev_firmware.sh [--flash]` and any build without `-DVERSION` report e.g. `v0.9.3-oled-edition+3.a1b2c3d[.dirty]` (OLED, app, picotool) instead of a stale "dev" version kept in an old build folder. `tools/bootsel.py` puts the dongle into BOOTSEL over HID.
 
 ## [0.9.3-oled-edition] - 2026-10-12

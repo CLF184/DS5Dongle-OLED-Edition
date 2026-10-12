@@ -45,6 +45,7 @@ static_assert(REMAP_FLASH_OFFSET % FLASH_SECTOR_SIZE == 0);
 RemapData g_remap{};
 bool      g_active   = false; // false = identity → remap_apply() fast-returns
 uint16_t  g_revision = 0;
+bool      g_temporary = false; // the table in RAM isn't the saved one (proto 1.8)
 
 const RemapData *flash_remap() {
     return reinterpret_cast<const RemapData *>(XIP_BASE + REMAP_FLASH_OFFSET);
@@ -128,9 +129,32 @@ void remap_get(uint8_t out[kRemapCount]) { memcpy(out, g_remap.table, kRemapCoun
 
 uint16_t remap_revision() { return g_revision; }
 
+bool remap_set_temporary(const uint8_t *table) {
+    if (!valid_table(table)) return false;
+    memcpy(g_remap.table, table, kRemapCount);
+    g_remap.magic = REMAP_MAGIC;
+    recompute_active();
+    g_temporary = true;
+    g_revision++;
+    return true;
+}
+
+void remap_revert() {
+    const RemapData *saved = flash_remap();
+    if (saved->magic == REMAP_MAGIC && valid_table(saved->table)) memcpy(g_remap.table, saved->table, kRemapCount);
+    else set_identity();
+    g_remap.magic = REMAP_MAGIC;
+    recompute_active();
+    g_temporary = false;
+    g_revision++;
+}
+
+bool remap_temporary() { return g_temporary; }
+
 RemapSet remap_set(const uint8_t *table) {
     if (!valid_table(table)) return RemapSet::Invalid;
     memcpy(g_remap.table, table, kRemapCount);
+    g_temporary = false;
     g_remap.magic = REMAP_MAGIC;
     recompute_active();
     g_revision++;
