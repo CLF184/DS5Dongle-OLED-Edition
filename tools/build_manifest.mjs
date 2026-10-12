@@ -56,7 +56,20 @@ if (!unified) {
 const manifest = { channel };
 const platforms = {};
 for (const [os, asset] of Object.entries(unified.platforms)) platforms[os] = await measure(asset);
-manifest.app = { version: unified.version, notes_url: unified.release.html_url, platforms };
+// The app's part of the release notes (the "## Configurator app" section,
+// i.e. its CHANGELOG entry), so the app can show what's in a build before
+// someone joins the Development channel. Older apps ignore the field.
+const appNotes = (body) => {
+  const at = body.indexOf("## Configurator app");
+  if (at < 0) return undefined;
+  let text = body.slice(body.indexOf("\n", at) + 1);
+  const end = text.indexOf("**Verify a download**");
+  if (end >= 0) text = text.slice(0, end);
+  text = text.trim().slice(0, 20000);
+  return text || undefined;
+};
+const notes = appNotes(unified.release.body ?? "");
+manifest.app = { version: unified.version, notes_url: unified.release.html_url, ...(notes ? { notes } : {}), platforms };
 if (unified.uf2) manifest.firmware = { version: unified.release.tag_name, notes_url: unified.release.html_url, uf2: await measure(unified.uf2) };
 
 const proton = selectProton(all);
