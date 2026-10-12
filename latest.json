@@ -1,33 +1,33 @@
 {
   "channel": "stable",
   "app": {
-    "version": "0.9.0",
-    "notes_url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/tag/v0.9.0-oled-edition",
+    "version": "0.9.1",
+    "notes_url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/tag/v0.9.1-oled-edition",
     "platforms": {
       "linux": {
-        "url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/download/v0.9.0-oled-edition/DS5Dongle-OLED-Edition-Configurator-0.9.0-linux-x86_64.AppImage",
-        "size": 153186560,
-        "sha256": "f9305ae47af1347d0dd2546cca893ce84217142b00234dd576685b8878794773"
+        "url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/download/v0.9.1-oled-edition/DS5Dongle-OLED-Edition-Configurator-0.9.1-linux-x86_64.AppImage",
+        "size": 153190763,
+        "sha256": "ee2733a2e818db6625f5aa5366df792fda52437f2aa81351226a283a93b6bd3a"
       },
       "windows": {
-        "url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/download/v0.9.0-oled-edition/DS5Dongle-OLED-Edition-Configurator-0.9.0-win-x64.exe",
-        "size": 121988899,
-        "sha256": "f8a31d4e49dc881bd53c0686d4db85c710a9e96f9fae1ba69d0787d355c14ea6"
+        "url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/download/v0.9.1-oled-edition/DS5Dongle-OLED-Edition-Configurator-0.9.1-win-x64.exe",
+        "size": 121992200,
+        "sha256": "dfefcc1acb7b717b4a23bc47fafea0d0f6fec72514e923c9297fc2d478e5ffe7"
       },
       "macos": {
-        "url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/download/v0.9.0-oled-edition/DS5Dongle-OLED-Edition-Configurator-0.9.0-mac-universal.zip",
-        "size": 237701826,
-        "sha256": "ba8e681f8d20f68c99a0c6f1fb659dbe9ff280d859b9ea18a152af44db94985b"
+        "url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/download/v0.9.1-oled-edition/DS5Dongle-OLED-Edition-Configurator-0.9.1-mac-universal.zip",
+        "size": 237703920,
+        "sha256": "7d6dc43fe4f4efff922cee886a216b24bdbfa1dd59b60b355bc7a7779b27d5ad"
       }
     }
   },
   "firmware": {
-    "version": "v0.9.0-oled-edition",
-    "notes_url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/tag/v0.9.0-oled-edition",
+    "version": "v0.9.1-oled-edition",
+    "notes_url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/tag/v0.9.1-oled-edition",
     "uf2": {
-      "url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/download/v0.9.0-oled-edition/ds5-bridge-oled-v0.9.0-oled-edition.uf2",
+      "url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/download/v0.9.1-oled-edition/ds5-bridge-oled-v0.9.1-oled-edition.uf2",
       "size": 2736640,
-      "sha256": "d1747a5716d3204ee9713d09da5a2eb6acac33f2f21677619617c47ec5d435c2"
+      "sha256": "8e08ad69a218f11635eac59560230394f2c337f93badee93c79eaf6c606924ae"
     }
   },
   "proton": {
