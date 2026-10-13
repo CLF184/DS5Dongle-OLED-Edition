@@ -7,7 +7,10 @@
 
 #include "utils.h"
 #include "state_mgr.h"
+#include "state_override.h"
+#include "config.h"
 #include "bt.h"
+#include "device/usbd.h"
 
 extern uint8_t reportSeqCounter;
 
@@ -59,22 +62,101 @@ void state_set_led(uint8_t r, uint8_t g, uint8_t b) {
     state[offsetof(SetStateData, LedRed) + 2] = b;
 }
 
+// The sections a game last set that the 1.13 settings can override
+// (state_override.h), so a forced value that's turned off again goes back to
+// the game's.
+static HostAudioBytes s_host_audio = kHostAudioDefaults;
+
+// One 0x31 with just these SetStateData bytes (their allow bits say what the
+// controller applies), carrying the game's current rumble.
+static void send_state_report(const uint8_t *ss) {
+    uint8_t pkt[78]{};
+    pkt[0] = 0x31;
+    pkt[1] = reportSeqCounter << 4;
+    reportSeqCounter = (reportSeqCounter + 1) & 0x0F;
+    pkt[2] = 0x10;
+    memcpy(pkt + 3, ss, sizeof(SetStateData));
+    state_stamp_host_rumble(pkt + 3);
+    bt_write(pkt, sizeof(pkt));
+}
+
 void state_set_volume(uint8_t headphones, uint8_t speaker) {
     state[0] |= 0x30; // AllowHeadphoneVolume | AllowSpeakerVolume
     state[offsetof(SetStateData, VolumeHeadphones)] = headphones;
     state[offsetof(SetStateData, VolumeSpeaker)] = speaker;
 
     // Push it now (upstream update_state): audio frames don't carry state.
-    uint8_t pkt[78]{};
-    pkt[0] = 0x31;
-    pkt[1] = reportSeqCounter << 4;
-    reportSeqCounter = (reportSeqCounter + 1) & 0x0F;
-    pkt[2] = 0x10;
-    pkt[3] = 0x30; // valid_flag0: headphone + speaker volume only
-    pkt[3 + offsetof(SetStateData, VolumeHeadphones)] = headphones;
-    pkt[3 + offsetof(SetStateData, VolumeSpeaker)] = speaker;
-    state_stamp_host_rumble(pkt + 3);
-    bt_write(pkt, sizeof(pkt));
+    uint8_t ss[sizeof(SetStateData)]{};
+    ss[0] = 0x30; // valid_flag0: headphone + speaker volume only
+    ss[offsetof(SetStateData, VolumeHeadphones)] = headphones;
+    ss[offsetof(SetStateData, VolumeSpeaker)] = speaker;
+    send_state_report(ss);
+}
+
+void state_set_audio_mute(bool mic, bool speaker) {
+    // MuteControl [9]: bit4 MicMute, bit5 SpeakerMute, bit6 HeadphoneMute; the
+    // power-save bits stay clear, as at connect (upstream cfca2a5).
+    const uint8_t mute = (uint8_t) ((mic ? 0x10 : 0) | (speaker ? 0x60 : 0));
+    state[kMuteControlOffset] = mute;  // the connect-time state carries it too
+    uint8_t ss[sizeof(SetStateData)]{};
+    ss[1] = 0x02;  // AllowAudioMute
+    ss[kMuteControlOffset] = mute;
+    send_state_report(ss);
+}
+
+void state_set_mic_volume(uint8_t volume) {
+    state[offsetof(SetStateData, VolumeMic)] = volume;
+    uint8_t ss[sizeof(SetStateData)]{};
+    ss[0] = 0x40;  // AllowMicVolume
+    ss[offsetof(SetStateData, VolumeMic)] = volume;
+    send_state_report(ss);
+}
+
+static StateOverrides overrides_from_config() {
+    const Config_body &c = get_config();
+    return {c.trigger_reduce, c.speaker_gain, c.lock_volume, c.mic_select};
+}
+
+void state_stamp_config(uint8_t *ss, bool from_host) {
+    stamp_overrides(ss, overrides_from_config(), s_host_audio, from_host);
+}
+
+extern uint8_t interrupt_in_data[63]; // main.cpp: the controller's latest input report
+
+void state_config_task() {
+    static bool s_was_connected = false;
+    static StateOverrides s_sent{};
+    static int8_t s_muted = -1;  // the controller's mic mute as last shown on its light; -1 unknown
+    // After USB is up: by then the connect-time feature reads are done (BT
+    // traffic during them delays controller detection, see audio_loop).
+    const bool connected = bt_is_connected() && tud_mounted();
+    const StateOverrides now = overrides_from_config();
+    if (!connected || !s_was_connected) {
+        // The connect-time state (bt_send_state) already carries the settings.
+        s_was_connected = connected;
+        s_sent = now;
+        s_muted = -1;
+        return;
+    }
+    const bool trigger = now.trigger_reduce != s_sent.trigger_reduce;
+    const bool gain = now.speaker_gain != s_sent.speaker_gain;
+    const bool mic = now.mic_select != s_sent.mic_select;
+    s_sent = now;
+    if (trigger || gain || mic) {
+        uint8_t ss[sizeof(SetStateData)]{};
+        build_override_push(ss, now, s_host_audio, trigger, gain, mic);
+        send_state_report(ss);
+    }
+    // The mute button's light follows the controller's mic mute (input report
+    // [53] bit 2), as on a wired DualSense (upstream a7824d9).
+    const int8_t muted = (interrupt_in_data[53] >> 2) & 1;
+    if (muted != s_muted) {
+        s_muted = muted;
+        uint8_t ss[sizeof(SetStateData)]{};
+        ss[1] = 0x01;  // AllowMuteLight
+        ss[offsetof(SetStateData, MuteLightMode)] = muted ? MuteLight::On : MuteLight::Off;
+        send_state_report(ss);
+    }
 }
 
 // The host's most recent 0x02 output report (SetStateData), kept by main.cpp.
@@ -92,6 +174,7 @@ void state_stamp_host_rumble(uint8_t *ss) {
 
 void state_clear_host_rumble() {
     memset(g_last_out02, 0, sizeof(g_last_out02));
+    s_host_audio = kHostAudioDefaults;
 }
 
 void state_get_led(uint8_t *r, uint8_t *g, uint8_t *b) {
@@ -115,6 +198,7 @@ void state_update(const uint8_t *data, const uint8_t size) {
 
     SetStateData update{};
     memcpy(&update, data, sizeof(update));
+    record_host_audio(s_host_audio, data);
 
     const auto copy_if_allowed = [&](const bool allowed, const size_t offset, const size_t length) {
         if (allowed) {

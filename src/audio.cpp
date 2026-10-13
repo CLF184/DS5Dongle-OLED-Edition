@@ -119,6 +119,18 @@ void set_headset(bool state) {
     plug_headset = state;
 }
 
+// Protocol 1.13 speaker_select (upstream ea93fad): 0 auto (the headset when one
+// is plugged in), 1 speaker, 2 headset, 3 off. The 0x39 speaker block's tag
+// picks the output: 0x13 speaker, 0x16 headset.
+static inline __attribute__((always_inline)) uint8_t speaker_block_tag() {
+    const uint8_t sel = get_config().speaker_select;
+    const bool headset = sel == 2 || (sel == 0 && plug_headset);
+    return (headset ? 0x16 : 0x13) | 1 << 6 | 1 << 7;
+}
+// Off: the PC's audio isn't converted, encoded or sent (the narrator still
+// speaks, as with no encoder).
+static inline __attribute__((always_inline)) bool speaker_output_on() { return get_config().speaker_select != 3; }
+
 // Drop counters for the OLED Diagnostics "Drop" row. Each is a 10.7 ms chunk
 // thrown away because the next stage fell behind:
 //   raw - core0 dropped PCM because core1 hadn't encoded the previous chunk
@@ -289,7 +301,7 @@ bool audio_host_streaming() { return time_us_64() - s_host_audio_us < 60 * 1000;
 static void CORE0_RAM_FUNC(audio_bt_task)() {
     if (queue_get_level(&haptics_fifo) < 2) return;
 #if !DISABLE_SPEAKER_PROC
-    const bool spk_ready = g_spk_ready;
+    const bool spk_ready = g_spk_ready && speaker_output_on();
     if (spk_ready && queue_get_level(&audio_spk_fifo) < 2) return;
 #endif
 
@@ -316,12 +328,13 @@ static void CORE0_RAM_FUNC(audio_bt_task)() {
     queue_try_remove(&haptics_fifo, &hap);
     memcpy(pkt + 12 + SAMPLE_SIZE, hap.data, SAMPLE_SIZE);
 #if !DISABLE_SPEAKER_PROC
-    // No speaker encoder (core1 couldn't get its memory, issue #15): haptics
+    // No speaker encoder (core1 couldn't get its memory, issue #15) or the
+    // speaker set to off (1.13): haptics
     // alone, as the Pico W build sends them; the narrator's pre-encoded lines
     // can still take the speaker block.
     if (!spk_ready) {
         if (voice_take_frames(pkt + 142, pkt + 142 + SPEAKER_OPUS_SIZE, SPEAKER_OPUS_SIZE)) {
-            pkt[140] = (plug_headset ? 0x16 : 0x13) | 1 << 6 | 1 << 7;
+            pkt[140] = speaker_block_tag();
             pkt[141] = SPEAKER_OPUS_SIZE;
         }
         bt_write(pkt, sizeof(pkt));
@@ -329,7 +342,7 @@ static void CORE0_RAM_FUNC(audio_bt_task)() {
         return;
     }
     // Speaker Audio Data (2 frames)
-    pkt[140] = (plug_headset ? 0x16 : 0x13) | 1 << 6 | 1 << 7; // Speaker: 0x13
+    pkt[140] = speaker_block_tag(); // Speaker: 0x13
     // L Headset Mono: 0x14
     // L Headset R Speaker: 0x15
     // Headset: 0x16
@@ -366,7 +379,7 @@ void audio_send_voice_report() {
     pkt[9] = packetCounter += 2;
     pkt[10] = 0x12 | 1 << 6 | 1 << 7;
     pkt[11] = SAMPLE_SIZE;  // haptics: 2 frames of silence
-    pkt[140] = (plug_headset ? 0x16 : 0x13) | 1 << 6 | 1 << 7;
+    pkt[140] = speaker_block_tag();
     pkt[141] = SPEAKER_OPUS_SIZE;
     if (!voice_take_frames(pkt + 142, pkt + 142 + SPEAKER_OPUS_SIZE, SPEAKER_OPUS_SIZE)) return;
     bt_write(pkt, sizeof(pkt));
@@ -427,7 +440,7 @@ void CORE0_RAM_FUNC(audio_loop)() {
     // No speaker encoder (yet, or core1 couldn't get its memory, issue #15):
     // nothing would take the PCM, so don't convert and queue it only to drop
     // it (upstream 4929996 skips this work when the speaker is off).
-    const bool spk_ready = g_spk_ready;
+    const bool spk_ready = g_spk_ready && speaker_output_on();
 #endif
 
     for (int i = 0; i < frames; i++) {

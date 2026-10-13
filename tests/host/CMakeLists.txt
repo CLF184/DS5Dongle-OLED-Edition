@@ -25,6 +25,7 @@ add_executable(host_tests
         test_title_scroll.cpp
         test_fw_report.cpp
         test_haptics_decimate.cpp
+        test_state_override.cpp
         # The firmware sources under test, unmodified.
         ${FW}/src/calib.cpp
         ${FW}/src/remap.cpp

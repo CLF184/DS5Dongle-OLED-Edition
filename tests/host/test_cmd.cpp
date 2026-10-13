@@ -34,13 +34,15 @@ void settle() {  // let a deferred command run (reboot/BOOTSEL wait 50 ms)
 }
 }  // namespace
 
-TEST(cmd_identity_reports_protocol_1_12) {
+TEST(cmd_identity_reports_protocol_1_13) {
     fresh();
-    uint8_t id[46]{};
-    CHECK_EQ(pico_cmd_get(PICO_CMD_IDENTITY, id, sizeof(id)), 46);
+    uint8_t id[47]{};
+    CHECK_EQ(pico_cmd_get(PICO_CMD_IDENTITY, id, sizeof(id)), 47);
     CHECK(std::memcmp(id, "DS5O", 4) == 0);
     CHECK_EQ(id[4], 1);
-    CHECK_EQ(id[5], 12);
+    CHECK_EQ(id[5], 13);
+    CHECK_EQ(id[6], 49);
+    CHECK(id[46] & 0x02);  // the 1.13 config fields
     CHECK_EQ(id[6], sizeof(Config_body));
     CHECK(id[29] & 0x80);  // timings in 0xFC
     CHECK(std::memcmp(id + 30, "Host", 5) == 0);
@@ -72,6 +74,44 @@ TEST(cmd_every_get_stays_in_bounds) {
         if (overreach != known) std::fprintf(stderr, "  GET 0x%02X writes past reqlen: %d (known %d)\n", rid, overreach, known);
         CHECK(overreach == known);
     }
+}
+
+// 0xF7: a 63-byte GET keeps the 1.6 layout (42-byte body, remap block at 42),
+// which every app reads the remap from; a shorter one gets the whole body.
+TEST(cmd_config_get_layouts) {
+    fresh();
+    Config_body b = get_config();
+    b.trigger_reduce = 6;
+    b.status_gpio_pin = 4;
+    set_config(b);
+    uint8_t r[63]{};
+    CHECK_EQ(pico_cmd_get(0xF7, r, 63), 63);
+    CHECK(std::memcmp(r, &get_config(), kConfigBodyV16) == 0);
+    CHECK_EQ(r[42], 'R');
+    CHECK_EQ(r[43], 'M');
+    std::memset(r, 0, sizeof(r));
+    CHECK_EQ(pico_cmd_get(0xF7, r, sizeof(Config_body)), sizeof(Config_body));
+    CHECK(std::memcmp(r, &get_config(), sizeof(Config_body)) == 0);
+    CHECK_EQ(r[42], 6);
+    CHECK_EQ(r[47], 4);
+    CHECK_EQ(pico_cmd_get(0xF7, r, 62), sizeof(Config_body));
+    CHECK_EQ(pico_cmd_get(0xF7, r, kConfigBodyV16), kConfigBodyV16);  // what apps before 1.13 ask for
+    CHECK_EQ(pico_cmd_get(0xF7, r, 38), 38);                            // the narrator read
+}
+
+// The app's config write (0x01) carries the whole 49-byte body.
+TEST(cmd_config_set_takes_the_whole_body) {
+    fresh();
+    Config_body b = get_config();
+    b.lock_volume = 1;
+    b.speaker_select = 2;
+    uint8_t msg[1 + sizeof(Config_body)];
+    msg[0] = 0x01;
+    std::memcpy(msg + 1, &b, sizeof(b));
+    pico_cmd_set(PICO_CMD_SET, msg, sizeof(msg));
+    CHECK_EQ(last_result(), CMD_RESULT_OK);
+    CHECK_EQ(get_config().lock_volume, 1);
+    CHECK_EQ(get_config().speaker_select, 2);
 }
 
 TEST(cmd_fc_timings_layout_and_reset) {
@@ -205,7 +245,7 @@ TEST(cmd_random_sets_never_crash) {
     // Still answering, and still the same protocol.
     uint8_t id[46];
     CHECK_EQ(pico_cmd_get(PICO_CMD_IDENTITY, id, sizeof(id)), 46);
-    CHECK_EQ(id[5], 12);
+    CHECK_EQ(id[5], PICO_PROTO_MINOR);
 }
 
 TEST(cmd_only_f6_runs_functions) {

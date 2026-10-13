@@ -99,6 +99,7 @@ add_executable(ds5-bridge
         src/config.cpp
         src/cmd.cpp
         src/state_mgr.cpp
+        src/status_gpio.cpp
         src/oled.cpp
         src/calib.cpp
         src/slots.cpp

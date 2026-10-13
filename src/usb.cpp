@@ -9,7 +9,9 @@
 #include <algorithm>
 
 uint8_t mute[2]; // 0: SPEAKER(0x02) 1: MIC(0x05)
-float volume[2] = {-100.0f,0.0f}; // 0: SPEAKER(0x02) 1: MIC(0x05)
+// The mic starts at its top (48 dB, the controller's full VolumeMic) until the
+// PC sets it (upstream a7824d9 starts it at 48 too).
+float volume[2] = {-100.0f,48.0f}; // 0: SPEAKER(0x02) 1: MIC(0x05)
 
 #define UAC1_ENTITY_SPK_FEATURE_UNIT    0x02
 #define UAC1_ENTITY_MIC_FEATURE_UNIT    0x05
@@ -54,6 +56,10 @@ static bool audio10_set_req_entity(tusb_control_request_t const *p_request, uint
                         TU_VERIFY(p_request->wLength == 1);
 
                         mute[index] = pBuff[0];
+                        // The PC's mute switches reach the controller too
+                        // (upstream cfca2a5); the speaker's PCM is also zeroed
+                        // in audio_loop, as before.
+                        state_set_audio_mute(mute[1] != 0, mute[0] != 0);
 
                         TU_LOG2("    Set Mute: %d of entity: %u\r\n", mute[index], entityID);
                         return true;
@@ -83,6 +89,14 @@ static bool audio10_set_req_entity(tusb_control_request_t const *p_request, uint
                         if (entityID == UAC1_ENTITY_SPK_FEATURE_UNIT) {
                             const float v = std::clamp(100.0f + volume[index], 0.0f, 100.0f);
                             state_set_volume(static_cast<uint8_t>(v), static_cast<uint8_t>(v));
+                        }
+                        // The PC's mic volume, 0..48 dB (our range below), as
+                        // the controller's VolumeMic 0..0x40 (it tops out at
+                        // 0x40, the level it had before). Upstream cfca2a5
+                        // sends the dB number itself (max 48).
+                        if (entityID == UAC1_ENTITY_MIC_FEATURE_UNIT) {
+                            const float v = std::clamp(volume[index], 0.0f, 48.0f);
+                            state_set_mic_volume(static_cast<uint8_t>(v * 64.0f / 48.0f + 0.5f));
                         }
 
                         TU_LOG2("    Set Volume: %d dB of entity: %u\r\n", volume[index], entityID);

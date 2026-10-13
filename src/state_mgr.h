@@ -30,5 +30,17 @@ uint8_t state_get_player_leds();
 // Controller amp volume (0..0x64 speaker, 0..0x7f headphones). Stored in
 // state[] for the BT-connect init and pushed to the controller immediately.
 void state_set_volume(uint8_t headphones, uint8_t speaker);
+// The PC's mute switches (USB audio): mic, and speaker + headset together;
+// pushed to the controller now (upstream cfca2a5).
+void state_set_audio_mute(bool mic, bool speaker);
+// The PC's mic volume as the controller's VolumeMic (0..0x40), pushed now.
+void state_set_mic_volume(uint8_t volume);
+// Protocol 1.13 settings (trigger reduction, speaker pre-gain, mic choice,
+// volume lock) put on a report's SetStateData bytes: a game's forwarded report
+// (from_host) or the dongle's connect-time state. See state_override.h.
+void state_stamp_config(uint8_t *ss, bool from_host);
+// Main loop: applies a changed 1.13 setting now, and keeps the mute button's
+// light on while the controller's mic is muted.
+void state_config_task();
 
 #endif //DS5_BRIDGE_STATE_MGR_H

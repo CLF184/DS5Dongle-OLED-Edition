@@ -134,7 +134,7 @@ constexpr int kLbModeHost = 8;
 constexpr int kNumLbModes = 9;
 
 // Settings screen state
-constexpr int kNumSettingsItems = 17; // 8 fields + 3 auto-haptic + 2 screen-timeout + BT mic + Ctrl-wake + Reset + Wipe
+constexpr int kNumSettingsItems = 22; // 8 fields + 3 auto-haptic + 2 screen-timeout + BT mic + Ctrl-wake + 5 audio/trigger (1.13) + Reset + Wipe
 constexpr int kSettingsAutoHapEnaIdx  = 8;
 constexpr int kSettingsAutoHapGainIdx = 9;
 constexpr int kSettingsAutoHapLpIdx   = 10;
@@ -142,8 +142,13 @@ constexpr int kSettingsScrDimIdx      = 11;
 constexpr int kSettingsScrOffIdx      = 12;
 constexpr int kSettingsBtMicIdx       = 13;
 constexpr int kSettingsCtrlWakeIdx    = 14;
-constexpr int kSettingsResetIdx       = 15;
-constexpr int kSettingsWipeSlotsIdx   = 16;
+constexpr int kSettingsTrigRedIdx     = 15; // protocol 1.13 (upstream batch 3)
+constexpr int kSettingsSpkBoostIdx    = 16;
+constexpr int kSettingsVolLockIdx     = 17;
+constexpr int kSettingsSpkOutIdx      = 18;
+constexpr int kSettingsMicInIdx       = 19;
+constexpr int kSettingsResetIdx       = 20;
+constexpr int kSettingsWipeSlotsIdx   = 21;
 Config_body settings_local{};
 int settings_sel = 0;
 bool settings_dirty = false;
@@ -1587,6 +1592,31 @@ void settings_adjust(int delta) {
         }
         case 13: c.bt_mic_enable ^= 1; break; // BT mic on/off
         case 14: c.controller_wakes_display ^= 1; break; // controller activity wakes OLED on/off
+        case kSettingsTrigRedIdx: { // trigger_reduce  0 (game) .. 10
+            int v = (int)c.trigger_reduce + delta;
+            if (v < 0) v = 0; if (v > 10) v = 10;
+            c.trigger_reduce = (uint8_t)v;
+            break;
+        }
+        case kSettingsSpkBoostIdx: { // speaker_gain  0 (game) .. 7
+            int v = (int)c.speaker_gain + delta;
+            if (v < 0) v = 0; if (v > 7) v = 7;
+            c.speaker_gain = (uint8_t)v;
+            break;
+        }
+        case kSettingsVolLockIdx: c.lock_volume ^= 1; break;
+        case kSettingsSpkOutIdx: { // speaker_select  0..3, wraps
+            int v = (int)c.speaker_select + delta;
+            if (v < 0) v = 3; if (v > 3) v = 0;
+            c.speaker_select = (uint8_t)v;
+            break;
+        }
+        case kSettingsMicInIdx: { // mic_select  0..2, wraps
+            int v = (int)c.mic_select + delta;
+            if (v < 0) v = 2; if (v > 2) v = 0;
+            c.mic_select = (uint8_t)v;
+            break;
+        }
     }
 }
 
@@ -1692,8 +1722,27 @@ __attribute__((noinline)) void format_settings_item(int idx, char* line, size_t 
             break;
         case 13: snprintf(line, n, "%s BT Mic %s", cur, c.bt_mic_enable ? "on" : "off"); break;
         case 14: snprintf(line, n, "%s CtrlWake %s", cur, c.controller_wakes_display ? "on" : "off"); break;
-        case 15: snprintf(line, n, "%s Reset to defaults", cur); break;
-        case 16: snprintf(line, n, "%s Wipe all slots", cur); break;
+        case kSettingsTrigRedIdx:
+            if (c.trigger_reduce == 0) snprintf(line, n, "%s TrigEff game", cur);
+            else snprintf(line, n, "%s TrigEff -%u", cur, c.trigger_reduce);
+            break;
+        case kSettingsSpkBoostIdx:
+            if (c.speaker_gain == 0) snprintf(line, n, "%s SpkBoost game", cur);
+            else snprintf(line, n, "%s SpkBoost %u", cur, c.speaker_gain);
+            break;
+        case kSettingsVolLockIdx: snprintf(line, n, "%s VolLock %s", cur, c.lock_volume ? "on" : "off"); break;
+        case kSettingsSpkOutIdx: {
+            const char* names[4] = {"Auto", "SPK", "Hset", "off"};
+            snprintf(line, n, "%s SPK Out %s", cur, names[c.speaker_select & 3]);
+            break;
+        }
+        case kSettingsMicInIdx: {
+            const char* names[3] = {"Auto", "Int", "Hset"};
+            snprintf(line, n, "%s Mic In %s", cur, names[c.mic_select % 3]);
+            break;
+        }
+        case kSettingsResetIdx: snprintf(line, n, "%s Reset to defaults", cur); break;
+        case kSettingsWipeSlotsIdx: snprintf(line, n, "%s Wipe all slots", cur); break;
     }
 }
 

@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "utils.h"
+#include "status_gpio.h"
 #include "hardware/flash.h"
 #include "flash_safe.h"
 #include "flash_layout.h"
@@ -72,7 +73,9 @@ void config_valid() {
         printf("[Config] disable_pico_led is invalid\n");
     }
     if (body->polling_rate_mode > 2) {
-        body->polling_rate_mode = 0;
+        // Fresh / erased config: 500 Hz (upstream 501d435). A saved rate is
+        // valid and never reaches this line, so nobody's choice changes.
+        body->polling_rate_mode = 1;
         printf("[Config] polling_rate_mode is invalid\n");
     }
     if (body->audio_buffer_length < 16 || body->audio_buffer_length > 128) {
@@ -126,6 +129,15 @@ void config_valid() {
         printf("[Config] controller_wakes_display invalid, defaulting to 1 (on)\n");
     }
     if (body->narrator_voice < 1 || body->narrator_voice > 7) body->narrator_voice = 0xFF; // off
+    // Protocol 1.13. 0xFF (erased flash, a body from older firmware) is out of
+    // range for each, so they start at their defaults.
+    if (body->trigger_reduce > 10) body->trigger_reduce = 0;   // the game's own strength
+    if (body->speaker_gain > 7) body->speaker_gain = 0;         // the game's own
+    if (body->lock_volume > 1) body->lock_volume = 0;
+    if (body->mic_select > 2) body->mic_select = 0;             // auto
+    if (body->speaker_select > 3) body->speaker_select = 0;     // auto
+    if (!status_gpio_pin_valid(body->status_gpio_pin)) body->status_gpio_pin = kStatusGpioOff;
+    if (body->status_gpio_mode > 1) body->status_gpio_mode = 0;
     if (body->config_version != CONFIG_VERSION) {
         body->config_version = CONFIG_VERSION;
         printf("[Config] Warning: Config may breaking change\n");
