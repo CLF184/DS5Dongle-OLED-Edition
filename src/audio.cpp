@@ -182,21 +182,12 @@ static volatile uint32_t g_bt_packets = 0;
 uint32_t audio_usb_frames() { return g_usb_frames; }
 uint32_t audio_bt_packets() { return g_bt_packets; }
 
-// Rolling-peak meters for the OLED VU screen. Updated during audio_loop's
-// per-sample iteration, decayed 12.5 % on each read (so the bar falls back
-// over a few frames if the signal goes quiet).
-static volatile uint16_t g_peak_spk = 0;
-static volatile uint16_t g_peak_hap = 0;
-uint8_t audio_peak_speaker() {
-    const uint16_t v = g_peak_spk;
-    g_peak_spk = (uint16_t)((v * 7) / 8);
-    return (uint8_t)(v >> 7);
-}
-uint8_t audio_peak_haptic() {
-    const uint16_t v = g_peak_hap;
-    g_peak_hap = (uint16_t)((v * 7) / 8);
-    return (uint8_t)(v >> 7);
-}
+// Peak meters for the OLED Audio Meters screen and the app's 0xFB. audio_loop
+// records each chunk's peak; reads have no side effect and the release runs on
+// elapsed time (src/audio_levels.h). All on core0.
+static AudioPeak g_peak_spk, g_peak_hap;
+uint8_t audio_peak_speaker() { return g_peak_spk.read(time_us_64()); }
+uint8_t audio_peak_haptic() { return g_peak_hap.read(time_us_64()); }
 
 // Most-recent Opus TOC byte (first byte of the packet). Used by the OLED
 // Diagnostics screen to decode the frame's bandwidth + duration config
@@ -470,9 +461,9 @@ void CORE0_RAM_FUNC(audio_loop)() {
     const float audio_gain = mute[0] ? 0.0f : powf(10.0f, get_config().speaker_volume / 20.0f);
     const float haptics_gain = get_config().haptics_gain;             // left grip
     const float haptics_gain_r = get_config().haptics_gain_right;     // right grip
-    uint16_t spk_max = g_peak_spk;
-    uint16_t hap_max = g_peak_hap;
-    uint16_t native_max = 0;  // this chunk's ch3/ch4 peak, for the detector below
+    // This chunk's peaks: ch1/ch2 for the meter, ch3/ch4 for the meter and
+    // the native-haptics detector below.
+    uint16_t spk_max = 0, native_max = 0;
 
     // ---- Audio Auto Haptics (borrowed from loteran/DS5Dongle 5d6bc2f) ----
     // Derives a haptic-feedback waveform from the speaker audio so games that
@@ -588,8 +579,8 @@ void CORE0_RAM_FUNC(audio_loop)() {
         queue_try_add(&haptics_fifo, &element);
         haptic_buf_pos = 0;
     }
-    g_peak_spk = spk_max;
-    g_peak_hap = native_max > hap_max ? native_max : hap_max;
+    g_peak_spk.record(spk_max, s_host_audio_us);
+    g_peak_hap.record(native_max, s_host_audio_us);
     native_haptics.record(native_max);
     audio_bt_task();
 }
