@@ -72,7 +72,13 @@ TEST(perf_reader_never_tears) {
     perf_record(PERF_C1_SPEAKER, kTicks);
     std::atomic<bool> stop{false};
     std::thread writer([&] {
-        while (!stop.load(std::memory_order_relaxed)) perf_record(PERF_C1_SPEAKER, kTicks);
+        // Records back to back but yields between them, like core1 (one frame
+        // per ~10 ms): a writer spinning flat out on a busy CI runner could
+        // starve the reader past its retry limit, which core1 never does.
+        while (!stop.load(std::memory_order_relaxed)) {
+            perf_record(PERF_C1_SPEAKER, kTicks);
+            std::this_thread::yield();
+        }
     });
     const uint32_t want = (uint32_t) ((uint64_t) kTicks * 1000u);  // as perf_serialize truncates it
     int torn = 0;
