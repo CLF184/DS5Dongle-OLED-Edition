@@ -48,6 +48,10 @@ void ctrl_test_task(bool may_send);
 // one of the test's pages or reading it from the feature cache.
 bool ctrl_test_owns_0x81();
 
+// The test's 0x80 is out (or was, a moment ago): the controller's slot is in
+// use. A test still queued doesn't hold it (it waits for the slot itself).
+bool ctrl_test_holds_slot();
+
 // GET 0xEB with the selector from wValue's high byte. Never writes past reqlen.
 uint16_t ctrl_info_get(uint8_t selector, uint8_t *buffer, uint16_t reqlen);
 

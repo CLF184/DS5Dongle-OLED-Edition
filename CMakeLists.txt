@@ -106,6 +106,7 @@ add_executable(ds5-bridge
         src/voice.cpp
         src/perf.cpp
         src/ctrl_info.cpp
+        src/dse.cpp
         src/ram_mem.c
 )
 # The narrator's lines (tools/build_voice_bank.py), .incbin'd by voice.cpp.

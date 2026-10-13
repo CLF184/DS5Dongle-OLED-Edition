@@ -140,6 +140,10 @@ bool ctrl_test_owns_0x81() {
     return s_req.state == CTRL_TEST_RUNNING || (s_scrub_until_us && time_us_64() < s_scrub_until_us);
 }
 
+bool ctrl_test_holds_slot() {
+    return (s_req.state == CTRL_TEST_RUNNING && s_req.sent) || (s_scrub_until_us && time_us_64() < s_scrub_until_us);
+}
+
 void ctrl_test_task(bool may_send) {
     const bool connected = bt_is_connected();
     if (connected != s_was_connected) {

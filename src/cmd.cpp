@@ -26,6 +26,7 @@
 #include "pico/bootrom.h"
 #include "perf.h"
 #include "ctrl_info.h"
+#include "dse.h"
 
 // main.cpp: the grip test's rumble (0x0E).
 void send_rumble(uint8_t left, uint8_t right);
@@ -134,7 +135,8 @@ uint64_t s_color_deadline_us = 0;
 bool s_was_connected = false;
 char s_colorway[2] = {0, 0};
 
-void controller_info_task() {
+// may_start = the Edge profile module (dse.cpp) isn't using the test slot.
+void controller_info_task(bool may_start) {
     const bool connected = bt_is_connected();
     const uint64_t now = time_us_64();
     if (connected != s_was_connected) {
@@ -149,7 +151,7 @@ void controller_info_task() {
     if (!connected) return;
     switch (s_color_state) {
         case ColorRead::Waiting: {
-            if (now < s_color_due_us) return;
+            if (now < s_color_due_us || !may_start) return;
             uint8_t cmd[63] = {0x01, 0x13};  // SYSTEM, READ_SERIAL_NUMBER (checksum added by set_feature_data)
             set_feature_data(0x80, cmd, sizeof(cmd));
             s_color_state = ColorRead::Polling;
@@ -205,8 +207,15 @@ uint8_t cmd_controller_model() {
 
 void cmd_task() {
 #if ENABLE_COMPANION_VENDOR
-    controller_info_task();
-    ctrl_test_task(s_color_state == ColorRead::Done);  // after the colorway read: one test result slot
+    // One test result slot (0x80/0x81) for three users: the Edge profile
+    // unlock (dse.cpp) goes first, then the colorway read, then the app's
+    // controller tests; none sends while another holds it.
+    const bool dse_busy = dse_owns_test_slot();
+    controller_info_task(!dse_busy);
+    ctrl_test_task(s_color_state == ColorRead::Done && !dse_busy);
+    dse_task(s_color_state != ColorRead::Polling && !ctrl_test_holds_slot());
+#else
+    dse_task(true);
 #endif
     if (s_rumble_stop_us && time_us_64() >= s_rumble_stop_us) {
         s_rumble_stop_us = 0;
