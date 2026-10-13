@@ -71,6 +71,8 @@ CORE0=""
   tud_audio_n_read tud_audio_n_write audio_device.c:audiod_calc_tx_packet_sz.isra.0 audiod_xfer_isr
   tud_hid_n_report tud_hid_n_ready hidd_xfer_cb cyw43_arch_poll
   btstack_run_loop_base_poll_data_sources btstack_run_loop_poll_data_sources_from_irq
+  l2cap_request_can_send_now_event btstack_linked_list_iterator_init
+  btstack_linked_list_iterator_has_next btstack_linked_list_iterator_next
 "
 # FUNC/OBJECT symbols as "file:name addr" (locals, grouped after their FILE
 # entry) and "name addr" (globals and weak), one per line.

@@ -248,6 +248,14 @@ relocate_to_ram(src/rp2_common/pico_cyw43_arch/cyw43_arch.c.o
 relocate_to_ram(lib/btstack/src/btstack_run_loop.c.o
     ".text.btstack_run_loop_base_poll_data_sources=.time_critical.btstack_run_loop_base_poll_data_sources|.text.btstack_run_loop_poll_data_sources_from_irq=.time_critical.btstack_run_loop_poll_data_sources_from_irq"
     "B.4: btstack run-loop data-source poll -> RAM")
+# a2772a9: bt_write's send request, and the linked-list iterators BTstack's
+# run loops walk every pass.
+relocate_to_ram(lib/btstack/src/l2cap.c.o
+    ".text.l2cap_request_can_send_now_event=.time_critical.l2cap_request_can_send_now_event"
+    "a2772a9: btstack l2cap_request_can_send_now_event -> RAM")
+relocate_to_ram(lib/btstack/src/btstack_linked_list.c.o
+    ".text.btstack_linked_list_iterator_init=.time_critical.btstack_linked_list_iterator_init|.text.btstack_linked_list_iterator_has_next=.time_critical.btstack_linked_list_iterator_has_next|.text.btstack_linked_list_iterator_next=.time_critical.btstack_linked_list_iterator_next"
+    "a2772a9: btstack linked-list iterators -> RAM")
 endif ()
 
 # B.5: RAM memcpy/memset/memmove (newlib's live in flash; libopus calls them
