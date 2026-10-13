@@ -24,6 +24,7 @@
 #include "state_mgr.h"
 #include "pico/util/queue.h"
 #include "slots.h"
+#include "usb_power.h"
 #if ENABLE_BATT_LED
 #include "battery_led.h"
 #endif
@@ -528,9 +529,9 @@ static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t cha
         }
 
         case HCI_EVENT_DISCONNECTION_COMPLETE: {
-#if !ENABLE_SERIAL
-            tud_disconnect();
-#endif
+            // USB follows in usb_power_task(): hidden (or the wake keyboard),
+            // but never while the PC sleeps (src/usb_power.h).
+            usb_power_controller(false);
             gap_connectable_control(1);
             update_discoverable();
             const uint8_t reason = hci_event_disconnection_complete_get_reason(packet);
@@ -620,9 +621,9 @@ static void CORE0_RAM_FUNC(l2cap_packet_handler)(uint8_t packet_type, uint16_t c
                     if (is_dse) dse_on_connect();
                     else dse_reset();
                     connect_attempt_started = 0; // fully up — disarm watchdog
-#if !ENABLE_SERIAL
-                    tud_connect();
-#endif
+                    // USB presents the DualSense from usb_power_task(); while
+                    // the PC sleeps this is what may wake it (usb_power.h).
+                    usb_power_controller(true);
                 }
             }
 #if ENABLE_VERBOSE

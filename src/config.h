@@ -63,12 +63,26 @@ struct __attribute__((packed)) Config_body {
     float haptics_gain_right;
 };
 
+// What the dongle does when the PC sleeps (protocol 1.13, src/usb_power.h).
+// Kept after the body, not in it: the 0xF7 config GET is already 63 bytes
+// (body + remap block), the cap of both transports, so a longer body would push
+// the remap block out for every app. Read in identity [47], set with 0xF6 0x17.
+enum : uint8_t {
+    POWER_SLEEP_CONTROLLER_OFF = 0x01, // controller off once the PC has slept 3 s (default on, as upstream)
+    POWER_PS_WAKES_PC = 0x02,          // PS button wakes the PC (default off, as upstream enable_wake)
+    POWER_FLAGS_DEFAULT = POWER_SLEEP_CONTROLLER_OFF,
+    POWER_FLAGS_MASK = 0x03,
+};
+
 struct __attribute__((packed)) Config {
     uint32_t magic;
     uint16_t version;
     uint32_t crc32; // Config_body crc32, only calc and verify when save
     uint16_t size;  // Config_body size
     Config_body body;
+    // POWER_* bits. Not in the CRC (older firmware wrote 0xFF here, which reads
+    // as the default, as does anything outside POWER_FLAGS_MASK).
+    uint8_t power_flags;
 };
 
 void config_default();
@@ -78,6 +92,12 @@ bool config_unsaved();  // RAM settings differ from flash
 // Set the narrator byte in RAM and in flash, leaving every other saved
 // setting as it is in flash (unsaved edits stay unsaved).
 bool config_save_narrator(uint8_t value);
+uint8_t config_power_flags();
+// Set the POWER_* bits in RAM and in flash, like config_save_narrator (other
+// unsaved edits stay unsaved). False = invalid bits or the flash write failed.
+bool config_save_power_flags(uint8_t flags);
+// RAM only (the OLED Settings screen; its Triangle save writes them).
+void config_set_power_flags(uint8_t flags);
 const Config_body& get_config();
 void set_config(const uint8_t *new_config, const uint16_t len);
 void config_valid();

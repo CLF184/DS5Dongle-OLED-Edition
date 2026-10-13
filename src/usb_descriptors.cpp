@@ -28,6 +28,7 @@
 #include "config.h"
 #include "bt.h"
 #include "slots.h"
+#include "usb_power.h"
 #if ENABLE_COMPANION_VENDOR
 #include "vendor_itf.h"
 #endif
@@ -133,9 +134,85 @@ tusb_desc_device_t desc_device =
     .bNumConfigurations = 0x01
 };
 
+//--------------------------------------------------------------------+
+// The wake keyboard (src/usb_power.h): with no controller connected and "PS
+// wakes the PC" on, the dongle presents only this boot keyboard, so the PC arms
+// USB remote wakeup on it while it sleeps. Its own VID/PID (a Pico's, not
+// Sony's), serial and strings, so that:
+//   * hosts never take it for a DualSense: Linux's hid-playstation binds by
+//     Sony's VID/PID and would claim (and fail on) a keyboard there, and
+//     SDL / Steam / games match the DualSense by VID/PID;
+//   * Windows keeps it apart from the DualSense: a different device node, and
+//     its own usbflags cache entry (keyed by VID/PID/bcdDevice), so the "no MS
+//     OS descriptor" it learns here never stops WinUSB binding the
+//     configurator interface on the DualSense.
+// It answers no MS OS descriptor (string 0xEE, vendor requests) and has no BOS.
+//--------------------------------------------------------------------+
+#ifndef DS5_WAKE_KBD_VID
+#define DS5_WAKE_KBD_VID 0x2E8A  // Raspberry Pi
+#endif
+#ifndef DS5_WAKE_KBD_PID
+#define DS5_WAKE_KBD_PID 0x000A  // Pico SDK device
+#endif
+
+static tusb_desc_device_t const desc_device_wake_kbd = {
+    .bLength = sizeof(tusb_desc_device_t),
+    .bDescriptorType = TUSB_DESC_DEVICE,
+    .bcdUSB = 0x0200,
+    .bDeviceClass = 0x00,
+    .bDeviceSubClass = 0x00,
+    .bDeviceProtocol = 0x00,
+    .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
+    .idVendor = DS5_WAKE_KBD_VID,
+    .idProduct = DS5_WAKE_KBD_PID,
+    .bcdDevice = 0x0100,
+    .iManufacturer = STRID_MANUFACTURER,
+    .iProduct = STRID_PRODUCT,
+    .iSerialNumber = STRID_SERIAL,
+    .bNumConfigurations = 0x01,
+};
+
+// Boot keyboard, no report id (boot protocol has none), 8-byte input report:
+// modifiers, reserved, 6 key codes up to F15 (0x68). No LED output report.
+// Upstream c67c7f6's desc_hid_report_kbd.
+static uint8_t const desc_hid_report_wake_kbd[] = {
+    0x05, 0x01,  // Usage Page (Generic Desktop)
+    0x09, 0x06,  // Usage (Keyboard)
+    0xA1, 0x01,  // Collection (Application)
+    0x05, 0x07,  //   Usage Page (Keyboard/Keypad)
+    0x19, 0xE0,  //   Usage Minimum (Left Control)
+    0x29, 0xE7,  //   Usage Maximum (Right GUI)
+    0x15, 0x00,  //   Logical Minimum (0)
+    0x25, 0x01,  //   Logical Maximum (1)
+    0x75, 0x01,  //   Report Size (1)
+    0x95, 0x08,  //   Report Count (8)
+    0x81, 0x02,  //   Input (Data,Var,Abs): modifiers
+    0x95, 0x01,  //   Report Count (1)
+    0x75, 0x08,  //   Report Size (8)
+    0x81, 0x01,  //   Input (Const): reserved
+    0x95, 0x06,  //   Report Count (6)
+    0x75, 0x08,  //   Report Size (8)
+    0x15, 0x00,  //   Logical Minimum (0)
+    0x25, 0x68,  //   Logical Maximum (104 = F15)
+    0x05, 0x07,  //   Usage Page (Keyboard/Keypad)
+    0x19, 0x00,  //   Usage Minimum (0)
+    0x29, 0x68,  //   Usage Maximum (104 = F15)
+    0x81, 0x00,  //   Input (Data,Array): 6 key codes
+    0xC0,        // End Collection
+};
+static_assert(sizeof(desc_hid_report_wake_kbd) == 45, "wDescriptorLength below");
+
+// One interface, one interrupt IN endpoint (8 bytes, 10 ms), remote wakeup.
+static uint8_t const desc_configuration_wake_kbd[] = {
+    TUD_CONFIG_DESCRIPTOR(1, 1, 0, TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN,
+                          TUSB_DESC_CONFIG_ATT_SELF_POWERED | TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
+    TUD_HID_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_KEYBOARD, sizeof(desc_hid_report_wake_kbd), 0x81, 8, 10),
+};
+
 // Invoked when received GET DEVICE DESCRIPTOR
 // Application return pointer to descriptor
 uint8_t const *tud_descriptor_device_cb(void) {
+    if (usb_wake_keyboard()) return reinterpret_cast<uint8_t const *>(&desc_device_wake_kbd);
     desc_device.idProduct = ds_mode() ? 0x0CE6 : 0x0DF2;
     return reinterpret_cast<uint8_t const *>(&desc_device);
 }
@@ -433,6 +510,12 @@ uint8_t descriptor_configuration[] = {
 // Descriptor contents must exist long enough for transfer to complete
 uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
     (void) index; // for multiple configurations
+    if (usb_wake_keyboard()) return desc_configuration_wake_kbd;
+    // Remote wakeup only with "PS wakes the PC" on (the PC may then arm it
+    // while it sleeps with a controller connected); otherwise byte-identical
+    // to before. Nothing a game reads: the HID descriptor and the interfaces
+    // are the same, and Windows binds drivers by them, not by this bit.
+    descriptor_configuration[7] = usb_power_wake_enabled() ? 0xE0 : 0xC0; // bmAttributes
     auto bInterval = 0x01;
     switch (get_config().polling_rate_mode) {
         case 0:
@@ -840,6 +923,7 @@ static_assert(sizeof(desc_hid_report_dse) == 0x01B5);
 // Descriptor contents must exist long enough for transfer to complete
 uint8_t const *tud_hid_descriptor_report_cb(uint8_t itf) {
     (void) itf;
+    if (usb_wake_keyboard()) return desc_hid_report_wake_kbd;
     if (ds_mode()) {
         return desc_hid_report_ds;
     }
@@ -872,6 +956,33 @@ static uint16_t _desc_str[60 + 1];
 uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
     (void) langid;
     size_t chr_count;
+
+    if (usb_wake_keyboard()) {
+        const char *str = nullptr;
+        switch (index) {
+            case STRID_LANGID:
+                _desc_str[1] = 0x0409;
+                chr_count = 1;
+                break;
+            case STRID_SERIAL: {
+                // "WAKE-" + the board's id: stable across ports, and never the
+                // serial a stock Pico SDK image on this board shows (also 2E8A:000A).
+                static const char kPrefix[] = "WAKE-";
+                for (size_t i = 0; i < sizeof(kPrefix) - 1; i++) _desc_str[1 + i] = kPrefix[i];
+                chr_count = sizeof(kPrefix) - 1 + board_usb_get_serial(_desc_str + sizeof(kPrefix), 32);
+                break;
+            }
+            case STRID_MANUFACTURER: str = "DS5 Dongle"; break;
+            case STRID_PRODUCT: str = "DS5 Dongle Wake Keyboard"; break;
+            default: return nullptr;  // incl. 0xEE: no MS OS descriptor here
+        }
+        if (str) {
+            chr_count = strlen(str);
+            for (size_t i = 0; i < chr_count; i++) _desc_str[1 + i] = str[i];
+        }
+        _desc_str[0] = (uint16_t) ((TUSB_DESC_STRING << 8) | (2 * chr_count + 2));
+        return _desc_str;
+    }
 
     if (ds_mode()) {
         string_desc_arr[2] = "DualSense Wireless Controller";

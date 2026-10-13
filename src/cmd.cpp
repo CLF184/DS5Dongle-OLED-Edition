@@ -27,6 +27,7 @@
 #include "perf.h"
 #include "ctrl_info.h"
 #include "dse.h"
+#include "usb_power.h"
 
 // main.cpp: the grip test's rumble (0x0E).
 void send_rumble(uint8_t left, uint8_t right);
@@ -271,6 +272,10 @@ void cmd_task() {
             result = config_save_narrator(s_pending_arg) ? CMD_RESULT_OK : CMD_RESULT_FAILED;
             s_host_gen++;
             break;
+        case 0x17: // PC sleep options (proto 1.13), saved on their own like the narrator
+            result = config_save_power_flags(s_pending_arg) ? CMD_RESULT_OK : CMD_RESULT_FAILED;
+            s_host_gen++;
+            break;
         default:
             result = CMD_RESULT_INVALID;
             break;
@@ -329,6 +334,9 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     //   proto 1.7 (when reqlen >= 46): [30..45] board name, ASCII, NUL-padded
     //   proto 1.12 (when reqlen >= 47): [46] feature bits 3, bit0 controller
     //   health & info (0xEB, 0xF6 0x16)
+    //   proto 1.13 (when reqlen >= 48): [46] bit1 PC sleep options (0xF6 0x17),
+    //   [47] their current bits (POWER_*: bit0 controller off when the PC
+    //   sleeps, bit1 PS wakes the PC; 0 when [46] bit1 is clear)
     //   proto 1.2 (when reqlen >= 26):
     //   [25] player indicator LEDs set by the host, bits 0..4 left to right
     //   [26] controller model: 0 DualSense, 1 DualSense Edge, 0xFF not known
@@ -443,8 +451,11 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         if (reqlen < 47) return 30 + kBoardNameLen;
         // proto 1.12: [46] a third feature byte. bit0 controller health &
         // info (GET 0xEB, 0xF6 0x16; ctrl_info.cpp).
-        buffer[46] = ENABLE_COMPANION_VENDOR ? 0x01 : 0;
-        return 47;
+        // proto 1.13: bit1 PC sleep options (0xF6 0x17, [47]).
+        buffer[46] = (ENABLE_COMPANION_VENDOR ? 0x01 : 0) | 0x02;
+        if (reqlen < 48) return 47;
+        buffer[47] = config_power_flags();
+        return 48;
     }
     if (report_id == 0xf7) {
         printf("[HID] Receive 0xf7 getting config\n");
@@ -719,7 +730,7 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
         s_last_result = CMD_RESULT_BUSY;
         return;
     }
-    const bool deferred = func == 0x02 || (func >= 0x04 && func <= 0x0B);
+    const bool deferred = func == 0x02 || (func >= 0x04 && func <= 0x0B) || func == 0x17;
 
     //   0x01 update config in RAM          0x02 write config to flash (deferred)
     //   0x03 reconnect tinyusb device      0x04 [slot] switch slot (deferred)
@@ -735,6 +746,8 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     //   0x15 reset the timing counters (0xFC [11..62], proto 1.11)
     //   0x16 [dev][action][pages] run a controller test command (proto 1.12,
     //        ctrl_info.cpp; read the answer with GET 0xEB)
+    //   0x17 [flags] PC sleep options (proto 1.13): bit0 controller off when
+    //        the PC sleeps, bit1 PS button wakes the PC; saved (deferred)
     s_last_result = CMD_RESULT_OK;
     switch (func) {
         case 0x01:
@@ -755,9 +768,7 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
             break;
         case 0x03:
             printf("[CMD] Enter tud reconnect func\n");
-            tud_disconnect();
-            sleep_ms(150);
-            tud_connect();
+            usb_power_reconnect();  // a deliberate reconnect, not a PC sleep
             break;
         case 0x04:
         case 0x05:
@@ -780,6 +791,10 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
             break;
         case 0x0E:
             if (arg > 2) s_last_result = CMD_RESULT_INVALID;
+            else defer(func, arg, 0);
+            break;
+        case 0x17:
+            if (bufsize < 2 || (arg & ~POWER_FLAGS_MASK)) s_last_result = CMD_RESULT_INVALID;
             else defer(func, arg, 0);
             break;
         case 0x0B:

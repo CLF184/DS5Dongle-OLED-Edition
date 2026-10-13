@@ -126,6 +126,7 @@ void config_valid() {
         printf("[Config] controller_wakes_display invalid, defaulting to 1 (on)\n");
     }
     if (body->narrator_voice < 1 || body->narrator_voice > 7) body->narrator_voice = 0xFF; // off
+    if (config.power_flags & ~POWER_FLAGS_MASK) config.power_flags = POWER_FLAGS_DEFAULT; // 0xFF erased / older firmware
     if (body->config_version != CONFIG_VERSION) {
         body->config_version = CONFIG_VERSION;
         printf("[Config] Warning: Config may breaking change\n");
@@ -137,7 +138,8 @@ void config_valid() {
 // XIP read never races a write.
 bool config_unsaved() {
     const Config *saved = flash_config();
-    return saved->magic != CONFIG_MAGIC || memcmp(&saved->body, &config.body, sizeof(Config_body)) != 0;
+    return saved->magic != CONFIG_MAGIC || memcmp(&saved->body, &config.body, sizeof(Config_body)) != 0 ||
+           saved->power_flags != config.power_flags;
 }
 
 void config_load() {
@@ -166,6 +168,7 @@ void config_load() {
 // gets re-initialized to its documented default by config_valid().
 void config_default() {
     memset(&config.body, 0xFF, sizeof(config.body));
+    config.power_flags = 0xFF;
     config_valid();
 }
 
@@ -203,6 +206,27 @@ bool config_save_narrator(uint8_t value) {
     page.version = CONFIG_VERSION;
     page.size = sizeof(Config_body);  // an older, shorter body grows here
     page.body.narrator_voice = config.body.narrator_voice;
+    if (page.power_flags & ~POWER_FLAGS_MASK) page.power_flags = POWER_FLAGS_DEFAULT;
+    return write_config(page);
+}
+
+uint8_t config_power_flags() { return config.power_flags; }
+
+void config_set_power_flags(uint8_t flags) {
+    config.power_flags = flags;
+    config_valid();
+}
+
+bool config_save_power_flags(uint8_t flags) {
+    if (flags & ~POWER_FLAGS_MASK) return false;
+    config.power_flags = flags;
+    // Flash's copy with only these bits changed; nothing valid saved yet = RAM.
+    const Config *saved = flash_config();
+    Config page = saved->magic == CONFIG_MAGIC ? *saved : config;
+    page.magic = CONFIG_MAGIC;
+    page.version = CONFIG_VERSION;
+    page.size = sizeof(Config_body);
+    page.power_flags = flags;
     return write_config(page);
 }
 

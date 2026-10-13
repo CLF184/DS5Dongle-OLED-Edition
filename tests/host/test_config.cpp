@@ -1,6 +1,7 @@
 // src/config.cpp: defaults and clamping (config_valid), the flash round trip
 // with CRC, the legacy-sector migration, and set_config keeping the narrator.
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 #include "config.h"
 #include "fakes.h"
@@ -92,4 +93,51 @@ TEST(config_migrates_legacy_sector) {
     config_load();
     CHECK_EQ(get_config().inactive_time, 12);
     CHECK(!config_unsaved());  // written to the new sector
+}
+
+// PC sleep options (Config::power_flags, after the body, protocol 1.13).
+TEST(config_power_flags_defaults_and_round_trip) {
+    fake_flash_erase_all();
+    g_fake_flash_fail = false;
+    config_load();
+    CHECK_EQ(config_power_flags(), POWER_FLAGS_DEFAULT);  // erased flash
+    CHECK_EQ(POWER_FLAGS_DEFAULT, POWER_SLEEP_CONTROLLER_OFF);  // upstream: power-off on, wake off
+    CHECK(config_save());
+    // A page older firmware wrote: the byte after its Config is 0xFF.
+    CHECK_EQ(g_fake_flash[CONFIG_FLASH_OFFSET + offsetof(Config, power_flags)], POWER_FLAGS_DEFAULT);
+    g_fake_flash[CONFIG_FLASH_OFFSET + offsetof(Config, power_flags)] = 0xFF;  // (the fake flash is RAM)
+    config_load();
+    CHECK_EQ(config_power_flags(), POWER_FLAGS_DEFAULT);
+    CHECK_EQ(sizeof(Config_body), 42u);  // the wire body (0xF7) doesn't grow
+
+    // Saved on their own: an unsaved body edit stays unsaved.
+    CHECK(config_save());
+    Config_body b = get_config();
+    b.inactive_time = 44;
+    set_config(b);
+    CHECK(config_save_power_flags(POWER_PS_WAKES_PC));
+    CHECK(config_unsaved());
+    config_load();
+    CHECK_EQ(config_power_flags(), POWER_PS_WAKES_PC);
+    CHECK_EQ(get_config().inactive_time, 30);
+    CHECK(!config_save_power_flags(0x80));  // invalid bits
+    CHECK_EQ(config_power_flags(), POWER_PS_WAKES_PC);
+
+    // The narrator's own save keeps them, and they count as unsaved changes.
+    CHECK(config_save_narrator(2));
+    config_load();
+    CHECK_EQ(config_power_flags(), POWER_PS_WAKES_PC);
+    config_set_power_flags(0x03);
+    CHECK(config_unsaved());
+    CHECK(config_save());
+    CHECK(!config_unsaved());
+    config_load();
+    CHECK_EQ(config_power_flags(), 0x03);
+    config_set_power_flags(0x40);  // out of range -> default
+    CHECK_EQ(config_power_flags(), POWER_FLAGS_DEFAULT);
+
+    // A factory reset brings back the default.
+    config_set_power_flags(0x02);
+    config_default();
+    CHECK_EQ(config_power_flags(), POWER_FLAGS_DEFAULT);
 }

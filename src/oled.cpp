@@ -134,7 +134,7 @@ constexpr int kLbModeHost = 8;
 constexpr int kNumLbModes = 9;
 
 // Settings screen state
-constexpr int kNumSettingsItems = 17; // 8 fields + 3 auto-haptic + 2 screen-timeout + BT mic + Ctrl-wake + Reset + Wipe
+constexpr int kNumSettingsItems = 19; // 8 fields + 3 auto-haptic + 2 screen-timeout + BT mic + Ctrl-wake + 2 PC sleep + Reset + Wipe
 constexpr int kSettingsAutoHapEnaIdx  = 8;
 constexpr int kSettingsAutoHapGainIdx = 9;
 constexpr int kSettingsAutoHapLpIdx   = 10;
@@ -142,9 +142,12 @@ constexpr int kSettingsScrDimIdx      = 11;
 constexpr int kSettingsScrOffIdx      = 12;
 constexpr int kSettingsBtMicIdx       = 13;
 constexpr int kSettingsCtrlWakeIdx    = 14;
-constexpr int kSettingsResetIdx       = 15;
-constexpr int kSettingsWipeSlotsIdx   = 16;
+constexpr int kSettingsSleepOffIdx    = 15;
+constexpr int kSettingsPsWakeIdx      = 16;
+constexpr int kSettingsResetIdx       = 17;
+constexpr int kSettingsWipeSlotsIdx   = 18;
 Config_body settings_local{};
+uint8_t settings_power = POWER_FLAGS_DEFAULT;  // PC sleep options (Config::power_flags, not in the body)
 int settings_sel = 0;
 bool settings_dirty = false;
 bool settings_init_done = false;
@@ -1587,6 +1590,8 @@ void settings_adjust(int delta) {
         }
         case 13: c.bt_mic_enable ^= 1; break; // BT mic on/off
         case 14: c.controller_wakes_display ^= 1; break; // controller activity wakes OLED on/off
+        case kSettingsSleepOffIdx: settings_power ^= POWER_SLEEP_CONTROLLER_OFF; break;
+        case kSettingsPsWakeIdx: settings_power ^= POWER_PS_WAKES_PC; break;
     }
 }
 
@@ -1621,6 +1626,7 @@ void settings_handle_input() {
             config_default();
             if (config_save()) {
                 settings_local = get_config();
+                settings_power = config_power_flags();
                 lightbar_load_config(); // refresh RAM lightbar state (no reboot here)
                 settings_dirty = false;
                 settings_save_status = "Reset!";
@@ -1635,6 +1641,7 @@ void settings_handle_input() {
     if (!tri_now && tri_prev) {
         if (!is_hold_item && !settings_reset_triggered) {
             set_config(settings_local);
+            config_set_power_flags(settings_power);
             settings_save_status = config_save() ? "Saved!" : "Save FAIL";
             if (settings_save_status[0] == 'S' && settings_save_status[1] == 'a') {
                 settings_dirty = false;
@@ -1692,14 +1699,21 @@ __attribute__((noinline)) void format_settings_item(int idx, char* line, size_t 
             break;
         case 13: snprintf(line, n, "%s BT Mic %s", cur, c.bt_mic_enable ? "on" : "off"); break;
         case 14: snprintf(line, n, "%s CtrlWake %s", cur, c.controller_wakes_display ? "on" : "off"); break;
-        case 15: snprintf(line, n, "%s Reset to defaults", cur); break;
-        case 16: snprintf(line, n, "%s Wipe all slots", cur); break;
+        case kSettingsSleepOffIdx:
+            snprintf(line, n, "%s Sleep CtrlOff %s", cur, (settings_power & POWER_SLEEP_CONTROLLER_OFF) ? "on" : "off");
+            break;
+        case kSettingsPsWakeIdx:
+            snprintf(line, n, "%s PS Wakes PC %s", cur, (settings_power & POWER_PS_WAKES_PC) ? "on" : "off");
+            break;
+        case kSettingsResetIdx: snprintf(line, n, "%s Reset to defaults", cur); break;
+        case kSettingsWipeSlotsIdx: snprintf(line, n, "%s Wipe all slots", cur); break;
     }
 }
 
 __attribute__((noinline)) void render_screen_settings() {
     if (!settings_init_done) {
         settings_local = get_config();
+        settings_power = config_power_flags();
         settings_init_done = true;
     }
     settings_handle_input();

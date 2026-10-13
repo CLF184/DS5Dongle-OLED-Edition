@@ -45,6 +45,8 @@ void reset_usb_boot(uint32_t, uint32_t) { g_fake_reboots++; }
 void cyw43_arch_gpio_put(uint32_t, bool) {}
 bool tud_connect() { return true; }
 bool tud_disconnect() { return true; }
+int g_fake_usb_reconnects = 0;
+void usb_power_reconnect() { g_fake_usb_reconnects++; }
 
 // --- Bluetooth (bt.cpp) ----------------------------------------------------
 #include "bt.h"
