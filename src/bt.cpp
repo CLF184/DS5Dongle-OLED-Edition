@@ -19,6 +19,7 @@
 #include "bsp/board_api.h"
 #include "classic/sdp_server.h"
 #include "config.h"
+#include "fw_report.h"
 #include "state_mgr.h"
 #include "pico/util/queue.h"
 #include "slots.h"
@@ -598,31 +599,27 @@ static void CORE0_RAM_FUNC(l2cap_packet_handler)(uint8_t packet_type, uint16_t c
                 bt_disconnect();
             }
         } else if (channel == hid_control_cid) {
-            if (check_dse) {
-                if (packet[0] == 0xA3 && packet[1] == 0x70) {
-                    printf("Connected DSE Controller\n");
-                    check_dse = false;
-                    is_dse = true;
-                    connect_attempt_started = 0; // fully up — disarm watchdog
-#if !ENABLE_SERIAL
-                    tud_connect();
-#endif
-                } else if (packet[0] == 0x02) {
-                    printf("Connected DS5 Controller\n");
-                    check_dse = false;
-                    is_dse = false;
-                    connect_attempt_started = 0; // fully up — disarm watchdog
-#if !ENABLE_SERIAL
-                    tud_connect();
-#endif
-                }
-            }
             if (packet[0] == 0xA3) {
                 uint8_t report_id = packet[1];
                 feature_data[report_id].assign(packet + 1, packet + size);
 #if ENABLE_VERBOSE
                 printf("[L2CAP] Stored Feature Report 0x%02X, len=%u\n", report_id, size - 1);
 #endif
+                // The model comes from the firmware report (upstream 2efc855):
+                // sw series 0x44 = Edge. It is init_feature()'s last request, so
+                // 0x09/0x22/0x05 are cached before USB connects.
+                if (check_dse && report_id == 0x20) {
+                    check_dse = false;
+                    const auto &fw = feature_data[0x20];
+                    is_dse = fw_report::is_edge(fw.data(), fw.size());
+                    printf("Connected %s Controller\n", is_dse ? "DSE" : "DS5");
+                    // The Edge's profile report, cached at connect as before.
+                    if (is_dse) get_feature_data(0x70, 64);
+                    connect_attempt_started = 0; // fully up — disarm watchdog
+#if !ENABLE_SERIAL
+                    tud_connect();
+#endif
+                }
             }
 #if ENABLE_VERBOSE
             printf("[L2CAP] HID Control data len=%u\n", size);
@@ -837,12 +834,10 @@ void set_feature_data(uint8_t reportId, uint8_t *data, uint16_t len) {
 
 void init_feature() {
     get_feature_data(0x09, 20);
-    get_feature_data(0x20, 64);
     get_feature_data(0x22, 64);
     get_feature_data(0x05, 41);
-    // DSE
-    // check DSE by request 0x70 feature report. DSE return DEFAULT
-    // If len == 1, it's DS5
+    // Last: its reply tells DualSense from Edge and connects USB, by when the
+    // controller (which answers in order) has sent the three above.
     check_dse = true;
-    get_feature_data(0x70, 64);
+    get_feature_data(0x20, 64);
 }

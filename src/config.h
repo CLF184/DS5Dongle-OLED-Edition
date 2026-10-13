@@ -83,5 +83,8 @@ void set_config(const uint8_t *new_config, const uint16_t len);
 void config_valid();
 void set_config(const Config_body &new_config);
 extern bool is_dse;
+// True when the dongle presents a DualSense (mode DS5, or Auto with a DualSense
+// connected); false for the Edge ID. Defined in usb_descriptors.cpp.
+bool ds_mode();
 
 #endif //DS5_BRIDGE_CONFIG_H

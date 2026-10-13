@@ -23,6 +23,7 @@ add_executable(host_tests
         test_perf.cpp
         test_version_label.cpp
         test_title_scroll.cpp
+        test_fw_report.cpp
         # The firmware sources under test, unmodified.
         ${FW}/src/calib.cpp
         ${FW}/src/remap.cpp

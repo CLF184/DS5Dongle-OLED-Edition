@@ -28,6 +28,7 @@
 #include "calib.h"
 #include "perf.h"
 #include "ctrl_info.h"
+#include "fw_report.h"
 
 // Pico SDK speciifically for waiting on conditions
 #include "pico/critical_section.h"
@@ -325,6 +326,11 @@ static uint16_t get_report_impl(uint8_t itf, uint8_t report_id, hid_report_type_
     if (report_id == 0x09 || report_id == 0x20 || report_id == 0x05) {
         if (reqlen == 0) return 0;
         std::vector<uint8_t> real = get_feature_data(report_id, reqlen);
+        if (report_id == 0x20 && real.size() > 1) {
+            // An Edge presented as a DualSense gets a DualSense firmware report
+            // (no failing PS Accessories update); everything else its real one.
+            return fw_report::host_report(real.data(), real.size(), is_dse, ds_mode(), buffer, reqlen);
+        }
         if (real.size() > 1) {                     // real cached response present
             uint16_t n = (uint16_t)(real.size() - 1);
             if (n > reqlen) n = reqlen;

@@ -194,7 +194,7 @@ void controller_info_task() {
 
 uint8_t cmd_controller_model() {
 #if ENABLE_COMPANION_VENDOR
-    // Known once the colorway read has finished: by then the model (0x70 at
+    // Known once the colorway read has finished: by then the model (0x20 at
     // connect) is the new controller's, not the previous one's.
     const bool known = bt_is_connected() && (s_color_state == ColorRead::Scrub || s_color_state == ColorRead::Done);
     return known ? (is_dse ? 1 : 0) : 0xFF;
