@@ -105,6 +105,12 @@ jobs:
           fi
           git -C "$PICO_SDK_PATH/lib/tinyusb" checkout --detach "$TINYUSB_REF"
 
+      - name: lib/* stay submodule gitlinks
+        run: tools/check_gitlinks.sh
+
+      - name: Host unit tests (ASan + UBSan)
+        run: tests/host/run.sh build/host-tests
+
       - name: Build release firmware (with the configurator interface)
         run: |
           cmake -S . -B build/standard -G Ninja \
@@ -113,6 +119,7 @@ jobs:
             -DENABLE_COMPANION_VENDOR=ON \
             -DVERSION="$TAG"
           cmake --build build/standard --target ds5-bridge
+          tools/check_ram_residency.sh build/standard/ds5-bridge-oled.elf
           mkdir -p artifacts
           cp build/standard/ds5-bridge-oled.uf2 "artifacts/ds5-bridge-oled-$TAG.uf2"
           # What the app bundles: the same UF2 plus its version and hash.

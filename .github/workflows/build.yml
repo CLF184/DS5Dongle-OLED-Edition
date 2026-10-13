@@ -78,6 +78,9 @@ jobs:
           fi
           git -C "$PICO_SDK_PATH/lib/tinyusb" checkout --detach "$TINYUSB_REF"
 
+      - name: lib/* stay submodule gitlinks
+        run: tools/check_gitlinks.sh
+
       - name: Host unit tests (ASan + UBSan)
         run: tests/host/run.sh build/host-tests
 
@@ -88,6 +91,7 @@ jobs:
             -DPICO_SDK_PATH="$PICO_SDK_PATH" \
             -DVERSION="$FIRMWARE_VERSION"
           cmake --build build/standard --target ds5-bridge
+          tools/check_ram_residency.sh build/standard/ds5-bridge-oled.elf
           mkdir -p artifacts
           cp build/standard/ds5-bridge-oled.uf2 artifacts/ds5-bridge-oled.uf2
 
@@ -119,6 +123,7 @@ jobs:
             -DPICO_W_BUILD=ON \
             -DVERSION="$FIRMWARE_VERSION"
           cmake --build build/picow --target ds5-bridge
+          tools/check_ram_residency.sh build/picow/ds5-bridge-oled.elf
           cp build/picow/ds5-bridge-oled.uf2 artifacts/ds5-bridge-oled-picow.uf2
 
       - name: Upload standard UF2 artifact

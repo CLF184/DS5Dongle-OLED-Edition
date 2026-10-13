@@ -39,7 +39,9 @@ Common build flags (set via `-D` on the cmake invocation):
 - `ENABLE_STACK_USAGE=ON` — `-fstack-usage` on our code, libopus and the resampler, for `tools/analyze.sh`.
 - libopus is built with `OPUS_HARDENING`, `OPUS_STACK_PROTECTOR` and `OPUS_FORTIFY_SOURCE` **off** (forced in CMakeLists.txt): fortify turned its `memcpy`/`memset` into `__memcpy_chk`/`__memset_chk` in flash, so core1 left RAM every frame, and hardening's asserts abort (a panic here).
 
-CI runs four build variants in `.github/workflows/build.yml` (standard / debug / no-batt-led / Pico W). When changing build flags or CMake, update the workflow accordingly.
+CI runs four build variants in `.github/workflows/build.yml` (standard / debug / no-batt-led / Pico W). When changing build flags or CMake, update the workflow accordingly. CI, `release.yml` and `tools/release.sh` also run the host tests, `tools/check_gitlinks.sh` and `tools/check_ram_residency.sh ELF` (core1's audio path in RAM, no `__mem*_chk`); add a symbol there when core1 gets a new per-frame function.
+
+**`lib/opus` and `lib/WDL` are submodule gitlinks (mode 160000): never replace them with a symlink, never stage anything under `lib/`, no `git commit -a` over them.** `tools/check_gitlinks.sh` fails the build otherwise (5d869f1 committed a symlink once).
 
 ## Hardware-in-the-loop workflow
 

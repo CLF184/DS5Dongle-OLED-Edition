@@ -65,11 +65,15 @@ fi
 
 echo "== App checks"
 (cd "$APP_DIR" && npm run check)
-echo "== Firmware build check (release configuration)"
+echo "== Firmware checks: submodule gitlinks, host unit tests"
+"$FW_DIR/tools/check_gitlinks.sh" "$FW_DIR"
 BUILD_DIR="$(mktemp -d)"
 trap 'rm -rf "$BUILD_DIR"' EXIT
+"$FW_DIR/tests/host/run.sh" "$BUILD_DIR/host-tests" >/dev/null
+echo "== Firmware build check (release configuration)"
 cmake -S "$FW_DIR" -B "$BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_COMPANION_VENDOR=ON -DVERSION="$TAG" >/dev/null
 cmake --build "$BUILD_DIR" --target ds5-bridge >/dev/null
+"$FW_DIR/tools/check_ram_residency.sh" "$BUILD_DIR/ds5-bridge-oled.elf"
 
 if [ "$DEV" = true ]; then
   echo "== CHANGELOGs: [Unreleased] becomes [$VERSION]"
