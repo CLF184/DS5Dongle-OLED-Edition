@@ -73,6 +73,7 @@ CORE0=""
   btstack_run_loop_base_poll_data_sources btstack_run_loop_poll_data_sources_from_irq
   l2cap_request_can_send_now_event btstack_linked_list_iterator_init
   btstack_linked_list_iterator_has_next btstack_linked_list_iterator_next
+  crc32_lookup_table
 "
 # FUNC/OBJECT symbols as "file:name addr" (locals, grouped after their FILE
 # entry) and "name addr" (globals and weak), one per line.
