@@ -12,17 +12,22 @@ A Raspberry Pi Pico 2 W (RP2350) firmware that bridges a Sony DualSense (DS5) co
 
 Verification is hardware-in-the-loop (see "Hardware-in-the-loop workflow" below). The pure logic also has host unit tests: `tests/host/run.sh` builds `src/{calib,remap,config,cmd,perf,ctrl_info}.cpp` and the OLED flush / Status-screen controller glyph (`src/oled_pad.h`, mirror symmetry) / title scroll (`src/title_scroll.h`) / stick-curve / firmware-report 0x20 (`src/fw_report.h`) / haptics decimation (`src/haptics_decimate.h`, checked against WDL itself) headers on the PC against SDK stubs (`tests/host/stubs/`, flash is a RAM array in `fakes.cpp`) with ASan + UBSan, no hardware; CI runs it. Add a test there when you change that logic. `tools/analyze.sh [build dir] [--tidy] [--cppcheck]` prints section sizes, the RAM image split (libopus / other `.time_critical` / variables), the biggest RAM and flash symbols, the deepest stack frames (configure with `-DENABLE_STACK_USAGE=ON`) and clang-tidy / cppcheck findings over our `src/` (`tools/analyze.sh --install` puts both tools into `~/.cache/ds5dongle/tools/venv`, no root).
 
-The build is **non-trivial to set up** because it requires a specific TinyUSB version:
+The build is **non-trivial to set up** because it requires a specific Pico SDK, TinyUSB and compiler. The pins live in one file, `tools/toolchain.env` (CI loads it; `tools/dev_firmware.sh` and `tools/release.sh` warn when a local setup differs, via `tools/toolchain.sh`): **Pico SDK 2.3.0, TinyUSB at upstream's commit 2d56dc5 (0.21 + hathach/tinyusb#3758), ARM GNU Toolchain 15.2.Rel1** (as upstream awalol 994f310 / 898c352; upstream's fix for DualSense V2 CFI-ZCT2W reconnect failures and watchdog reboot loops, #235). CMake refuses any TinyUSB other than 0.21, because the `relocate_to_ram()` section names are 0.21's.
 
 ```bash
-# Pico SDK 2.2.0 must be installed; export PICO_SDK_PATH.
-# CRITICAL: TinyUSB must be pinned to 0.20.0. The 0.18.0 that ships with
-# Pico SDK 2.2.0 lacks the 4-arg form of TUD_AUDIO_EP_SIZE used by
-# src/tusb_config.h — compile errors with no clear pointer to the cause.
-cd "$PICO_SDK_PATH/lib/tinyusb"
-git fetch --tags && git checkout 0.20.0
+# Pico SDK 2.3.0 with TinyUSB at the pinned commit. The SDK still bundles
+# TinyUSB 0.18.0, which lacks the 4-arg TUD_AUDIO_EP_SIZE in src/tusb_config.h;
+# the pin is 0.21.0 plus hathach/tinyusb#3758 (rp2040 dcd fixes among others).
+# Any folder works; point PICO_SDK_PATH at it (the system SDK can stay as is).
+git clone --depth 1 --branch 2.3.0 https://github.com/raspberrypi/pico-sdk.git ~/sdk23/pico-sdk
+git -C ~/sdk23/pico-sdk submodule update --init --recursive
+git -C ~/sdk23/pico-sdk/lib/tinyusb fetch --depth 1 origin 2d56dc533e45e4e91b15e93fdab5e22e964f328d
+git -C ~/sdk23/pico-sdk/lib/tinyusb checkout --detach FETCH_HEAD
+# ARM's toolchain: the tarball at ARM_TOOLCHAIN_URL in tools/toolchain.env,
+# unpacked anywhere (e.g. ~/sdk23/arm-toolchain, the folder holding bin/).
+export PICO_SDK_PATH=~/sdk23/pico-sdk PICO_TOOLCHAIN_PATH=~/sdk23/arm-toolchain
 
-# Build
+# Build (tools/dev_firmware.sh does this with the same two variables)
 cd /path/to/DS5Dongle
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPICO_SDK_PATH="$PICO_SDK_PATH"
 cmake --build build --target ds5-bridge
@@ -40,7 +45,7 @@ Common build flags (set via `-D` on the cmake invocation):
 - `ENABLE_STACK_USAGE=ON` — `-fstack-usage` on our code, libopus and the resampler, for `tools/analyze.sh`.
 - libopus is built with `OPUS_HARDENING`, `OPUS_STACK_PROTECTOR` and `OPUS_FORTIFY_SOURCE` **off** (forced in CMakeLists.txt): fortify turned its `memcpy`/`memset` into `__memcpy_chk`/`__memset_chk` in flash, so core1 left RAM every frame, and hardening's asserts abort (a panic here).
 
-CI runs five build variants in `.github/workflows/build.yml` (standard / debug / no-batt-led / 320 MHz fallback / Pico W), with ARM's official 14.2.Rel1 toolchain (cached tarball, as upstream 425061f), not Ubuntu's `gcc-arm-none-eabi`. When changing build flags or CMake, update the workflow accordingly. CI, `release.yml` and `tools/release.sh` also run the host tests, `tools/check_gitlinks.sh` and `tools/check_ram_residency.sh ELF` (core1's audio path and, on RP2350, core0's BT/USB hot path in RAM, no `__mem*_chk`) and `tools/check_xip_setup.sh ELF [clkdiv [vcode]]` (non-empty `.boot2`; on RP2350 the embedded XIP setup is called by crt0, its flash divider, and `main()` starting with `vreg_set_voltage(code)`); add a symbol there when core1 gets a new per-frame function or core0's hot path a new RAM function.
+CI runs five build variants in `.github/workflows/build.yml` (standard / debug / no-batt-led / 320 MHz fallback / Pico W), with ARM's official toolchain from `tools/toolchain.env` (15.2.Rel1, cached tarball, as upstream 425061f / 994f310), not Ubuntu's `gcc-arm-none-eabi`. A build folder can't switch SDK or compiler (CMake caches both): use a fresh one, as `tools/dev_firmware.sh` does by itself. When changing build flags or CMake, update the workflow accordingly. CI, `release.yml` and `tools/release.sh` also run the host tests, `tools/check_gitlinks.sh` and `tools/check_ram_residency.sh ELF` (core1's audio path and, on RP2350, core0's BT/USB hot path in RAM, no `__mem*_chk`) and `tools/check_xip_setup.sh ELF [clkdiv [vcode]]` (non-empty `.boot2`; on RP2350 the embedded XIP setup is called by crt0, its flash divider, and `main()` starting with `vreg_set_voltage(code)`); add a symbol there when core1 gets a new per-frame function or core0's hot path a new RAM function.
 
 **`lib/opus` and `lib/WDL` are submodule gitlinks (mode 160000): never replace them with a symlink, never stage anything under `lib/`, no `git commit -a` over them.** `tools/check_gitlinks.sh` fails the build otherwise (5d869f1 committed a symlink once).
 
@@ -106,7 +111,7 @@ These are non-obvious from the code; they cost time when forgotten.
 - **DS5 PS+Mute hold-2-seconds → `watchdog_reboot(0,0,0)`** is the headless soft-reboot path (see `src/main.cpp:interrupt_loop()`). It checks `interrupt_in_data[9]` bits 0+2. If you change input report layout, this combo breaks silently.
 - **Inactivity-disconnect uses `packet[3..12]`** in the L2CAP interrupt data path (`src/bt.cpp:l2cap_packet_handler`). It's looking at sticks and DPad/buttons to decide "idle." Don't touch those bytes' layout without updating the heuristic.
 - **Core1's audio path must stay in RAM.** Running libopus / the resampler from flash made core1 miss its encode deadline (core0's BTstack/TinyUSB/OLED evict the shared XIP cache) and drop ~7 % of speaker chunks — the long-standing speaker crackle. CMakeLists.txt renames libopus `.text`/`.rodata` and the two `WDL_Resampler` hot methods into `.time_critical.*`, `relocate_to_ram()` moves SDK queue ops, `src/ram_mem.c` overrides `memcpy`/`memset`/`memmove`, and core1 functions are `__not_in_flash_func`. Anything new core1 calls per frame must be RAM-resident too. The OLED Diagnostics `Drop r/e/h` row is the tripwire: `r` climbing = core1 too slow.
-- **Core0's Bluetooth/USB hot path is in RAM too (RP2350 only)**: upstream's B.1–B.4, a2772a9, 57f185b and `audio_loop` (~39 KB of SRAM). Our functions use `CORE0_RAM_FUNC` / `CORE0_RAM_DATA` (`src/core0_ram.h`; plain flash on the Pico W, whose RP2040 can't spare the RAM); SDK functions are renamed by `relocate_to_ram()` in CMakeLists.txt under `if (PICO_RP2350)`. Section names must match the SDK's TinyUSB (0.20 now): a rename that matches nothing does nothing, so every one is listed in `tools/check_ram_residency.sh` (`file.c:sym` for a static symbol) — add new ones there, and recheck the list when the SDK/TinyUSB moves.
+- **Core0's Bluetooth/USB hot path is in RAM too (RP2350 only)**: upstream's B.1–B.4, a2772a9, 57f185b and `audio_loop` (~39 KB of SRAM). Our functions use `CORE0_RAM_FUNC` / `CORE0_RAM_DATA` (`src/core0_ram.h`; plain flash on the Pico W, whose RP2040 can't spare the RAM); SDK functions are renamed by `relocate_to_ram()` in CMakeLists.txt under `if (PICO_RP2350)`. Section names must match the SDK's TinyUSB (0.21 now: the FIFO bulk movers are `tu_fifo_{read,write}_n_access_mode`; `tu_fifo_read_n`/`write_n`/`count` are inline wrappers without a section, upstream 76690ab): a rename that matches nothing does nothing, so every one is listed in `tools/check_ram_residency.sh` (`file.c:sym` for a static symbol) — add new ones there, and recheck the list when the SDK/TinyUSB moves.
 - **Core1 must stay registered for flash lockout** (`flash_safe_execute_core_init()` in `core1_entry`, `PICO_FLASH_ASSUME_CORE1_SAFE=0`). Its RAM code still calls flash every frame (soft-double helpers, libm, the resampler's malloc), so an unparked flash write kills core1 — `0xF5` shows `c1_loops` frozen and every chunk dropped.
 - **Per-stage timings (protocol 1.11, `src/perf.h`)**: core0's main loop is timed per stage (whole pass, `cyw43_arch_poll`, `tud_task`, audio, input, `oled_loop`) and core1 per speaker frame and per mic frame: average and max, in `0xFC` [11..62], reset with `0xF6 0x15`. Cycle counter (DWT) on RP2350, microsecond timer on RP2040. Use them to A/B a build change on hardware (`-O2` vs `-O3`, an Opus option): flash build A, reset, run the same load (e.g. a game with speaker audio) for a minute, read `0xFC`; repeat with B. `perf_record` is inline so core1's RAM code can call it; keep anything core1 adds that way.
 - **The OLED flush skips unchanged frames** (`flush_fb_raw`: `memcmp` against `fb_shown`, still resent every 20th frame so a disturbed panel heals) and sends a frame in 129 SPI transactions (`src/oled_flush.h`, byte-identical to the old per-byte flush, checked by the host tests); the mirror's frame counter still counts every frame.
