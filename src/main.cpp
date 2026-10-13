@@ -493,10 +493,17 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
 #endif
 
 int main() {
-    // The Pico 2 W runs at the clock and core voltage it boots with (150 MHz,
-    // default voltage), as upstream awalol v0.7.0 does. The Pico W (200 MHz)
-    // and the DS5_CLOCK_KHZ=320000 fallback raise voltage and clock here.
-#if SYS_CLOCK_KHZ != 150000
+    // The Pico 2 W runs at the clock it boots with (150 MHz), as upstream
+    // awalol v0.7.0 does, at the default core voltage (1.10 V). That voltage
+    // is set explicitly: the RP2350 keeps its regulator setting across every
+    // reset but power-on, so a dongle that ran the old 320 MHz firmware would
+    // otherwise stay at 1.20 V after this one is flashed. Lowering it at the
+    // boot clock is safe; vreg_set_voltage() waits for the change to finish.
+    // The Pico W (200 MHz) and the DS5_CLOCK_KHZ=320000 fallback raise
+    // voltage and clock instead.
+#if SYS_CLOCK_KHZ == 150000
+    vreg_set_voltage(VREG_VOLTAGE_DEFAULT);
+#else
     vreg_set_voltage(VREG_VOLTAGE_1_20);
     sleep_ms(1000);
     set_sys_clock_khz(SYS_CLOCK_KHZ, true);

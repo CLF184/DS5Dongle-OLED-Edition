@@ -38,7 +38,7 @@ target_compile_definitions(host_tests PRIVATE
         ENABLE_SERIAL=0
         ENABLE_VERBOSE=0
         DS5_BOARD_NAME="Host"
-        SYS_CLOCK_KHZ=320000
+        SYS_CLOCK_KHZ=150000
         FIRMWARE_VERSION="host-test"
         PICO_PROGRAM_VERSION_STRING="host-test"
 )

@@ -83,7 +83,7 @@ TEST(cmd_fc_timings_layout_and_reset) {
     CHECK_EQ(pico_cmd_get(0xFC, r, 63), 63);
     uint32_t khz;
     std::memcpy(&khz, r, 4);
-    CHECK_EQ(khz, 320000u);
+    CHECK_EQ(khz, 150000u);
     CHECK_EQ(r[11], 1);
     CHECK_EQ(r[12], 8);
     uint32_t avg;
