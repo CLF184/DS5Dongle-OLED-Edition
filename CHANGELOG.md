@@ -10,6 +10,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ### Added
 
+- **Core1 start-up stage in the diagnostics (issue #15):** when the dongle's second core never starts its loop, the 0xF5 audio counters now say which start-up step it stopped in (registering for flash lockout, starting its cycle counter, reading the free memory, creating or setting up the speaker encoder and resampler, creating the mic decoder), in bits 3..6 of the core1 flags byte [60] (9 = running). Older apps read the flags and counters as before; `scripts/audio_diag.py` prints the stage.
+
 - **The DualSense Edge on the OLED, for the first time:** with an Edge connected, the Status screen shows its Fn buttons and back buttons (LB / RB) and lights them as you press them.
 
   ![The OLED Status screen: DualSense, DualSense Edge, and the Edge with its buttons pressed](https://raw.githubusercontent.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web/master/docs/screenshots/oled-status-dualsense-edge.png)

@@ -596,7 +596,10 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         //   [13] host SET_REPORT (feature) count  [14] last: id | b0<<8 | len<<16
         // then core1's health:
         //   byte [60]     flags: bit0 started, bit1 speaker encoder failed,
-        //                 bit2 mic decoder failed, bit7 always set (this layout)
+        //                 bit2 mic decoder failed, bits 3..6 core1's start-up
+        //                 stage (audio_c1_stage(): 0 never entered core1_entry,
+        //                 1..8 the last start-up step reached, 9 in its loop;
+        //                 issue #15), bit7 always set (this layout)
         //   bytes [61..62] uint16 LE free heap when core1 started, in KiB
         //                 (0 = not known yet; any free heap reads at least 1;
         //                 saturates at 65535)
@@ -618,7 +621,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         if (kib > 0xFFFF) kib = 0xFFFF;
         uint8_t out[63];
         memcpy(out, v, sizeof(v));
-        out[60] = (uint8_t) ((flags & 0x07) | 0x80);
+        out[60] = (uint8_t) ((flags & 0x07) | ((audio_c1_stage() & 0x0F) << 3) | 0x80);
         out[61] = (uint8_t) (kib & 0xFF);
         out[62] = (uint8_t) (kib >> 8);
         const uint16_t len = (reqlen < sizeof(out)) ? reqlen : sizeof(out);

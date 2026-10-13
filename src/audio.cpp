@@ -147,6 +147,14 @@ static volatile uint32_t g_c1_flags = 0, g_c1_free_heap = 0;
 // The speaker encoder exists: only then does the BT audio report wait for
 // speaker frames (without it, haptics go out alone, like the Pico W build).
 static volatile bool g_spk_ready = false;
+// Core1 start-up stage (0xF5 byte [60] bits 3..6, issue #15): the last step
+// core1_entry reached, so a core1 that never loops shows where it stopped.
+// 0 never entered, 1 entered, 2 flash lockout registered, 3 cycle counter on,
+// 4 creating the speaker encoder, 5 encoder created (or failed), 6 encoder +
+// resampler set up, 7 creating the mic decoder, 8 decoder created (or failed),
+// 9 in the loop. The Pico W build (no speaker) goes 3 -> 7.
+static volatile uint8_t g_c1_stage = 0;
+uint32_t audio_c1_stage() { return g_c1_stage; }
 uint32_t audio_c1_flags() { return g_c1_flags; }
 uint32_t audio_c1_free_heap() { return g_c1_free_heap; }
 uint32_t audio_c1_enc() { return g_c1_enc; }
@@ -619,10 +627,13 @@ static bool __not_in_flash_func(mic_proc)() {
 }
 
 void __not_in_flash_func(core1_entry)() {
+    g_c1_stage = 1;
     // Let core0's flash_safe_execute() park this core in RAM during flash
     // erase/program (config, remap, slots, BT link keys) — see flash_safe.h.
     flash_safe_execute_core_init();
+    g_c1_stage = 2;
     perf_core_init();  // core1's own cycle counter, for the 0xFC timings
+    g_c1_stage = 3;
     g_c1_flags |= 0x01;
     g_c1_free_heap = free_heap_bytes();
     int error = 0;
@@ -632,11 +643,13 @@ void __not_in_flash_func(core1_entry)() {
 #if !DISABLE_SPEAKER_PROC
     // CELT only by default (CMake OPUS_ENCODER_CELT_ONLY): the packets are the
     // same kind AUDIO sends at these settings, with half the encoder state.
+    g_c1_stage = 4;
 #if OPUS_ENCODER_CELT_ONLY
     encoder = opus_encoder_create(48000, 2, OPUS_APPLICATION_RESTRICTED_CELT, &error);
 #else
     encoder = opus_encoder_create(48000, 2, OPUS_APPLICATION_AUDIO, &error);
 #endif
+    g_c1_stage = 5;
     if (error != 0 || encoder == nullptr) {
         printf("[Audio] OpusEncoder create failed (err=%d, free heap %lu): speaker off\n", error, (unsigned long) g_c1_free_heap);
         encoder = nullptr;
@@ -652,8 +665,11 @@ void __not_in_flash_func(core1_entry)() {
         resampler_audio.Prealloc(2, 512, 480);
         g_spk_ready = true;
     }
+    g_c1_stage = 6;
 #endif
+    g_c1_stage = 7;
     mic_decoder = opus_decoder_create(48000, MIC_CHANNELS, &error);
+    g_c1_stage = 8;
     if (error != 0) {
         printf("[Audio] OpusDecoder create failed (err=%d)\n", error);
         mic_decoder = nullptr;
@@ -661,6 +677,7 @@ void __not_in_flash_func(core1_entry)() {
     }
 
     while (true) {
+        g_c1_stage = 9;  // running: stage 9 and c1_loops moving
         g_c1_loops++;
         bool work = false;
 #if !DISABLE_SPEAKER_PROC

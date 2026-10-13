@@ -94,6 +94,8 @@ uint32_t g_fake_c1_flags = 1;
 uint32_t g_fake_c1_free_heap = 100000;
 uint32_t audio_c1_flags() { return g_fake_c1_flags; }
 uint32_t audio_c1_free_heap() { return g_fake_c1_free_heap; }
+uint32_t g_fake_c1_stage = 9;
+uint32_t audio_c1_stage() { return g_fake_c1_stage; }
 uint32_t audio_raw_push() { return 6; }
 uint32_t audio_hap_push() { return 7; }
 uint32_t audio_usb_frames() { return 8; }

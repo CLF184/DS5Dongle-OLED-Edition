@@ -133,6 +133,7 @@ TEST(cmd_f5_layout) {
     auto heap_kib = [&] { return (uint16_t) (r[61] | r[62] << 8); };
     g_fake_c1_flags = 0x01;
     g_fake_c1_free_heap = 100000;
+    g_fake_c1_stage = 0;
     CHECK_EQ(pico_cmd_get(0xF5, r, 63), 63);
     // The 15 counters keep their offsets (fakes.cpp values).
     CHECK_EQ(u32(0), 8u);   // USB frames
@@ -158,8 +159,29 @@ TEST(cmd_f5_layout) {
     pico_cmd_get(0xF5, r, 63);
     CHECK_EQ(r[60], 0x80);
     CHECK_EQ(heap_kib(), 0);
+    // Core1's start-up stage in bits 3..6, beside the flags (issue #15).
+    g_fake_c1_flags = 0x01 | 0x02;
+    g_fake_c1_free_heap = 100000;
+    for (uint32_t stage = 0; stage <= 9; stage++) {
+        g_fake_c1_stage = stage;
+        pico_cmd_get(0xF5, r, 63);
+        CHECK_EQ(r[60], 0x80 | stage << 3 | 0x03);
+        CHECK_EQ((r[60] >> 3) & 0x0F, stage);
+        CHECK_EQ(r[60] & 0x07, 0x03);  // the flags old apps read are unchanged
+        CHECK_EQ(heap_kib(), 97);
+        CHECK_EQ(u32(5), 4u);  // and the counters
+    }
+    g_fake_c1_stage = 9;
+    g_fake_c1_flags = 0x01;
+    pico_cmd_get(0xF5, r, 63);
+    CHECK_EQ(r[60], 0xC9);  // running: started, stage 9, this layout
+    g_fake_c1_stage = 0x1F;  // never more than 4 bits: bit7 stays the marker
+    g_fake_c1_flags = 0;
+    pico_cmd_get(0xF5, r, 63);
+    CHECK_EQ(r[60], 0xF8);
     g_fake_c1_flags = 1;
     g_fake_c1_free_heap = 100000;
+    g_fake_c1_stage = 9;
 }
 
 TEST(cmd_random_sets_never_crash) {

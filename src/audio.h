@@ -20,6 +20,7 @@ uint32_t audio_c1_loops();
 uint32_t audio_c1_enc();
 uint32_t audio_c1_flags();      // bit0 started, bit1 speaker encoder failed, bit2 mic decoder failed
 uint32_t audio_c1_free_heap();  // bytes free when core1 started
+uint32_t audio_c1_stage();      // core1 start-up stage 0..9 (9 = in its loop), see audio.cpp
 uint32_t audio_raw_push();
 uint32_t audio_hap_push();
 uint8_t  audio_peak_speaker();   // 0..255, decays on read
