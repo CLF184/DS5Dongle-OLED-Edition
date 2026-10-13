@@ -1,7 +1,10 @@
 // The controller glyph on the OLED Status screen (below the header, BT address
 // and battery rows): two stick boxes, the L2/R2 bars beside them, L1/R1 and
 // Create/Options at the top between the sticks, the d-pad and the face buttons.
-// Pressed = filled, released = outline; L3/R3 invert their stick box.
+// Pressed = filled, released = outline; L3/R3 invert their stick box. On a
+// DualSense Edge a strip under the d-pad and face buttons adds its four extra
+// buttons: Fn L / Fn R under Create / Options, the back buttons LB / RB
+// further out (a standard DualSense draws nothing there).
 //
 // Laid out symmetric around the screen's vertical center line (x <-> 127 - x):
 // every right-hand part is the left-hand one mirrored, and the d-pad / face
@@ -37,11 +40,53 @@ constexpr int kBtn = 5;                  // d-pad / face button size
 constexpr int kBtnStep = 6;              // center to arm center
 constexpr int kDpadCx = kShoulderX + kBtnStep + kBtn / 2;  // left edge = L1's
 constexpr int kClusterCy = kTop + 17;  // centered between Create's bottom and the box's
+// The Edge strip: free rows between the lowest d-pad button and the box's
+// bottom row, bottom-aligned with the boxes and trigger bars.
+constexpr int kEdgeH = 3;
+constexpr int kEdgeY = kTop + kBox - kEdgeH;              // rows 58..60
+constexpr int kFnX = kSmallX;                             // Fn L, under Create
+constexpr int kFnW = kSmallW;
+constexpr int kBackX = kShoulderX;                        // LB, a paddle under the d-pad,
+constexpr int kBackW = kFnX - 3 - kBackX;                 // left-aligned with L1 (11 wide)
 
 static_assert(kSmallX + kSmallW <= mirror_left(kSmallX, kSmallW) - 2,
               "Create and Options must not touch");
+static_assert(kClusterCy + kBtnStep + kBtn / 2 + 2 < kEdgeY,
+              "the Edge strip must leave a gap under the d-pad");
+static_assert(kBackX > kTrigX + kTrigW, "LB must not touch the L2 bar");
 static_assert(kDpadCx + kBtnStep + kBtn / 2 < mirror_x(kDpadCx) - kBtnStep - kBtn / 2,
               "the d-pad and face buttons must not touch");
+
+// The battery row above the glyph: outline + nub span exactly from the left
+// stick box's inner edge to the right one's (x 36..91, mirrored around 63.5),
+// the fill proportional to the level. The level text ("100%" + charge mark)
+// sits in the left stick's column ending 2 px before the outline, the charge
+// ETA in the mirrored slot over the right stick.
+constexpr int kBattY = 18;
+constexpr int kBattH = 8;
+constexpr int kBattX0 = kLeft + kBox - 1;          // 36: the left box's inner edge
+constexpr int kBattX1 = mirror_x(kBattX0);         // 91: the right box's inner edge
+constexpr int kNubW = 3;
+constexpr int kNubH = 4;
+constexpr int kBattW = kBattX1 + 1 - kNubW - kBattX0;  // outline, 53 wide
+constexpr int kBattFill = kBattW - 4;              // 49 px of fill at 100 %
+constexpr int kBattText = 5 * 6 - 1;               // "100%*": 5 chars of the 5x7 font
+constexpr int kBattTextX = kLeft;                  // 6..34
+constexpr int kEtaX = mirror_left(kBattTextX, kBattText);  // 93..121
+static_assert(kBattTextX + kBattText - 1 < kBattX0 - 1, "the level text must not touch the battery");
+static_assert(kEtaX > kBattX1 + 1, "the ETA must not touch the battery's nub");
+
+constexpr int battery_fill(int pct) {
+    return pct <= 0 ? 0 : pct >= 100 ? kBattFill : pct * kBattFill / 100;
+}
+
+template <class Canvas>
+void battery(Canvas &c, int pct) {
+    c.outline(kBattX0, kBattY, kBattW, kBattH);
+    c.filled(kBattX0 + kBattW, kBattY + (kBattH - kNubH) / 2, kNubW, kNubH);
+    const int n = battery_fill(pct);
+    if (n > 0) c.filled(kBattX0 + 2, kBattY + 2, n, kBattH - 4);
+}
 
 // Stick axis 0..255 -> dot offset 0..kStickTravel, rounded, so v and 255 - v
 // land on mirrored pixels (floor((24v+127)/255) == 24 - floor((24(255-v)+127)/255));
@@ -79,9 +124,10 @@ void trigger(Canvas &c, int x, uint8_t v) {
 
 // `in` = the controller's input report without the report id
 // (interrupt_in_data): [0..3] sticks, [4,5] L2/R2, [7] d-pad + face,
-// [8] L1 R1 L2 R2 Create Options L3 R3 (bits 0..7).
+// [8] L1 R1 L2 R2 Create Options L3 R3 (bits 0..7), and on an Edge (`edge`)
+// [9] bits 4..7 Fn L, Fn R, LB, RB.
 template <class Canvas>
-void draw(Canvas &c, const uint8_t *in) {
+void draw(Canvas &c, const uint8_t *in, bool edge = false) {
     const uint8_t b7 = in[7];
     const uint8_t b8 = in[8];
 
@@ -116,6 +162,15 @@ void draw(Canvas &c, const uint8_t *in) {
     button(c, fx + kBtnStep, dy, kBtn, kBtn, b7 & 0x40, true);   // Circle
     button(c, fx, dy + kBtnStep, kBtn, kBtn, b7 & 0x20, true);   // Cross
     button(c, fx - kBtnStep, dy, kBtn, kBtn, b7 & 0x10, true);   // Square
+
+    if (edge) {
+        const uint8_t b9 = in[9];
+        button(c, kFnX, kEdgeY, kFnW, kEdgeH, b9 & 0x10, false);                    // Fn L
+        button(c, mirror_left(kFnX, kFnW), kEdgeY, kFnW, kEdgeH, b9 & 0x20, false); // Fn R
+        button(c, kBackX, kEdgeY, kBackW, kEdgeH, b9 & 0x40, false);                // LB
+        button(c, mirror_left(kBackX, kBackW), kEdgeY, kBackW, kEdgeH,
+               b9 & 0x80, false);                                                    // RB
+    }
 }
 
 }  // namespace oled_pad

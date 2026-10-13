@@ -425,16 +425,6 @@ static const uint8_t kIconLinkOff[8] = {
     0b00111100,
 };
 
-// Battery icon — body 52x8 + small nub on the right. Inside fill scales with pct.
-void draw_battery_icon(int x, int y, int pct) {
-    rect_outline(x, y, 52, 8);
-    rect_filled(x + 52, y + 2, 3, 4);
-    int fill = (pct * 48) / 100;
-    if (fill < 0) fill = 0;
-    if (fill > 48) fill = 48;
-    if (fill > 0) rect_filled(x + 2, y + 2, fill, 4);
-}
-
 void send_rumble(uint8_t amplitude) {
     uint8_t pkt[78] = {};
     pkt[0] = 0x31;
@@ -766,9 +756,12 @@ struct FbCanvas {
 };
 static_assert(oled_pad::kW == kW && oled_pad::kLeft >= kContentX, "glyph vs. screen / chrome");
 
+// The model comes from the colorway read at connect (cmd_controller_model,
+// the identity's [26]): 1 = Edge adds its Fn / back buttons; 0xFF (not known
+// yet, or a build without the vendor interface) draws a standard DualSense.
 __attribute__((noinline)) void render_status_pad() {
     FbCanvas c;
-    oled_pad::draw(c, interrupt_in_data);
+    oled_pad::draw(c, interrupt_in_data, cmd_controller_model() == 1);
 }
 
 __attribute__((noinline)) void render_screen() {
@@ -799,10 +792,11 @@ __attribute__((noinline)) void render_screen() {
         else if (pstate >= 0xA) marker = '!'; // Error
         char bbuf[16];
         snprintf(bbuf, sizeof(bbuf), "%3d%%%c", pct, marker);
-        draw_text(kContentX, 18, bbuf);
-        draw_battery_icon(36, 18, pct);
+        draw_text(oled_pad::kBattTextX, oled_pad::kBattY, bbuf);
+        FbCanvas c;
+        oled_pad::battery(c, pct);  // x 36..91, over the stick boxes' inner edges
 
-        // Charge ETA, right of the battery icon (icon ends at x≈90). Shown only
+        // Charge ETA, right of the battery (mirrored from the level text). Shown only
         // while charging: "~43m?" is the provisional default-rate estimate shown
         // immediately on plug-in; the "?" drops to "~43m" once a real 10% step
         // has been timed and the measured rate takes over. See sample_charge_eta().
@@ -813,11 +807,12 @@ __attribute__((noinline)) void render_screen() {
                          g_charge_eta.provisional ? "?" : "");
             else
                 snprintf(ebuf, sizeof(ebuf), "~--m");
-            draw_text(94, 18, ebuf);
+            draw_text(oled_pad::kEtaX, oled_pad::kBattY, ebuf);
         }
 
         // The controller glyph (src/oled_pad.h): sticks, L2/R2, L1/R1,
-        // Create/Options, d-pad and face buttons, mirrored around x = 63.5.
+        // Create/Options, d-pad and face buttons (+ an Edge's Fn / back buttons),
+        // mirrored around x = 63.5.
         render_status_pad();
     } else {
         draw_text(kContentX, 14, "Pair your DualSense:");
