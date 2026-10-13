@@ -10,6 +10,7 @@
 # v0.9.3-oled-edition+3.a1b2c3d: the OLED, the app and picotool all show it,
 # so a dev build is never mistaken for a release. Build folders live in
 # ~/.cache/ds5dongle/ (one per board), kept between builds for speed.
+# PICO_SDK_PATH / PICO_TOOLCHAIN_PATH pick the SDK and compiler (tools/toolchain.sh).
 set -euo pipefail
 FW="$(cd "$(dirname "$0")/.." && pwd)"
 FLASH=false
@@ -21,9 +22,8 @@ for arg in "$@"; do
     *) echo "usage: tools/dev_firmware.sh [--flash] [--picow]" >&2; exit 2 ;;
   esac
 done
-: "${PICO_SDK_PATH:=$HOME/pico-sdk}"
-export PICO_SDK_PATH
-[ -d "$PICO_SDK_PATH" ] || { echo "Pico SDK not found at $PICO_SDK_PATH (set PICO_SDK_PATH)" >&2; exit 1; }
+. "$FW/tools/toolchain.sh"
+toolchain_setup || exit 1
 
 desc="$(git -C "$FW" describe --tags --match 'v*-oled-edition' --long --dirty)"
 # v0.9.3-oled-edition-3-ga1b2c3d[-dirty] -> v0.9.3-oled-edition+3.a1b2c3d[.dirty]
@@ -33,6 +33,7 @@ EXTRA=()
 [ "$BOARD" = pico_w ] && EXTRA=(-DPICO_W_BUILD=ON)
 
 echo "== Firmware $VERSION ($BOARD)"
+toolchain_fresh_build_dir "$BUILD"
 cmake -S "$FW" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_COMPANION_VENDOR=ON "-DVERSION=$VERSION" "${EXTRA[@]}" >/dev/null
 cmake --build "$BUILD" --target ds5-bridge >/dev/null
 UF2="$BUILD/ds5-bridge-oled.uf2"

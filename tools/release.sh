@@ -32,9 +32,10 @@ die() { echo "release: $*" >&2; exit 1; }
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-dev\.[0-9]+)?$ ]] || die "version must be X.Y.Z or X.Y.Z-dev.N"
 DEV=false
 [[ "$VERSION" == *-dev.* ]] && DEV=true
-: "${PICO_SDK_PATH:=$HOME/pico-sdk}"
-export PICO_SDK_PATH
-[ -d "$PICO_SDK_PATH" ] || die "Pico SDK not found at $PICO_SDK_PATH (set PICO_SDK_PATH)"
+# PICO_SDK_PATH / PICO_TOOLCHAIN_PATH pick the SDK and compiler for the local
+# build check (tools/toolchain.sh); CI builds the release itself.
+. "$FW_DIR/tools/toolchain.sh"
+toolchain_setup || die "no usable Pico SDK / ARM toolchain"
 [ -f "$APP_DIR/package.json" ] || die "app repo not found at $APP_DIR (use --app PATH)"
 
 for dir in "$FW_DIR" "$APP_DIR"; do

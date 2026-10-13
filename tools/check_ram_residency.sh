@@ -56,7 +56,7 @@ CORE0=""
   bt.cpp:_ZL18hci_packet_handlerhtPht bt.cpp:_ZL20l2cap_packet_handlerhtPht
   _Z8bt_writePKht _Z14interrupt_loopv _Z10on_bt_data12CHANNEL_TYPEPht
   hci.c:packet_handler l2cap.c:l2cap_acl_handler
-  tu_fifo_read tu_fifo_read_n tu_fifo_write tu_fifo_write_n tu_fifo_count
+  tu_fifo_read_n_access_mode tu_fifo_write_n_access_mode
   cyw43_spi_transfer cyw43_read_bytes cyw43_write_bytes
   cyw43_read_reg_u32 cyw43_read_reg_u16 cyw43_read_reg_u8
   cyw43_write_reg_u32 cyw43_write_reg_u16 cyw43_write_reg_u8
@@ -78,9 +78,11 @@ CORE0=""
   crc32_lookup_table _Z10audio_loopv audio.cpp:_ZL13audio_bt_taskv _Z13mic_add_queuePKh
 "
 # Inline helpers audio_loop calls per frame (src/haptics_decimate.h): normally
-# folded into audio_loop, but an out-of-line copy must be in RAM too.
+# folded into audio_loop, but an out-of-line copy must be in RAM too. TinyUSB
+# 0.21's single-item tu_fifo_read / tu_fifo_write have no caller in this
+# firmware (the linker drops them); renamed anyway, so checked if linked.
 CORE0_OPTIONAL=""
-[ -n "$CORE0" ] && CORE0_OPTIONAL="_ZN15HapticDecimator4takeEv _Z12haptic_to_s8ff"
+[ -n "$CORE0" ] && CORE0_OPTIONAL="_ZN15HapticDecimator4takeEv _Z12haptic_to_s8ff tu_fifo_read tu_fifo_write"
 # FUNC/OBJECT symbols as "file:name addr" (locals, grouped after their FILE
 # entry) and "name addr" (globals and weak), one per line.
 TABLE="$("$READELF" -sW "$ELF" | awk '
