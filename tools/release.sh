@@ -69,7 +69,7 @@ echo "== Firmware checks: submodule gitlinks, host unit tests"
 "$FW_DIR/tools/check_gitlinks.sh" "$FW_DIR"
 BUILD_DIR="$(mktemp -d)"
 trap 'rm -rf "$BUILD_DIR"' EXIT
-"$FW_DIR/tests/host/run.sh" "$BUILD_DIR/host-tests" >/dev/null
+"$FW_DIR/tests/host/run.sh" "$BUILD_DIR/host-tests"
 echo "== Firmware build check (release configuration)"
 cmake -S "$FW_DIR" -B "$BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_COMPANION_VENDOR=ON -DVERSION="$TAG" >/dev/null
 cmake --build "$BUILD_DIR" --target ds5-bridge >/dev/null
