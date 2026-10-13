@@ -77,15 +77,16 @@ CORE0=""
   btstack_linked_list_iterator_has_next btstack_linked_list_iterator_next
   crc32_lookup_table _Z10audio_loopv audio.cpp:_ZL13audio_bt_taskv _Z13mic_add_queuePKh
 "
-# Inline helpers audio_loop calls per frame (src/haptics_decimate.h, and the
-# haptic feedback test's grip_test_task with src/grip_wave.h): normally folded
-# into audio_loop, but an out-of-line copy must be in RAM too. TinyUSB
-# 0.21's single-item tu_fifo_read / tu_fifo_write have no caller in this
-# firmware (the linker drops them); renamed anyway, so checked if linked.
+# Inline helpers audio_loop calls per frame (src/haptics_decimate.h,
+# src/audio_levels.h, and the haptic feedback test's grip_test_task with
+# src/grip_wave.h): normally folded into audio_loop, but an out-of-line copy
+# must be in RAM too. TinyUSB 0.21's single-item tu_fifo_read / tu_fifo_write
+# have no caller in this firmware (the linker drops them); renamed anyway, so checked if linked.
 CORE0_OPTIONAL=""
 [ -n "$CORE0" ] && CORE0_OPTIONAL="_ZN15HapticDecimator4takeEv _Z12haptic_to_s8ff tu_fifo_read tu_fifo_write
   audio.cpp:_ZL14grip_test_taskv _ZN8GripWave4nextEPaff _ZN8GripWave4fillEPaiff _ZNK8GripWave6activeEv
-  _ZN15GripReportClock3dueEy _ZN15GripReportClock4sentEy _ZN15GripReportClock5resetEv"
+  _ZN15GripReportClock3dueEy _ZN15GripReportClock4sentEy _ZN15GripReportClock5resetEv
+  _ZNK21NativeHapticsPresence6silentEv _ZN21NativeHapticsPresence6recordEt"
 # FUNC/OBJECT symbols as "file:name addr" (locals, grouped after their FILE
 # entry) and "name addr" (globals and weak), one per line.
 TABLE="$("$READELF" -sW "$ELF" | awk '

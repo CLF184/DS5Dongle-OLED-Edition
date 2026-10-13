@@ -5,6 +5,7 @@
 #include <malloc.h>
 #include <unistd.h>
 #include "audio.h"
+#include "audio_levels.h"
 #include "bt.h"
 #include "core0_ram.h"
 #include "grip_wave.h"
@@ -471,6 +472,7 @@ void CORE0_RAM_FUNC(audio_loop)() {
     const float haptics_gain_r = get_config().haptics_gain_right;     // right grip
     uint16_t spk_max = g_peak_spk;
     uint16_t hap_max = g_peak_hap;
+    uint16_t native_max = 0;  // this chunk's ch3/ch4 peak, for the detector below
 
     // ---- Audio Auto Haptics (borrowed from loteran/DS5Dongle 5d6bc2f) ----
     // Derives a haptic-feedback waveform from the speaker audio so games that
@@ -485,10 +487,8 @@ void CORE0_RAM_FUNC(audio_loop)() {
     static float env_l = 0.0f, env_r = 0.0f;
     constexpr float ENV_ATK = 0.40f;
     constexpr float ENV_REL = 0.025f;
-    constexpr int     NATIVE_SILENT_TIMEOUT = 100;
-    constexpr uint16_t NATIVE_THRESHOLD     = 256;
-    static int native_silent_count = NATIVE_SILENT_TIMEOUT * 2;
-    const bool fallback_active = (auto_mode == 1) && (native_silent_count >= NATIVE_SILENT_TIMEOUT);
+    static NativeHapticsPresence native_haptics;
+    const bool fallback_active = (auto_mode == 1) && native_haptics.silent();
 #if !DISABLE_SPEAKER_PROC
     // No speaker encoder (yet, or core1 couldn't get its memory, issue #15):
     // nothing would take the PCM, so don't convert and queue it only to drop
@@ -509,8 +509,8 @@ void CORE0_RAM_FUNC(audio_loop)() {
             if (b > spk_max) spk_max = b;
             a = (uint16_t)(hl < 0 ? -hl : hl);
             b = (uint16_t)(hr < 0 ? -hr : hr);
-            if (a > hap_max) hap_max = a;
-            if (b > hap_max) hap_max = b;
+            if (a > native_max) native_max = a;
+            if (b > native_max) native_max = b;
         }
  #if !DISABLE_SPEAKER_PROC
         // speaker_volume can boost up to +12 dB: clip at full scale rather than
@@ -589,12 +589,8 @@ void CORE0_RAM_FUNC(audio_loop)() {
         haptic_buf_pos = 0;
     }
     g_peak_spk = spk_max;
-    g_peak_hap = hap_max;
-    if (hap_max > NATIVE_THRESHOLD) {
-        native_silent_count = 0;
-    } else if (native_silent_count < NATIVE_SILENT_TIMEOUT * 2) {
-        native_silent_count++;
-    }
+    g_peak_hap = native_max > hap_max ? native_max : hap_max;
+    native_haptics.record(native_max);
     audio_bt_task();
 }
 
