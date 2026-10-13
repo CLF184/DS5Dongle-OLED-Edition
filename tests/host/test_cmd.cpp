@@ -339,10 +339,10 @@ uint8_t motor_r(const std::vector<uint8_t> &r) { return r[3]; }  // [1 + 2] moto
 std::vector<uint8_t> linux_bytes(bool v2, uint8_t left, uint8_t right) {
     std::vector<uint8_t> r(63, 0);
     r[0] = 0x02;
-    r[1] = v2 ? 0x02 : 0x03;  // HAPTICS_SELECT (| COMPATIBLE_VIBRATION on old firmware)
+    (void) v2;                // measured: Linux sends the same bytes on every firmware
+    r[1] = 0x03;              // COMPATIBLE_VIBRATION | HAPTICS_SELECT
     r[3] = right;
     r[4] = left;
-    if (v2) r[39] = 0x04;     // valid_flag2 COMPATIBLE_VIBRATION2
     return r;
 }
 void set_update_version(uint16_t v) {

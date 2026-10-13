@@ -91,9 +91,15 @@ inline void linux_rumble_report(uint8_t out[kUsbOut02Len], uint16_t update_versi
                                 uint8_t right) {
     std::memset(out, 0, kUsbOut02Len);
     out[0] = 0x02;
-    out[1] = 0x02;  // valid_flag0: HAPTICS_SELECT
-    if (edge || update_version == 0 || update_version >= kVibrationV2Version) out[1 + 38] |= 0x04;
-    else out[1] |= 0x01;
+    // Measured on hardware (2026-10-13, DualSense update version 0x0630): the
+    // report Linux hid-playstation actually sends for a rumble effect through
+    // the dongle is valid_flag0 = 0x03 (COMPATIBLE_VIBRATION | HAPTICS_SELECT),
+    // valid_flag2 = 0, sent once; that is the steady full-strength rumble.
+    // The COMPATIBLE_VIBRATION2 variant (flag0 0x02 + flag2 0x04) was silent,
+    // and re-sending the report every 100 ms is what made it pulse.
+    (void) update_version;
+    (void) edge;
+    out[1] = 0x03;
     out[1 + 2] = right;
     out[1 + 3] = left;
 }
