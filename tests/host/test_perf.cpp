@@ -70,13 +70,14 @@ TEST(perf_reader_never_tears) {
     perf_reset();
     constexpr uint32_t kTicks = 1u << 28;
     perf_record(PERF_C1_SPEAKER, kTicks);
+    uint8_t r[kPerfReportBytes];
+    perf_serialize(r, sizeof(r)); // establish the last coherent sample
     std::atomic<bool> stop{false};
     std::thread writer([&] {
         while (!stop.load(std::memory_order_relaxed)) perf_record(PERF_C1_SPEAKER, kTicks);
     });
     const uint32_t want = (uint32_t) ((uint64_t) kTicks * 1000u);  // as perf_serialize truncates it
     int torn = 0;
-    uint8_t r[kPerfReportBytes];
     for (int i = 0; i < 200000; i++) {
         perf_serialize(r, sizeof(r));
         torn += avg_ns(r, PERF_C1_SPEAKER) != want;
@@ -84,4 +85,33 @@ TEST(perf_reader_never_tears) {
     stop = true;
     writer.join();
     CHECK_EQ(torn, 0);
+}
+
+TEST(perf_reader_keeps_complete_sample_when_writer_is_paused) {
+    perf_reset();
+    perf_record(PERF_C1_MIC, 10);
+    uint8_t r[kPerfReportBytes];
+    perf_serialize(r, sizeof(r));
+    auto &s = g_perf[PERF_C1_MIC];
+    s.seq = s.seq + 1; // stop the writer in the middle of a partial update
+    s.sum = 1;
+    s.count = 2;
+    s.max = 99;
+    perf_serialize(r, sizeof(r));
+    CHECK_EQ(avg_ns(r, PERF_C1_MIC), 10000u);
+    CHECK_EQ(max_us(r, PERF_C1_MIC), 10);
+
+    perf_reset(); // a cached sample from the old window must not leak through
+    s.gen = g_perf_gen;
+    perf_serialize(r, sizeof(r));
+    CHECK_EQ(avg_ns(r, PERF_C1_MIC), 0u);
+    CHECK_EQ(max_us(r, PERF_C1_MIC), 0);
+
+    s.sum = 40;
+    s.count = 2;
+    s.max = 30;
+    s.seq = s.seq + 1; // complete the update
+    perf_serialize(r, sizeof(r));
+    CHECK_EQ(avg_ns(r, PERF_C1_MIC), 20000u);
+    CHECK_EQ(max_us(r, PERF_C1_MIC), 30);
 }
