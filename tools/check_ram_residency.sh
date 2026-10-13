@@ -63,6 +63,12 @@ CORE0=""
   cyw43_ll.c:cyw43_sdpcm_send_common cyw43_ll.c:cyw43_do_ioctl.part.0
   cyw43_ll_bt_has_work cyw43_ll.c:cyw43_ll_parse_async_event
   cyw43_ctrl.c:cyw43_poll_func cyw43_bluetooth_hci_read cyw43_bluetooth_hci_write
+  hci.c:hci_run hci.c:hci_send_acl_packet_fragments hci_send_acl_packet_buffer
+  l2cap.c:l2cap_run l2cap_send l2cap_send_prepared l2cap.c:l2cap_notify_channel_can_send
+  cyw43_ll_write_backplane_mem cyw43_ll_read_backplane_mem
+  cyw43_ll.c:cyw43_write_backplane cyw43_ll.c:cyw43_read_backplane.constprop.0
+  tud_task_ext usbd_edpt_xfer dcd_edpt_xfer dcd_edpt_iso_activate
+  tud_audio_n_read tud_audio_n_write audio_device.c:audiod_calc_tx_packet_sz.isra.0 audiod_xfer_isr
 "
 # FUNC/OBJECT symbols as "file:name addr" (locals, grouped after their FILE
 # entry) and "name addr" (globals and weak), one per line.

@@ -219,6 +219,25 @@ relocate_to_ram(lib/cyw43-driver/src/cyw43_ll.c.o
 relocate_to_ram(lib/cyw43-driver/src/cyw43_ctrl.c.o
     ".text.cyw43_poll_func=.time_critical.cyw43_poll_func|.text.cyw43_bluetooth_hci_read=.time_critical.cyw43_bluetooth_hci_read|.text.cyw43_bluetooth_hci_write=.time_critical.cyw43_bluetooth_hci_write"
     "B.2: cyw43 poll + BT HCI bus -> RAM")
+# B.3: run-loop TX pumps and per-transfer submit paths.
+relocate_to_ram(lib/btstack/src/hci.c.o
+    ".text.hci_run=.time_critical.hci_run|.text.hci_send_acl_packet_fragments=.time_critical.hci_send_acl_packet_fragments|.text.hci_send_acl_packet_buffer=.time_critical.hci_send_acl_packet_buffer"
+    "B.3: btstack hci.c TX pump + ACL out -> RAM")
+relocate_to_ram(lib/btstack/src/l2cap.c.o
+    ".text.l2cap_run=.time_critical.l2cap_run|.text.l2cap_send=.time_critical.l2cap_send|.text.l2cap_send_prepared=.time_critical.l2cap_send_prepared|.text.l2cap_notify_channel_can_send=.time_critical.l2cap_notify_channel_can_send"
+    "B.3: btstack l2cap.c TX pump + sends -> RAM")
+relocate_to_ram(lib/cyw43-driver/src/cyw43_ll.c.o
+    ".text.cyw43_ll_write_backplane_mem=.time_critical.cyw43_ll_write_backplane_mem|.text.cyw43_ll_read_backplane_mem=.time_critical.cyw43_ll_read_backplane_mem|.text.cyw43_write_backplane=.time_critical.cyw43_write_backplane|.text.cyw43_read_backplane.constprop.0=.time_critical.cyw43_read_backplane"
+    "B.3: cyw43 backplane accessors -> RAM")
+relocate_to_ram(lib/tinyusb/src/device/usbd.c.o
+    ".text.tud_task_ext=.time_critical.tud_task_ext|.text.usbd_edpt_xfer=.time_critical.usbd_edpt_xfer"
+    "B.3: tinyusb usbd.c task pump + xfer -> RAM")
+relocate_to_ram(lib/tinyusb/src/portable/raspberrypi/rp2040/dcd_rp2040.c.o
+    ".text.dcd_edpt_xfer=.time_critical.dcd_edpt_xfer|.text.dcd_edpt_iso_activate=.time_critical.dcd_edpt_iso_activate"
+    "B.3: tinyusb dcd_rp2040.c submit + iso -> RAM")
+relocate_to_ram(lib/tinyusb/src/class/audio/audio_device.c.o
+    ".text.tud_audio_n_read=.time_critical.tud_audio_n_read|.text.tud_audio_n_write=.time_critical.tud_audio_n_write|.text.audiod_calc_tx_packet_sz.isra.0=.time_critical.audiod_calc_tx_packet_sz|.text.audiod_xfer_isr=.time_critical.audiod_xfer_isr"
+    "B.3: tinyusb audio class data path -> RAM")
 endif ()
 
 # B.5: RAM memcpy/memset/memmove (newlib's live in flash; libopus calls them
