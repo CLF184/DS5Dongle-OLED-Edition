@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+## [0.9.5-dev.6-oled-edition] - 2026-10-12
+
 ### Added
 
 - **Core1 start-up stage in the diagnostics (issue #15):** when the dongle's second core never starts its loop, the 0xF5 audio counters now say which start-up step it stopped in (registering for flash lockout, starting its cycle counter, reading the free memory, creating or setting up the speaker encoder and resampler, creating the mic decoder), in bits 3..6 of the core1 flags byte [60] (9 = running). Older apps read the flags and counters as before; `scripts/audio_diag.py` prints the stage.
