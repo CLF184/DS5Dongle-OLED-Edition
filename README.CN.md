@@ -20,16 +20,17 @@
 
 ![应用：实时显示你的手柄，并使用手柄本身的配色](https://raw.githubusercontent.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web/master/docs/screenshots/live-controller.png)
 
-所有功能都在一个界面里。手柄按它本身的配色显示，并随你的操作实时变化（按键、扳机、摇杆、触控板、灯条、玩家指示灯），下方还有实时数据：摇杆和扳机数值、体感曲线、触控点和连接状态。首次使用时会有互动式导览。点击任意部位即可设置：
+控制器按它本身的配色显示（DualSense 各配色和 DualSense Edge），并随你的操作实时变化；点击任意部位即可设置。**[分步指南](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web/blob/master/docs/GUIDE.md)**（英文）从组装接收器讲到每一项设置：
 
-- **灯条**模式和收藏颜色；**L2 / R2** 自适应扳机效果与实时按压；任意按键或摇杆的**按键重映射**；**扬声器**音量（最高 +12 dB）和**触觉反馈**（带实时电平表）；蓝牙**麦克风**；四个**配对槽位**（PS 键）。
-- **接收器：** OLED 显示、电源、USB 模式、诊断信息，以及**一键固件更新**：应用会把接收器重启到引导程序、写入固件并校验结果，无需按 BOOTSEL，也无需拷贝文件。
-- **游戏**（Linux）：为 Steam、Heroic 和 Lutris 配置原生自适应扳机和触觉反馈，并安装 DualSense Proton 版本。
-- **托盘图标**实时显示手柄状态和灯条颜色；支持**跟随桌面配色**主题、7 种语言；应用内可查看更新日志。
+- **控制器：** 光条模式和收藏颜色；自适应扳机效果；**触觉反馈**，左右分别设置**振动强度**（触觉反馈和传统振动都适用，带 3 秒测试）；Audio Auto Haptics；扬声器和内置麦克风（带测试）；**按键配置**（所有按键一个列表，包括 DualSense Edge 的 Fn键和背面键，以及游戏运行时可切换的**已保存按键布局**，不写入闪存：固件 v0.9.4）；四个配对槽位；以及**控制器信息**（控制器自己的固件，并与索尼最新版本比较、电池电压和累计计数）。
+- **校准：** 摇杆漂移、摇杆或扳机推不到底、陀螺仪缓慢漂移，都在接收器里修正（按配对槽位），对所有游戏生效；不会写入控制器。另有每个摇杆的**灵敏度曲线**和摇杆测试（圆度和漂移）。
+- **接收器：** OLED 屏幕实时镜像、诊断仪表板（温度、时钟、蓝牙和 USB 流量、音频管线，以及固件各部分的耗时）、电源、显示和 USB 设置，以及**一键固件更新**（无需按 BOOTSEL，也无需拷贝文件）。
+- **游戏：** 你的 Steam、Heroic 和 Lutris 游戏库（Windows：Steam、GOG Galaxy 和 Epic），列表和封面网格两种视图，每个游戏有自己的控制器配置（游戏改动的每项设置，包括按键布局和摇杆曲线，可在控制器视图中实时编辑），每款游戏的 DualSense 支持情况；Linux 上还有设置修复和 DualSense Proton 版本。
+- **个性化：** 按控制器配色的主题、Glass、外观滑块、色觉模式、减少动态效果、通过控制器扬声器播报的旁白、7 种语言、托盘图标。
 
-应用通过 **v0.8 或更新**固件中的一个小型配置用 USB 接口工作（游戏看不到它，接收器在游戏眼中仍与真正的 DualSense 完全一致）。应用源码：**[MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web)**。
+应用通过 **v0.8 或更新**固件中的一个小型配置用 USB 接口工作（校准和左右振动强度需要 **v0.9**；应用会提示更新）。游戏看不到它，接收器在游戏眼中仍与真正的 DualSense 完全一致。应用源码：**[MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web)**。
 
-> **浏览器配置工具**（[marcelinevpq.github.io/DS5Dongle-OLED-Config-Web](https://marcelinevpq.github.io/DS5Dongle-OLED-Config-Web/)）仍可在 Chrome/Edge 中刷写 Pico，但其配置和重映射标签页只适用于 v0.6.12 之前的固件。桌面应用将取代它。
+> **浏览器配置工具已停用**：桌面应用能做它能做的一切，而且更多。它原来的地址 [marcelinevpq.github.io/DS5Dongle-OLED-Config-Web](https://marcelinevpq.github.io/DS5Dongle-OLED-Config-Web/) 现在是应用的下载页。不用应用刷写 Pico：插入时按住 BOOTSEL，把版本里的 `.uf2` 拷贝到出现的驱动器上。
 
 ---
 
@@ -50,7 +51,12 @@
 **OLED 版新增：**
 
 - 可选的 Pico-OLED-1.3 状态显示屏，含 **11 个屏幕**（状态、配对槽、灯条、扳机测试、陀螺仪倾斜、触摸板、诊断、CPU/时钟、RSSI、VU 表、设置）
-- **按键重映射** —— 把 16 个数字控件（面板按键、方向键、肩键/扳机、摇杆按下、Create/Options）中的任意一个重新指派为其他按键。映射保存在设备上并在主机看到报告之前应用，因此在**任何游戏和操作系统中都无需任何主机端软件**即可生效；默认为恒等映射（无重映射）。可在[配置工具应用](#️-配置工具桌面应用)的**按键**页面中可视化编辑，或通过 `scripts/remap_test.py` 无界面编辑。保存在专属闪存扇区，重启后保留。
+- **按键配置** —— 把 16 个数字控件（动作键、方向键、L1/R1/L2/R2、摇杆按下、创建键和选项键）以及 DualSense Edge 的 Fn键和背面键中的任意一个重新指派为其他按键。映射保存在设备上并在主机看到报告之前应用，因此在**任何游戏和操作系统中都无需任何主机端软件**即可生效；默认为恒等映射（无重映射）。可在[配置工具应用](#️-配置工具桌面应用)的**按键**页面中可视化编辑，或通过 `scripts/remap_test.py` 无界面编辑。保存在专属闪存扇区，重启后保留。
+- **左右分别的振动强度（v0.9）** —— 左右两侧分别设置，触觉反馈和传统振动都适用。
+- **灵敏度曲线（v0.9.5）** —— 每个摇杆一条曲线（Linear、精确、稳定、快速、数字，或四个自定义点），在接收器里于校准之后应用，因此对所有游戏生效；游戏的配置可在运行时切换自己的曲线。
+- **DualSense Edge 支持** —— 通过控制器连接时发送的固件报告区分 Edge 和 DualSense；它的 Fn键和背面键可像其他按键一样配置，OLED 状态屏也会显示它们。在 DS5 模式下，索尼的 PlayStation Accessories 应用不再提示一个会失败的固件更新（上游 awalol ae83907）。
+- **控制器信息（v0.9.5）** —— 应用可以通过接收器读取控制器自己的固件版本、电池电压和累计计数（只读；控制器序列号在应用读取之前即被清除）。
+- **分阶段计时（v0.9.5）** —— 接收器为自己的每部分工作计时（蓝牙、USB、音频、输入、OLED、core1 的扬声器和麦克风帧），供应用的 Timing 卡片使用。
 - **4 槽持久化多手柄配对** —— 可绑定至多四个 DualSense，在 OLED 上切换，开机时自动重连槽 0
 - **灯条调色器**，含 4 个用户收藏槽 + 呼吸 / 彩虹 / 渐变特效预设
 - **持久化设置菜单**，涵盖 8 个固件配置字段（振动增益、扬声器音量、轮询率等），并提供按住确认的"重置"与"清除全部槽"操作
@@ -66,7 +72,7 @@
 | 物品 | 说明 | 大致价格 |
 |---|---|---|
 | **Raspberry Pi Pico 2 W** | 搭载 RP2350 MCU，板载 CYW43 蓝牙/WiFi。[官方产品页](https://www.raspberrypi.com/products/raspberry-pi-pico-2/) | 约 $7 USD |
-| **索尼 DualSense 手柄** | 任何标准 PS5 DualSense（VID `054C:0CE6`）。 | — |
+| **索尼 DualSense 控制器** | 任何 PS5 DualSense（VID `054C:0CE6`）或 DualSense Edge（`054C:0DF2`）。 | — |
 | **USB-C 线缆** | 将 Pico 2 W 连接到主机 PC。 | — |
 
 ### 可选（强烈推荐）
@@ -123,7 +129,7 @@ scripts/set_ds5.py --rssi                     # 实时蓝牙 RSSI（dBm）
 scripts/set_ds5.py --help                     # 完整参数列表
 ```
 
-该脚本通过 USB HID 特性报告 `0xF6`/`0xF7`/`0xF8`/`0xF9` 与固件通信 —— 在 Linux、macOS、Windows 的任何终端下都可用，与你用哪个浏览器无关。移植自 [loteran/DS5Dongle](https://github.com/loteran/DS5Dongle) 并为本分支的 `current_slot` 字段做了扩展。
+该脚本通过 USB HID 特性报告 `0xF6`/`0xF7`/`0xF8`/`0xF9` 与固件通信。自 v0.6.12 起这些报告不再在 HID 描述符中声明（游戏要求描述符与真正的 DualSense 逐字节一致），因此该脚本只在 Linux 上可用；其他系统请用配置工具应用。移植自 [loteran/DS5Dongle](https://github.com/loteran/DS5Dongle) 并为本分支的 `current_slot` 字段做了扩展。
 
 **DualSense 手柄按键（旧式后备方案，无 OLED、无 CLI）：**
 
@@ -206,7 +212,7 @@ scripts/set_ds5.py --help                     # 完整参数列表
 
 从源码编译本项目：
 
-1. 安装 Pico SDK 2.2.0（或更新版本）。编译使用 `pico_sdk_import.cmake`。
+1. 安装 Pico SDK 2.2.0（或更新版本）。编译使用 `pico_sdk_import.cmake`。 CI 和正式版本使用 ARM 官方 GNU 工具链 **14.2.Rel1**（`arm-none-eabi`）构建；发行版自带的 `gcc-arm-none-eabi` 通常也能用，但 14.2.Rel1 能得到与正式版本相同的二进制。
 2. **在 Pico SDK 内将 TinyUSB 固定到 0.20.0**（`$PICO_SDK_PATH/lib/tinyusb`）。本项目的 `tusb_config.h` 使用了 `TUD_AUDIO_EP_SIZE` 的四参数形式，而 Pico SDK 2.2.0 捆绑的 0.18.0 版本没有它：
    ```bash
    cd "$PICO_SDK_PATH/lib/tinyusb"

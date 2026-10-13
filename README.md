@@ -22,10 +22,10 @@ The app is all you need. Each release includes the matching firmware, so the app
 
 Your controller is drawn in its own colors and moves as you use it; click any part to set it up. The **[step-by-step guide](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web/blob/master/docs/GUIDE.md)** walks through everything, from building the dongle to each setting:
 
-- **The controller:** lightbar modes and favorites, adaptive trigger effects, **haptics strength per grip** (HD haptics and rumble, with a test), Audio Auto Haptics, speaker and mic (with tests), button remapping (every button in one list, and **saved button layouts** a game can switch in while it runs, never written to flash: firmware v0.9.4), the four pairing slots.
-- **Calibration:** stick drift, sticks or triggers that don't reach full, a creeping gyro, fixed in the dongle (per pairing slot) for every game; nothing is written to the controller.
-- **The dongle:** its OLED screen mirrored live, a diagnostics dashboard (temperature, clock, Bluetooth and USB traffic, the audio pipeline), power, display and USB settings, and **one-click firmware updates** (no BOOTSEL button, no drive copying).
-- **Games:** your Steam, Heroic and Lutris library (Windows: Steam, GOG Galaxy and Epic) as a list and a cover grid, with per-game controller profiles (including a button layout), DualSense support per game, and on Linux setup fixes plus the DualSense Proton build.
+- **The controller:** light bar modes and favorites, adaptive trigger effects, **haptic feedback with vibration intensity per side** (haptic feedback and classic vibration, with a 3-second test), Audio Auto Haptics, speaker and built-in microphone (with tests), button assignments (every button in one list, the DualSense Edge's Fn buttons and back buttons too, and **saved button layouts** a game can switch in while it runs, never written to flash: firmware v0.9.4), the four pairing slots, and **Controller info** (the controller's own firmware, checked against Sony's latest, its battery voltage and lifetime counters).
+- **Calibration:** stick drift, sticks or triggers that don't reach full, a creeping gyroscope, fixed in the dongle (per pairing slot) for every game; nothing is written to the controller. Plus a **sensitivity curve** per stick and stick tests (circularity and drift).
+- **The dongle:** its OLED screen mirrored live, a diagnostics dashboard (temperature, clock, Bluetooth and USB traffic, the audio pipeline, and how long each part of the firmware takes), power, display and USB settings, and **one-click firmware updates** (no BOOTSEL button, no drive copying).
+- **Games:** your Steam, Heroic and Lutris library (Windows: Steam, GOG Galaxy and Epic) as a list and a cover grid, with per-game controller profiles (every controller setting the game changes, including a button layout and stick curves, edited live in the controller view), DualSense support per game, and on Linux setup fixes plus the DualSense Proton build.
 - **Made yours:** a theme in your controller's colors, Glass, look sliders, color vision modes, Reduce motion, a narrator through the controller's speaker, 7 languages, a tray icon.
 
 The app talks to firmware **v0.8 or newer** through a small configurator USB interface (calibration and the per-grip haptics need **v0.9**; the app offers the update). Games never see it, so the dongle still looks exactly like a real DualSense. App source: **[MarcelineVPQ/DS5Dongle-OLED-Config-Web](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web)**.
@@ -53,9 +53,13 @@ This project enables the Raspberry Pi Pico2W to function as a Bluetooth bridge f
 - **Native DualSense adaptive triggers in PC games on Linux/Proton — through the dongle.** Games with native DualSense support drive the controller's adaptive triggers wirelessly via the dongle, **1:1 with a directly-wired DualSense**. Requires a Proton carrying the Wine `winebus.sys` #9034 fix (Wine 11 / current Proton-GE) with Steam Input disabled — **no launch option needed** (Wine 11 enables the hidraw native path by default). Works on **both Steam and Heroic** (Epic/GOG). The firmware makes the dongle byte-for-byte indistinguishable from a real DS5 so the game accepts it (full write-up in [CHANGELOG.md](./CHANGELOG.md)). Trade-off: the browser Config/Remap tabs are disabled on this firmware (see the note above).
 - Optional Pico-OLED-1.3 status display with **11 screens** (status, slots, lightbar, trigger test, gyro tilt, touchpad, diagnostics, CPU/clock, RSSI, VU meters, settings)
 - **Calibration in the dongle (v0.9)** — stick center offset, deadzone and full-tilt radius, trigger travel and gyro zero, per pairing slot, applied to what games receive (never written to the controller). Set from the app's guided calibration.
-- **Haptics strength per grip (v0.9)** — left and right separately, for HD haptics and classic rumble alike.
+- **Vibration intensity per side (v0.9)** — left and right separately, for haptic feedback and classic vibration alike.
+- **Sensitivity curves (v0.9.5)** — a curve per stick (Linear, Precise, Steady, Quick, Digital or four custom points), applied in the dongle after calibration, so it works in every game; a game's profile can switch its own in while it runs.
+- **DualSense Edge support** — the Edge is told apart from a DualSense by the firmware report it sends at connect; its Fn buttons and back buttons can be assigned like any other button, and the OLED Status screen shows them. In DS5 mode, Sony's PlayStation Accessories app no longer offers a firmware update that fails (upstream awalol ae83907).
+- **Controller info (v0.9.5)** — the app can read the controller's own firmware versions, battery voltage and lifetime counters through the dongle (read-only; the controller's serial number is blanked before the app sees it).
+- **Per-stage timings (v0.9.5)** — the dongle times each part of its own work (Bluetooth, USB, audio, input, OLED, core1's speaker and mic frames) for the app's Timing card.
 - **OLED screen mirror (v0.9)** — the app shows the dongle's screen pixel for pixel, with or without the OLED add-on.
-- **Button remapping** — reassign any of the 16 digital controls (face buttons, D-pad, shoulders/triggers, stick clicks, Create/Options) to any other. Stored on the dongle and applied before the host sees the report, so it works in **every game and OS with no host-side software**; identity (no remap) is the default. Edit it visually on the [configurator app](#️-get-started-download-the-app)'s **Buttons** page, or headlessly via `scripts/remap_test.py`. Persisted in its own flash sector, survives reboot.
+- **Button assignments** — reassign any of the 16 digital controls (action buttons, directional buttons, L1/R1/L2/R2, stick clicks, the Create and Options buttons), and the DualSense Edge's Fn buttons and back buttons, to any other. Stored on the dongle and applied before the host sees the report, so it works in **every game and OS with no host-side software**; identity (no remap) is the default. Edit it visually on the [configurator app](#️-get-started-download-the-app)'s **Buttons** page, or headlessly via `scripts/remap_test.py`. Persisted in its own flash sector, survives reboot.
 - **4-slot persistent multi-controller pairing** — bond up to four DualSenses, switch between them from the OLED, slot 0 reconnects automatically on boot
 - **Lightbar color picker** with 4 user favorite slots + breathing / rainbow / fade effect presets
 - **Persistent settings menu** for the 8 firmware config fields (haptics gain, speaker volume, polling rate, etc.) with hold-to-confirm Reset and Wipe-all-slots actions
@@ -111,7 +115,7 @@ Native triggers work identically on Heroic, but non-Steam launchers are sensitiv
 | Item | Notes | Approx. price |
 |---|---|---|
 | **Raspberry Pi Pico 2 W** | RP2350 MCU with on-board CYW43 Bluetooth/WiFi. [Official product page](https://www.raspberrypi.com/products/raspberry-pi-pico-2/) | ~$7 USD |
-| **Sony DualSense Controller** | Any standard PS5 DualSense (VID `054C:0CE6`). | — |
+| **Sony DualSense Controller** | Any PS5 DualSense (VID `054C:0CE6`) or DualSense Edge (`054C:0DF2`). | — |
 | **USB-C cable** | Connects the Pico 2 W to the host PC. | — |
 
 ### Optional (strongly recommended)
@@ -151,7 +155,7 @@ The [app](#️-get-started-download-the-app) does this for you. To flash by hand
 
 There are four ways to configure the firmware:
 
-**Configurator app (recommended):** the [DS5 Dongle OLED Edition Configurator](#️-get-started-download-the-app) for Linux and Windows (a macOS build is included, reported working on macOS 27.0.1; the Games page is Linux-only for now). It finds the dongle by itself, applies changes live, and saves to the dongle's flash with one click. Needs firmware v0.8+.
+**Configurator app (recommended):** the [DS5 Dongle OLED Edition Configurator](#️-get-started-download-the-app) for Linux and Windows (a macOS build is included, reported working on macOS 27.0.1; the Games page lists Steam, Heroic and Lutris games on Linux and Steam, GOG Galaxy and Epic games on Windows, and its Proton setup is Linux-only). It finds the dongle by itself, applies changes live, and saves to the dongle's flash with one click. Needs firmware v0.8+.
 
 **On-device (OLED add-on present):** use the on-screen **Settings** menu (10th screen). D-pad ▲▼ moves selection, ▶◀ adjusts values, △ saves to flash.
 
@@ -252,7 +256,7 @@ For one release, a source build can still use the old overclock as a fallback: `
 
 To build the project from source:
 
-1. Install Pico SDK 2.2.0 (or later). The build uses `pico_sdk_import.cmake`.
+1. Install Pico SDK 2.2.0 (or later). The build uses `pico_sdk_import.cmake`. CI and releases build with ARM's official GNU toolchain **14.2.Rel1** (`arm-none-eabi`); a distribution's `gcc-arm-none-eabi` usually works, but 14.2.Rel1 gives the same binary as the release.
 2. **Pin TinyUSB to 0.20.0** inside the Pico SDK (`$PICO_SDK_PATH/lib/tinyusb`). This project's `tusb_config.h` uses the 4-argument form of `TUD_AUDIO_EP_SIZE`, which is not present in the 0.18.0 version that ships bundled with Pico SDK 2.2.0:
    ```bash
    cd "$PICO_SDK_PATH/lib/tinyusb"
