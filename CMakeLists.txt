@@ -58,13 +58,24 @@ else ()
         set(DISABLE_SPEAKER_PROC_VALUE 0)
 endif ()
 option(PICO_W_BUILD "Build for Rasberry Pi Pico W, audio is missing" OFF)
+# Pico 2 W clock. The default is upstream awalol v0.7.0's (a023371): the
+# RP2350's rated 150 MHz at the boot-default core voltage, CYW43 PIO clock
+# divider 2; main() leaves clock and voltage as the bootrom/SDK set them.
+# DS5_CLOCK_KHZ=320000 builds the old overclock (1.20 V, PIO divider 5) as a
+# fallback for one release; it goes away after that.
+set(DS5_CLOCK_KHZ 150000 CACHE STRING "Pico 2 W clk_sys in kHz: 150000 (default) or 320000 (old overclock, fallback)")
 if (PICO_W_BUILD)
         set(CYW43_PIO_CLOCK_DIV_VALUE 3)
         set(SYS_CLOCK_KHZ_VALUE 200000)
         set(DISABLE_SPEAKER_PROC_VALUE 1)
-else ()
+elseif (DS5_CLOCK_KHZ STREQUAL "150000")
+        set(CYW43_PIO_CLOCK_DIV_VALUE 2)
+        set(SYS_CLOCK_KHZ_VALUE 150000)
+elseif (DS5_CLOCK_KHZ STREQUAL "320000")
         set(CYW43_PIO_CLOCK_DIV_VALUE 5)
         set(SYS_CLOCK_KHZ_VALUE 320000)
+else ()
+        message(FATAL_ERROR "DS5_CLOCK_KHZ must be 150000 or 320000 (got '${DS5_CLOCK_KHZ}')")
 endif ()
 
 
@@ -193,6 +204,71 @@ relocate_to_ram(src/common/pico_util/queue.c.o
     ".text.queue_try_add=.time_critical.queue_try_add|.text.queue_try_remove=.time_critical.queue_try_remove"
     "pico_util queue add/remove -> RAM")
 
+# --- Core0's Bluetooth/USB hot path in RAM (upstream awalol Phases B.2-B.4),
+# RP2350 only (see src/core0_ram.h: the Pico W's RP2040 can't spare the RAM).
+# Section names are TinyUSB 0.20's (pico-sdk 2.2.0): upstream's newer list
+# names tu_fifo_*_n_access_mode, which 0.20 doesn't have, and a rename that
+# matches nothing does nothing (upstream 76690ab). tools/check_ram_residency.sh
+# checks every one of these landed in SRAM.
+if (PICO_RP2350)
+# B.2: per-packet BT/USB transport.
+relocate_to_ram(lib/btstack/src/hci.c.o
+    ".text.packet_handler=.time_critical.bt_packet_handler"
+    "B.2: btstack hci.c packet_handler (HCI event/ACL dispatch) -> RAM")
+relocate_to_ram(lib/btstack/src/l2cap.c.o
+    ".text.l2cap_acl_handler=.time_critical.l2cap_acl_handler"
+    "B.2: btstack l2cap.c l2cap_acl_handler (inbound demux) -> RAM")
+relocate_to_ram(lib/tinyusb/src/common/tusb_fifo.c.o
+    ".text.tu_fifo_read=.time_critical.tu_fifo_read|.text.tu_fifo_read_n=.time_critical.tu_fifo_read_n|.text.tu_fifo_write=.time_critical.tu_fifo_write|.text.tu_fifo_write_n=.time_critical.tu_fifo_write_n|.text.tu_fifo_count=.time_critical.tu_fifo_count"
+    "B.2: tinyusb FIFO data path -> RAM")
+relocate_to_ram(src/rp2_common/pico_cyw43_driver/cyw43_bus_pio_spi.c.o
+    ".text.cyw43_spi_transfer=.time_critical.cyw43_spi_transfer|.text.cyw43_read_bytes=.time_critical.cyw43_read_bytes|.text.cyw43_write_bytes=.time_critical.cyw43_write_bytes|.text.cyw43_read_reg_u32=.time_critical.cyw43_read_reg_u32|.text.cyw43_read_reg_u16=.time_critical.cyw43_read_reg_u16|.text.cyw43_read_reg_u8=.time_critical.cyw43_read_reg_u8|.text.cyw43_write_reg_u32=.time_critical.cyw43_write_reg_u32|.text.cyw43_write_reg_u16=.time_critical.cyw43_write_reg_u16|.text.cyw43_write_reg_u8=.time_critical.cyw43_write_reg_u8|.text.read_reg_u32_swap=.time_critical.read_reg_u32_swap|.text.write_reg_u32_swap=.time_critical.write_reg_u32_swap|.text.ns_delay.constprop.0=.time_critical.cyw43_ns_delay"
+    "B.2: cyw43 PIO-SPI transport -> RAM")
+relocate_to_ram(lib/cyw43-driver/src/cyw43_ll.c.o
+    ".text.cyw43_ll_sdpcm_poll_device=.time_critical.cyw43_ll_sdpcm_poll_device|.text.cyw43_ll_process_packets=.time_critical.cyw43_ll_process_packets|.text.cyw43_sdpcm_send_common=.time_critical.cyw43_sdpcm_send_common|.text.cyw43_do_ioctl.part.0=.time_critical.cyw43_do_ioctl|.text.cyw43_ll_bt_has_work=.time_critical.cyw43_ll_bt_has_work|.text.cyw43_ll_parse_async_event=.time_critical.cyw43_ll_parse_async_event"
+    "B.2: cyw43 SDPCM pump -> RAM")
+relocate_to_ram(lib/cyw43-driver/src/cyw43_ctrl.c.o
+    ".text.cyw43_poll_func=.time_critical.cyw43_poll_func|.text.cyw43_bluetooth_hci_read=.time_critical.cyw43_bluetooth_hci_read|.text.cyw43_bluetooth_hci_write=.time_critical.cyw43_bluetooth_hci_write"
+    "B.2: cyw43 poll + BT HCI bus -> RAM")
+# B.3: run-loop TX pumps and per-transfer submit paths.
+relocate_to_ram(lib/btstack/src/hci.c.o
+    ".text.hci_run=.time_critical.hci_run|.text.hci_send_acl_packet_fragments=.time_critical.hci_send_acl_packet_fragments|.text.hci_send_acl_packet_buffer=.time_critical.hci_send_acl_packet_buffer"
+    "B.3: btstack hci.c TX pump + ACL out -> RAM")
+relocate_to_ram(lib/btstack/src/l2cap.c.o
+    ".text.l2cap_run=.time_critical.l2cap_run|.text.l2cap_send=.time_critical.l2cap_send|.text.l2cap_send_prepared=.time_critical.l2cap_send_prepared|.text.l2cap_notify_channel_can_send=.time_critical.l2cap_notify_channel_can_send"
+    "B.3: btstack l2cap.c TX pump + sends -> RAM")
+relocate_to_ram(lib/cyw43-driver/src/cyw43_ll.c.o
+    ".text.cyw43_ll_write_backplane_mem=.time_critical.cyw43_ll_write_backplane_mem|.text.cyw43_ll_read_backplane_mem=.time_critical.cyw43_ll_read_backplane_mem|.text.cyw43_write_backplane=.time_critical.cyw43_write_backplane|.text.cyw43_read_backplane.constprop.0=.time_critical.cyw43_read_backplane"
+    "B.3: cyw43 backplane accessors -> RAM")
+relocate_to_ram(lib/tinyusb/src/device/usbd.c.o
+    ".text.tud_task_ext=.time_critical.tud_task_ext|.text.usbd_edpt_xfer=.time_critical.usbd_edpt_xfer"
+    "B.3: tinyusb usbd.c task pump + xfer -> RAM")
+relocate_to_ram(lib/tinyusb/src/portable/raspberrypi/rp2040/dcd_rp2040.c.o
+    ".text.dcd_edpt_xfer=.time_critical.dcd_edpt_xfer|.text.dcd_edpt_iso_activate=.time_critical.dcd_edpt_iso_activate"
+    "B.3: tinyusb dcd_rp2040.c submit + iso -> RAM")
+relocate_to_ram(lib/tinyusb/src/class/audio/audio_device.c.o
+    ".text.tud_audio_n_read=.time_critical.tud_audio_n_read|.text.tud_audio_n_write=.time_critical.tud_audio_n_write|.text.audiod_calc_tx_packet_sz.isra.0=.time_critical.audiod_calc_tx_packet_sz|.text.audiod_xfer_isr=.time_critical.audiod_xfer_isr"
+    "B.3: tinyusb audio class data path -> RAM")
+# B.4 (the rest; the queue ops above are on every board): input-report tail.
+relocate_to_ram(lib/tinyusb/src/class/hid/hid_device.c.o
+    ".text.tud_hid_n_report=.time_critical.tud_hid_n_report|.text.tud_hid_n_ready=.time_critical.tud_hid_n_ready|.text.hidd_xfer_cb=.time_critical.hidd_xfer_cb"
+    "B.4: tinyusb HID report path -> RAM")
+relocate_to_ram(src/rp2_common/pico_cyw43_arch/cyw43_arch.c.o
+    ".text.cyw43_arch_poll=.time_critical.cyw43_arch_poll"
+    "B.4: cyw43_arch_poll -> RAM")
+relocate_to_ram(lib/btstack/src/btstack_run_loop.c.o
+    ".text.btstack_run_loop_base_poll_data_sources=.time_critical.btstack_run_loop_base_poll_data_sources|.text.btstack_run_loop_poll_data_sources_from_irq=.time_critical.btstack_run_loop_poll_data_sources_from_irq"
+    "B.4: btstack run-loop data-source poll -> RAM")
+# a2772a9: bt_write's send request, and the linked-list iterators BTstack's
+# run loops walk every pass.
+relocate_to_ram(lib/btstack/src/l2cap.c.o
+    ".text.l2cap_request_can_send_now_event=.time_critical.l2cap_request_can_send_now_event"
+    "a2772a9: btstack l2cap_request_can_send_now_event -> RAM")
+relocate_to_ram(lib/btstack/src/btstack_linked_list.c.o
+    ".text.btstack_linked_list_iterator_init=.time_critical.btstack_linked_list_iterator_init|.text.btstack_linked_list_iterator_has_next=.time_critical.btstack_linked_list_iterator_has_next|.text.btstack_linked_list_iterator_next=.time_critical.btstack_linked_list_iterator_next"
+    "a2772a9: btstack linked-list iterators -> RAM")
+endif ()
+
 # B.5: RAM memcpy/memset/memmove (newlib's live in flash; libopus calls them
 # every frame). Must not be lowered back into calls to themselves.
 set_source_files_properties(src/ram_mem.c PROPERTIES COMPILE_OPTIONS
@@ -228,6 +304,23 @@ target_compile_definitions(ds5-bridge PRIVATE
         DISABLE_SPEAKER_PROC=${DISABLE_SPEAKER_PROC_VALUE}
         OPUS_ENCODER_CELT_ONLY=${OPUS_ENCODER_CELT_ONLY_VALUE}
 )
+
+# Flash (XIP) setup, RP2350 only. The bootrom leaves the QMI flash interface
+# at a slow, conservative setting unless the image carries its own XIP setup
+# (boot2); crt0 then runs it at boot (PICO_EMBED_XIP_SETUP, SDK 2.x) with
+# PICO_FLASH_SPI_CLKDIV. Upstream awalol does the same (99da904, e5d99f0):
+# divider 4 above 266 MHz, else 2. Without it core1 crashed on some boards
+# (issue #15). The RP2040 (Pico W) always runs its boot2, at the board's
+# divider 2, as upstream leaves it.
+if (PICO_PLATFORM MATCHES "^rp2350")
+        if (SYS_CLOCK_KHZ_VALUE GREATER 266000)
+                set(DS5_FLASH_CLKDIV 4)
+        else ()
+                set(DS5_FLASH_CLKDIV 2)
+        endif ()
+        target_compile_definitions(bs2_default PRIVATE PICO_FLASH_SPI_CLKDIV=${DS5_FLASH_CLKDIV})
+        target_compile_definitions(ds5-bridge PRIVATE PICO_EMBED_XIP_SETUP=1)
+endif ()
 if (ENABLE_STACK_USAGE)
         target_compile_options(ds5-bridge PRIVATE -fstack-usage)
         target_compile_options(opus PRIVATE -fstack-usage)
@@ -336,4 +429,30 @@ target_link_libraries(ds5-bridge
 target_link_options(ds5-bridge PRIVATE -Wl,--wrap=flash_safe_execute)
 
 pico_add_extra_outputs(ds5-bridge)
+
+# Gate (issue #15): an RP2350 build must embed its XIP setup, and the flash
+# clock it sets (clk_sys / divider) must stay within ~100 MHz. Checked on the
+# final target properties, so a later edit that drops either fails here.
+# tools/check_xip_setup.sh checks the built ELF for the same thing.
+if (PICO_PLATFORM MATCHES "^rp2350")
+        get_target_property(_ds5_defs ds5-bridge COMPILE_DEFINITIONS)
+        if (NOT "PICO_EMBED_XIP_SETUP=1" IN_LIST _ds5_defs)
+                message(FATAL_ERROR "RP2350 build without PICO_EMBED_XIP_SETUP=1 on ds5-bridge: the flash keeps the bootrom's setup (issue #15)")
+        endif ()
+        get_target_property(_bs2_defs bs2_default COMPILE_DEFINITIONS)
+        set(_ds5_clkdiv "")
+        foreach (_d IN LISTS _bs2_defs)
+                if (_d MATCHES "^PICO_FLASH_SPI_CLKDIV=([0-9]+)$")
+                        set(_ds5_clkdiv ${CMAKE_MATCH_1})
+                endif ()
+        endforeach ()
+        if (_ds5_clkdiv STREQUAL "" OR _ds5_clkdiv EQUAL 0)
+                message(FATAL_ERROR "RP2350 build without PICO_FLASH_SPI_CLKDIV on bs2_default (issue #15)")
+        endif ()
+        math(EXPR _ds5_flash_khz "${SYS_CLOCK_KHZ_VALUE} / ${_ds5_clkdiv}")
+        if (_ds5_flash_khz GREATER 100000)
+                message(FATAL_ERROR "Flash clock ${_ds5_flash_khz} kHz (clk_sys ${SYS_CLOCK_KHZ_VALUE} kHz / divider ${_ds5_clkdiv}) is above 100 MHz")
+        endif ()
+        message(STATUS "Pico 2 W: clk_sys ${SYS_CLOCK_KHZ_VALUE} kHz, flash ${_ds5_flash_khz} kHz (divider ${_ds5_clkdiv}, embedded XIP setup), CYW43 PIO divider ${CYW43_PIO_CLOCK_DIV_VALUE}")
+endif ()
 

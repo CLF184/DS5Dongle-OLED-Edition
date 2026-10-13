@@ -5,6 +5,7 @@
 #include <cstdio>
 #include "bsp/board_api.h"
 #include "bt.h"
+#include "core0_ram.h"
 #include "utils.h"
 #include "resample.h"
 #include "audio.h"
@@ -129,7 +130,7 @@ uint8_t interrupt_in_data[63] = {
 critical_section_t report_cs;
 volatile bool report_dirty = false;
 
-void interrupt_loop() {
+void CORE0_RAM_FUNC(interrupt_loop)() {
     // OLED Edition: hold PS + Mute for 2 seconds to soft-reboot the dongle.
     // Works whether or not the OLED add-on is present. PS+Mute is uncommon
     // during gameplay and the long hold avoids accidental triggers.
@@ -196,7 +197,7 @@ void interrupt_loop() {
     }
 }
 
-void on_bt_data(CHANNEL_TYPE channel, uint8_t *data, uint16_t len) {
+void CORE0_RAM_FUNC(on_bt_data)(CHANNEL_TYPE channel, uint8_t *data, uint16_t len) {
     // printf("[Main] BT data callback: channel=%u len=%u\n", channel, len);
     // Track ALL INTERRUPT input reports, not just 0x31. The mic stream
     // may live on a different report ID — confirmed 2026-05-19 that data[2]
@@ -487,10 +488,26 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
     }
 }
 
+#if PICO_RP2350 && SYS_CLOCK_KHZ == 150000 && SYS_CLK_KHZ != 150000
+#error "the Pico 2 W build assumes the SDK boots clk_sys at 150 MHz"
+#endif
+
 int main() {
+    // The Pico 2 W runs at the clock it boots with (150 MHz), as upstream
+    // awalol v0.7.0 does, at the default core voltage (1.10 V). That voltage
+    // is set explicitly: the RP2350 keeps its regulator setting across every
+    // reset but power-on, so a dongle that ran the old 320 MHz firmware would
+    // otherwise stay at 1.20 V after this one is flashed. Lowering it at the
+    // boot clock is safe; vreg_set_voltage() waits for the change to finish.
+    // The Pico W (200 MHz) and the DS5_CLOCK_KHZ=320000 fallback raise
+    // voltage and clock instead.
+#if SYS_CLOCK_KHZ == 150000
+    vreg_set_voltage(VREG_VOLTAGE_DEFAULT);
+#else
     vreg_set_voltage(VREG_VOLTAGE_1_20);
     sleep_ms(1000);
     set_sys_clock_khz(SYS_CLOCK_KHZ, true);
+#endif
 
     board_init();
     tusb_rhport_init_t dev_init = {

@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include "audio.h"
 #include "bt.h"
+#include "core0_ram.h"
 #include "resample.h"
 #include "tusb.h"
 #include <algorithm>
@@ -194,7 +195,7 @@ uint8_t audio_mic_last_toc() { return g_mic_toc; }
 // Called from src/main.cpp's on_bt_data() when the DS5 sends a mic-tagged
 // 0x31 input report. Drops the oldest queued packet if the FIFO is full —
 // preferring fresh audio over backlog on overload.
-void mic_add_queue(const uint8_t *data) {
+void CORE0_RAM_FUNC(mic_add_queue)(const uint8_t *data) {
     if (!audio_mic_wanted()) return;
     static mic_element packet{};
     memcpy(packet.data, data, MIC_OPUS_SIZE);
@@ -286,7 +287,7 @@ static void mic_drain() {
 static uint64_t s_host_audio_us = 0;
 bool audio_host_streaming() { return time_us_64() - s_host_audio_us < 60 * 1000; }
 
-static void audio_bt_task() {
+static void CORE0_RAM_FUNC(audio_bt_task)() {
     if (queue_get_level(&haptics_fifo) < 2) return;
 #if !DISABLE_SPEAKER_PROC
     const bool spk_ready = g_spk_ready;
@@ -374,7 +375,7 @@ void audio_send_voice_report() {
 #endif
 }
 
-void audio_loop() {
+void CORE0_RAM_FUNC(audio_loop)() {
     // Only after enumeration: BT traffic during the fresh-pair feature handshake
     // delays controller detection past the connection watchdog (~10-15 s drop).
     if (tud_mounted()) mic_status_task();

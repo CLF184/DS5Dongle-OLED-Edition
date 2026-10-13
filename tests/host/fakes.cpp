@@ -38,7 +38,7 @@ void adc_set_temp_sensor_enabled(bool) {}
 void adc_select_input(uint32_t) {}
 uint16_t adc_read() { return 876; }
 uint32_t frequency_count_khz(uint32_t) { return SYS_CLOCK_KHZ; }
-vreg_voltage vreg_get_voltage() { return VREG_VOLTAGE_1_20; }
+vreg_voltage vreg_get_voltage() { return VREG_VOLTAGE_DEFAULT; }
 int g_fake_reboots = 0;
 void watchdog_reboot(uint32_t, uint32_t, uint32_t) { g_fake_reboots++; }
 void reset_usb_boot(uint32_t, uint32_t) { g_fake_reboots++; }

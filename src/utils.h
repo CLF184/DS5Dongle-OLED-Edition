@@ -8,6 +8,7 @@
 #include <iostream>
 
 #include "hci_cmd.h"
+#include "core0_ram.h"
 
 inline const char *opcode_to_str(const uint16_t opcode) {
     switch (opcode) {
@@ -107,7 +108,9 @@ inline constexpr auto make_crc32_table() {
     return table;
 }
 
-inline constexpr auto crc32_lookup_table = make_crc32_table();
+// In RAM (upstream 57f185b): every Bluetooth output report's checksum reads it.
+inline constexpr std::array<uint32_t, 256> CORE0_RAM_DATA("crc32_lookup_table")
+crc32_lookup_table = make_crc32_table();
 
 inline uint32_t crc32_seeded(const uint8_t *data, size_t size, const uint32_t seed) {
     uint32_t crc = ~seed;
