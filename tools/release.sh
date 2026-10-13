@@ -67,6 +67,7 @@ echo "== App checks"
 (cd "$APP_DIR" && npm run check)
 echo "== Firmware checks: submodule gitlinks, host unit tests"
 "$FW_DIR/tools/check_gitlinks.sh" "$FW_DIR"
+(cd "$APP_DIR" && node tools/check_identical_files.mjs "$FW_DIR")
 BUILD_DIR="$(mktemp -d)"
 trap 'rm -rf "$BUILD_DIR"' EXIT
 "$FW_DIR/tests/host/run.sh" "$BUILD_DIR/host-tests"

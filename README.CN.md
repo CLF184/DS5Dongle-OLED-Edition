@@ -18,7 +18,7 @@
 2. **按住 BOOTSEL 按钮**把 Pico 插到电脑上（全新的 Pico 不需要按）。应用会发现它，一键安装固件，无需手动拷贝文件。
 3. 配对手柄：按住 **PS + Create** 直到灯条闪烁。连接成功后应用会显示。
 
-![应用：实时显示你的手柄，并使用手柄本身的配色](docs/screenshots/live-controller.png)
+![应用：实时显示你的手柄，并使用手柄本身的配色](https://raw.githubusercontent.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web/master/docs/screenshots/live-controller.png)
 
 所有功能都在一个界面里。手柄按它本身的配色显示，并随你的操作实时变化（按键、扳机、摇杆、触控板、灯条、玩家指示灯），下方还有实时数据：摇杆和扳机数值、体感曲线、触控点和连接状态。首次使用时会有互动式导览。点击任意部位即可设置：
 

@@ -18,7 +18,7 @@ The app is all you need. Each release includes the matching firmware, so the app
 2. Plug the Pico in **while holding its BOOTSEL button** (a brand-new Pico doesn't need the button). The app finds it and installs the firmware with one click; nothing to copy by hand.
 3. Pair your controller: hold **PS + Create** until the light bar flashes. The app shows when it's connected.
 
-![The app: your controller live, in its own colors](docs/screenshots/live-controller.png)
+![The app: your controller live, in its own colors](https://raw.githubusercontent.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web/master/docs/screenshots/live-controller.png)
 
 Your controller is drawn in its own colors and moves as you use it; click any part to set it up. The **[step-by-step guide](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web/blob/master/docs/GUIDE.md)** walks through everything, from building the dongle to each setting:
 
