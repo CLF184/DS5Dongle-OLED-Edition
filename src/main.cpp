@@ -29,6 +29,7 @@
 #include "perf.h"
 #include "ctrl_info.h"
 #include "fw_report.h"
+#include "usb_power.h"
 
 // Pico SDK speciifically for waiting on conditions
 #include "pico/critical_section.h"
@@ -149,7 +150,8 @@ void CORE0_RAM_FUNC(interrupt_loop)() {
         }
     }
 
-    if (!tud_hid_ready()) return;
+    // Only the wake keyboard on the bus: HID instance 0 isn't the DualSense.
+    if (usb_wake_keyboard() || !tud_hid_ready()) return;
 
     // TODO: Refactor for better code reuse
     if (get_config().polling_rate_mode != 2) {
@@ -291,6 +293,11 @@ volatile uint32_t g_get_count = 0;
 
 uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer,
                                uint16_t reqlen) {
+    if (usb_wake_keyboard()) {  // the wake keyboard: no keys down
+        if (reqlen < 8) return 0;
+        memset(buffer, 0, 8);
+        return 8;
+    }
     const uint16_t n = get_report_impl(itf, report_id, report_type, buffer, reqlen);
     if (report_id < 0xF2) { // don't record our own diagnostic reads
         const uint32_t i = g_get_count++ % 16;
@@ -427,6 +434,8 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
     (void) report_type;
     (void) buffer;
     (void) bufsize;
+
+    if (usb_wake_keyboard()) return;  // the wake keyboard's LED report: nothing to do
 
     if (report_id != 0) {
         g_setfeat_count++;
@@ -580,6 +589,9 @@ int main() {
     watchdog_enable(1000, true);
 #endif
 
+    // Sleep / wake handling and what the dongle presents on USB (usb_power.h).
+    usb_power_init();
+
     // Per-stage timing for 0xFC (perf.h): a few cycle-counter reads a pass.
     perf_core_init();
     uint32_t loop_start = perf_now();
@@ -595,6 +607,7 @@ int main() {
         const uint32_t t1 = perf_now();
         perf_record(PERF_CYW43, t1 - t0);
         tud_task();
+        usb_power_task();
         const uint32_t t2 = perf_now();
         perf_record(PERF_TUD, t2 - t1);
         cmd_task();

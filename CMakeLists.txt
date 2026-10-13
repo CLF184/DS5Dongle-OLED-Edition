@@ -94,6 +94,7 @@ add_executable(ds5-bridge
         src/usb_descriptors.cpp
         src/main.cpp
         src/usb.cpp
+        src/usb_power.cpp
         src/audio.cpp
         src/bt.cpp
         src/config.cpp

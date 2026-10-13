@@ -34,13 +34,13 @@ void settle() {  // let a deferred command run (reboot/BOOTSEL wait 50 ms)
 }
 }  // namespace
 
-TEST(cmd_identity_reports_protocol_1_12) {
+TEST(cmd_identity_reports_protocol_1_13) {
     fresh();
     uint8_t id[46]{};
     CHECK_EQ(pico_cmd_get(PICO_CMD_IDENTITY, id, sizeof(id)), 46);
     CHECK(std::memcmp(id, "DS5O", 4) == 0);
     CHECK_EQ(id[4], 1);
-    CHECK_EQ(id[5], 12);
+    CHECK_EQ(id[5], 13);
     CHECK_EQ(id[6], sizeof(Config_body));
     CHECK(id[29] & 0x80);  // timings in 0xFC
     CHECK(std::memcmp(id + 30, "Host", 5) == 0);
@@ -205,7 +205,7 @@ TEST(cmd_random_sets_never_crash) {
     // Still answering, and still the same protocol.
     uint8_t id[46];
     CHECK_EQ(pico_cmd_get(PICO_CMD_IDENTITY, id, sizeof(id)), 46);
-    CHECK_EQ(id[5], 12);
+    CHECK_EQ(id[5], 13);
 }
 
 TEST(cmd_only_f6_runs_functions) {
@@ -221,4 +221,57 @@ TEST(cmd_only_f6_runs_functions) {
     pico_cmd_set(PICO_CMD_SET, reboot, sizeof(reboot));
     settle();
     CHECK_EQ(g_fake_reboots, reboots + 1);
+}
+
+// Protocol 1.13: PC sleep options. Identity [46] bit1 and [47] the bits; 0xF6
+// 0x17 [flags] validates, saves on its own (other unsaved edits stay unsaved)
+// and survives a reload; a 47-byte identity read stays 47 bytes.
+TEST(cmd_power_flags_get_set) {
+    fresh();
+    CHECK(config_save());  // something valid in flash, so 0x17 saves only its bits
+    uint8_t id[63]{};
+    CHECK_EQ(pico_cmd_get(PICO_CMD_IDENTITY, id, 47), 47);
+    CHECK_EQ(pico_cmd_get(PICO_CMD_IDENTITY, id, 48), 48);
+    CHECK(id[46] & 0x02);
+    CHECK_EQ(id[47], POWER_FLAGS_DEFAULT);  // controller off on sleep, no wake
+    Config_body b = get_config();
+    b.inactive_time = 50;  // an unsaved edit
+    set_config(b);
+    const uint8_t on[] = {0x17, POWER_SLEEP_CONTROLLER_OFF | POWER_PS_WAKES_PC};
+    pico_cmd_set(PICO_CMD_SET, on, sizeof(on));
+    CHECK_EQ(last_result(), CMD_RESULT_PENDING);
+    settle();
+    CHECK_EQ(last_result(), CMD_RESULT_OK);
+    pico_cmd_get(PICO_CMD_IDENTITY, id, 48);
+    CHECK_EQ(id[47], 0x03);
+    CHECK(config_unsaved());  // inactive_time still unsaved
+    config_load();
+    CHECK_EQ(config_power_flags(), 0x03);
+    CHECK_EQ(get_config().inactive_time, 30);  // never saved
+    const uint8_t bad[] = {0x17, 0x04};
+    pico_cmd_set(PICO_CMD_SET, bad, sizeof(bad));
+    CHECK_EQ(last_result(), CMD_RESULT_INVALID);
+    const uint8_t none[] = {0x17};
+    pico_cmd_set(PICO_CMD_SET, none, sizeof(none));
+    CHECK_EQ(last_result(), CMD_RESULT_INVALID);
+    const uint8_t off[] = {0x17, 0x00};
+    pico_cmd_set(PICO_CMD_SET, off, sizeof(off));
+    settle();
+    config_load();
+    CHECK_EQ(config_power_flags(), 0x00);
+    g_fake_flash_fail = true;
+    pico_cmd_set(PICO_CMD_SET, on, sizeof(on));
+    settle();
+    CHECK_EQ(last_result(), CMD_RESULT_FAILED);
+    g_fake_flash_fail = false;
+}
+
+// 0xF6 0x03 goes through usb_power_reconnect (so the suspend it causes is
+// never taken for a PC sleep), not a bare tud_disconnect/connect.
+TEST(cmd_reconnect_uses_usb_power) {
+    fresh();
+    const int before = g_fake_usb_reconnects;
+    const uint8_t rc[] = {0x03};
+    pico_cmd_set(PICO_CMD_SET, rc, sizeof(rc));
+    CHECK_EQ(g_fake_usb_reconnects, before + 1);
 }

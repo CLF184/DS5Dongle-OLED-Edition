@@ -11,6 +11,7 @@
 #include "cmd.h"
 #include "oled.h"
 #include "ctrl_info.h"
+#include "usb_power.h"
 
 // {CD1F1B79-799E-44AC-ADFC-A3F2090D1D4A} — the configurator opens the WinUSB
 // device by this interface GUID on Windows.
@@ -139,6 +140,8 @@ static void build_ext_props() {
 //--------------------------------------------------------------------+
 
 bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const *req) {
+    // The wake keyboard has no configurator and no MS OS descriptors.
+    if (usb_wake_keyboard()) return false;
     if (req->bRequest == MS_OS_VENDOR_CODE &&
         req->bmRequestType_bit.direction == TUSB_DIR_IN) {
         if (stage != CONTROL_STAGE_SETUP) return true;
