@@ -105,10 +105,10 @@ Native triggers work identically on Heroic, but non-Steam launchers are sensitiv
 | Variable | Value | Purpose |
 |---|---|---|
 | `PROTON_ENABLE_HIDRAW` | `0x054c/0x0ce6` | *Legacy / optional — **not needed** on Wine 11*, which enables the hidraw native path by default. Harmless if set. Only relevant on older Proton where hidraw was opt-in (but those also lack the #9034 fix, so triggers won't work there anyway). |
-| `PROTON_PREFER_SDL` | `1` | *Alternative, input-only.* Forces the SDL gamepad path — gives working input + rumble but as a generic/Xbox pad (**no triggers**). Use only when a game lacks native DualSense support and `ENABLE_HIDRAW` doesn't help. Do **not** combine with `ENABLE_HIDRAW` for trigger games. |
+| `PROTON_PREFER_SDL` | `1` | *Alternative, input-only.* Forces the SDL gamepad path — gives working input + rumble but as a generic/Xbox pad (**no triggers**). Use only when a game lacks native DualSense support and `ENABLE_HIDRAW` doesn't help. Do **not** combine with `ENABLE_HIDRAW` for trigger games. Needs a Proton that honours it: the published **GE-Proton11-7-DualSense** ignores it, so run XInput-only games on stock GE-Proton until the next DualSense build is published. |
 | `PROTON_LOG` | `+hid` | *Diagnostic only* (not for normal play). Writes a HID enumeration trace — Steam lands it at `~/steam-<appid>.log`; Heroic sets `PROTON_LOG_DIR` to your home, so it lands at `~/steam-0.log`. Useful for confirming the game opened the native HID path. |
 
-> **Heroic vs Steam:** Native triggers work on **both** — and neither needs a launch option on Wine 11. Steam: set the runner + disable Steam Input. Heroic: set the runner, **fully quit Steam** (a background Steam steals the pad from non-Steam games), and keep `PROTON_PREFER_SDL` off. Either way the game must natively support DualSense — XInput-only games (e.g. Ghostrunner, Control) give rumble but no adaptive triggers, on any OS.
+> **Heroic vs Steam:** Native triggers work on **both** — and neither needs a launch option on Wine 11. Steam: set the runner + disable Steam Input. Heroic: set the runner, **fully quit Steam** (a background Steam steals the pad from non-Steam games), and keep `PROTON_PREFER_SDL` off. Either way the game must natively support DualSense — XInput-only games (e.g. Ghostrunner, Control) give rumble but no adaptive triggers, on any OS. Those games need `PROTON_PREFER_SDL=1` and a Proton build that honours it: the published **GE-Proton11-7-DualSense** doesn't, so use stock GE-Proton for them until the next DualSense build is published.
 
 ## Hardware
 
@@ -159,7 +159,7 @@ There are four ways to configure the firmware:
 
 **Configurator app (recommended):** the [DS5 Dongle OLED Edition Configurator](#️-get-started-download-the-app) for Linux and Windows (a macOS build is included, reported working on macOS 27.0.1; the Games page lists Steam, Heroic and Lutris games on Linux and Steam, GOG Galaxy and Epic games on Windows, and its Proton setup is Linux-only). It finds the dongle by itself, applies changes live, and saves to the dongle's flash with one click. Needs firmware v0.8+.
 
-**On-device (OLED add-on present):** use the on-screen **Settings** menu (10th screen). D-pad ▲▼ moves selection, ▶◀ adjusts values, △ saves to flash.
+**On-device (OLED add-on present):** use the on-screen **Settings** menu (11th screen). D-pad ▲▼ moves selection, ▶◀ adjusts values, △ saves to flash.
 
 **Terminal CLI (any OS, any browser):** install hidapi, then use `scripts/set_ds5.py`:
 
@@ -212,7 +212,7 @@ This was long believed impossible — earlier versions of this fork documented i
 
 - **On by default.** Pair the controller and the mic begins streaming within a second or two — no game audio required (the dongle keeps the stream alive on its own).
 - **Raise the capture volume on the host** — it defaults low. On Linux, find the card with `arecord -l`, then e.g. `amixer -c <DualSense card> sset 'Headset' 90%`. Verify capture with `scripts/mic_diag.sh capture`.
-- **Toggle it off to save controller battery** — OLED **Settings → BT Mic**, or the **BT microphone** switch in the [configurator app](#️-get-started-download-the-app). Always-on mic keeps the DS5's audio subsystem awake, which drains its battery noticeably faster, so disable it if you don't use voice.
+- **Toggle it off to save controller battery** — OLED **Settings → BT Mic**, or the **Built-in microphone** switch in the [configurator app](#️-get-started-download-the-app). Always-on mic keeps the DS5's audio subsystem awake, which drains its battery noticeably faster, so disable it if you don't use voice.
 
 **Caveats:**
 
@@ -406,6 +406,13 @@ Persistent config editor. D-pad ▲▼ moves the selection, ▶◀ adjusts value
 - **AutoHap Off / Fallback / Mix / Replace** — selects the Audio Auto Haptics mode. Default `Off`: haptics come only from the game. `Fallback` fires derived rumble only when the game sends no native haptic data (e.g. Ghost of Tsushima on Linux) — note it also vibrates along with music and desktop audio; games that *do* send native haptics (Spider-Man Remastered) pass through unchanged. `Mix` adds derived on top of native, `Replace` ignores native entirely.
 - **AH Gain N%** — derived-signal gain, 0–200 % in 10 % steps. Default 100 %.
 - **AH LP 80/160/250/400 Hz** — low-pass cutoff applied to the speaker audio before envelope follow. Lower = more sub-bass, higher = more presence. Default 160 Hz.
+- **TrigEff game / -1 … -10** — Trigger Effect Intensity: weakens the games' adaptive trigger resistance in 10 steps. Default `game` (0): the game's own strength, its report passed through untouched.
+- **SpkBoost game / 1 … 7** — Speaker boost: the controller amplifier's pre-gain. Default `game` (0): left to the game. Separate from `Spk Vol`.
+- **VolLock on / off** — Lock volume: games can't change the controller's speaker, headset or mic volume, mute or mute light; the PC's own volume and mute still apply. Default off.
+- **SPK Out Auto / SPK / Hset / off** — Audio output: where the PC's audio plays (Auto = the headset when one is plugged into the controller). Default Auto.
+- **Mic In Auto / Int / Hset** — Microphone used: Auto, the built-in mic, or a headset's. Default Auto. `BT Mic` stays the switch that turns the mic off.
+- **Sleep CtrlOff on / off** — turn the controller off once the PC has slept for 3 s. Default on.
+- **PS Wakes PC on / off** — with no controller connected, the dongle shows up as a wake-only keyboard ("DS5 Dongle Wake Keyboard") so the PS button can wake the PC. Default off.
 - **Reset to defaults** — hold △ for 2 s to revert all config fields
 - **Wipe all slots** — hold △ for 2 s to drop all 4 paired controllers + all BTstack link keys
 
