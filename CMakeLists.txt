@@ -193,6 +193,34 @@ relocate_to_ram(src/common/pico_util/queue.c.o
     ".text.queue_try_add=.time_critical.queue_try_add|.text.queue_try_remove=.time_critical.queue_try_remove"
     "pico_util queue add/remove -> RAM")
 
+# --- Core0's Bluetooth/USB hot path in RAM (upstream awalol Phases B.2-B.4),
+# RP2350 only (see src/core0_ram.h: the Pico W's RP2040 can't spare the RAM).
+# Section names are TinyUSB 0.20's (pico-sdk 2.2.0): upstream's newer list
+# names tu_fifo_*_n_access_mode, which 0.20 doesn't have, and a rename that
+# matches nothing does nothing (upstream 76690ab). tools/check_ram_residency.sh
+# checks every one of these landed in SRAM.
+if (PICO_RP2350)
+# B.2: per-packet BT/USB transport.
+relocate_to_ram(lib/btstack/src/hci.c.o
+    ".text.packet_handler=.time_critical.bt_packet_handler"
+    "B.2: btstack hci.c packet_handler (HCI event/ACL dispatch) -> RAM")
+relocate_to_ram(lib/btstack/src/l2cap.c.o
+    ".text.l2cap_acl_handler=.time_critical.l2cap_acl_handler"
+    "B.2: btstack l2cap.c l2cap_acl_handler (inbound demux) -> RAM")
+relocate_to_ram(lib/tinyusb/src/common/tusb_fifo.c.o
+    ".text.tu_fifo_read=.time_critical.tu_fifo_read|.text.tu_fifo_read_n=.time_critical.tu_fifo_read_n|.text.tu_fifo_write=.time_critical.tu_fifo_write|.text.tu_fifo_write_n=.time_critical.tu_fifo_write_n|.text.tu_fifo_count=.time_critical.tu_fifo_count"
+    "B.2: tinyusb FIFO data path -> RAM")
+relocate_to_ram(src/rp2_common/pico_cyw43_driver/cyw43_bus_pio_spi.c.o
+    ".text.cyw43_spi_transfer=.time_critical.cyw43_spi_transfer|.text.cyw43_read_bytes=.time_critical.cyw43_read_bytes|.text.cyw43_write_bytes=.time_critical.cyw43_write_bytes|.text.cyw43_read_reg_u32=.time_critical.cyw43_read_reg_u32|.text.cyw43_read_reg_u16=.time_critical.cyw43_read_reg_u16|.text.cyw43_read_reg_u8=.time_critical.cyw43_read_reg_u8|.text.cyw43_write_reg_u32=.time_critical.cyw43_write_reg_u32|.text.cyw43_write_reg_u16=.time_critical.cyw43_write_reg_u16|.text.cyw43_write_reg_u8=.time_critical.cyw43_write_reg_u8|.text.read_reg_u32_swap=.time_critical.read_reg_u32_swap|.text.write_reg_u32_swap=.time_critical.write_reg_u32_swap|.text.ns_delay.constprop.0=.time_critical.cyw43_ns_delay"
+    "B.2: cyw43 PIO-SPI transport -> RAM")
+relocate_to_ram(lib/cyw43-driver/src/cyw43_ll.c.o
+    ".text.cyw43_ll_sdpcm_poll_device=.time_critical.cyw43_ll_sdpcm_poll_device|.text.cyw43_ll_process_packets=.time_critical.cyw43_ll_process_packets|.text.cyw43_sdpcm_send_common=.time_critical.cyw43_sdpcm_send_common|.text.cyw43_do_ioctl.part.0=.time_critical.cyw43_do_ioctl|.text.cyw43_ll_bt_has_work=.time_critical.cyw43_ll_bt_has_work|.text.cyw43_ll_parse_async_event=.time_critical.cyw43_ll_parse_async_event"
+    "B.2: cyw43 SDPCM pump -> RAM")
+relocate_to_ram(lib/cyw43-driver/src/cyw43_ctrl.c.o
+    ".text.cyw43_poll_func=.time_critical.cyw43_poll_func|.text.cyw43_bluetooth_hci_read=.time_critical.cyw43_bluetooth_hci_read|.text.cyw43_bluetooth_hci_write=.time_critical.cyw43_bluetooth_hci_write"
+    "B.2: cyw43 poll + BT HCI bus -> RAM")
+endif ()
+
 # B.5: RAM memcpy/memset/memmove (newlib's live in flash; libopus calls them
 # every frame). Must not be lowered back into calls to themselves.
 set_source_files_properties(src/ram_mem.c PROPERTIES COMPILE_OPTIONS

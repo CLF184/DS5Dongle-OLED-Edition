@@ -53,6 +53,16 @@ CORE0=""
 [ -n "$top" ] && (( 16#$top > 0x20042000 )) && CORE0="
   bt.cpp:_ZL18hci_packet_handlerhtPht bt.cpp:_ZL20l2cap_packet_handlerhtPht
   _Z8bt_writePKht _Z14interrupt_loopv _Z10on_bt_data12CHANNEL_TYPEPht
+  hci.c:packet_handler l2cap.c:l2cap_acl_handler
+  tu_fifo_read tu_fifo_read_n tu_fifo_write tu_fifo_write_n tu_fifo_count
+  cyw43_spi_transfer cyw43_read_bytes cyw43_write_bytes
+  cyw43_read_reg_u32 cyw43_read_reg_u16 cyw43_read_reg_u8
+  cyw43_write_reg_u32 cyw43_write_reg_u16 cyw43_write_reg_u8
+  read_reg_u32_swap write_reg_u32_swap cyw43_bus_pio_spi.c:ns_delay.constprop.0
+  cyw43_ll.c:cyw43_ll_sdpcm_poll_device cyw43_ll_process_packets
+  cyw43_ll.c:cyw43_sdpcm_send_common cyw43_ll.c:cyw43_do_ioctl.part.0
+  cyw43_ll_bt_has_work cyw43_ll.c:cyw43_ll_parse_async_event
+  cyw43_ctrl.c:cyw43_poll_func cyw43_bluetooth_hci_read cyw43_bluetooth_hci_write
 "
 # FUNC/OBJECT symbols as "file:name addr" (locals, grouped after their FILE
 # entry) and "name addr" (globals and weak), one per line.
