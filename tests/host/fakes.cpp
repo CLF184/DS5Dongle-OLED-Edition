@@ -123,13 +123,14 @@ uint8_t state_get_player_leds() { return 0x04; }
 void oled_send_trigger_preset(int) {}
 void voice_say_lang(VoiceLine, uint8_t) {}
 
+#include "cmd.h"
 volatile uint32_t g_bt_31_packets, g_bt_other_packets;
 volatile uint8_t g_last_other_id, g_other_id_or, g_31_b2_or, g_last_31_b2;
 volatile uint16_t g_31_len_min = 0xFFFF, g_31_len_max;
 volatile uint8_t g_last_other_prefix[8];
 volatile uint8_t g_last_any_prefix[16];
 volatile uint16_t g_longest_len;
-volatile uint8_t g_longest_frame[80];
+volatile uint8_t g_longest_frame[MIC_DEBUG_FRAME_BYTES];
 volatile uint32_t g_host_out02_total, g_host_out02_trig_allow, g_host_out02_to_bt;
 volatile uint32_t g_fse_calls, g_fse_fail, g_setfeat_count, g_setfeat_last;
 uint8_t g_last_out02[47];

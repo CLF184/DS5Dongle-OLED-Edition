@@ -146,19 +146,17 @@ TEST(cmd_fc_timings_layout_and_reset) {
 TEST(cmd_no_reply_needs_more_than_63_bytes) {
     // Both transports cap a reply at 63 bytes: a reply that wants more loses
     // its tail without any error (0xF5 lost core1's health that way). Ask
-    // every id with room to spare and check nothing is cut off. The ids known
-    // to do it are listed (0xFE, the mic-debug frame dump, wants 82: its last
-    // 19 frame bytes never arrive); a new one fails.
+    // every id with room to spare and check nothing is cut off (0xFE, the
+    // mic-debug frame dump, wanted 82 until it was trimmed to 63).
     fresh();
-    const uint8_t known_long[] = {0xFE};
     for (int rid = 0; rid < 256; rid++) {
         std::unique_ptr<uint8_t[]> buf(new uint8_t[1024]);
         const uint16_t n = pico_cmd_get((uint8_t) rid, buf.get(), 1024);
-        bool known = false;
-        for (uint8_t k : known_long) known |= k == rid;
-        if ((n > 63) != known) std::fprintf(stderr, "  GET 0x%02X wants %u bytes (known %d)\n", rid, n, known);
-        CHECK((n > 63) == known);
+        if (n > 63) std::fprintf(stderr, "  GET 0x%02X wants %u bytes\n", rid, n);
+        CHECK(n <= 63);
     }
+    std::unique_ptr<uint8_t[]> fe(new uint8_t[1024]);
+    CHECK_EQ(pico_cmd_get(0xFE, fe.get(), 1024), 63);
 }
 
 TEST(cmd_f5_layout) {

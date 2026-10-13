@@ -66,7 +66,7 @@ volatile uint8_t  g_mic_prefix[6] = {0};
 volatile uint8_t  g_last_other_prefix[8] = {0};
 volatile uint8_t  g_last_any_prefix[16] = {0};
 volatile uint16_t g_longest_len = 0;
-volatile uint8_t  g_longest_frame[80] = {0};
+volatile uint8_t  g_longest_frame[MIC_DEBUG_FRAME_BYTES] = {0};
 uint32_t bt_31_packet_count() { return g_bt_31_packets; }
 uint8_t  bt_31_last_byte2()  { return g_last_31_b2; }
 uint8_t  bt_31_b2_or_mask()  { return g_31_b2_or; }
@@ -210,13 +210,13 @@ void CORE0_RAM_FUNC(on_bt_data)(CHANNEL_TYPE channel, uint8_t *data, uint16_t le
             g_last_any_prefix[i] = data[i];
         }
 
-        // Capture the entire content of the longest 0x31 frame we've
-        // seen. Long frames almost certainly carry the mic audio appended
+        // Capture the start of the longest 0x31 frame we've seen (0xFE
+        // replies with its length and first MIC_DEBUG_FRAME_BYTES bytes). Long frames almost certainly carry the mic audio appended
         // after the standard 63-byte input report — this lets us look
         // at the trailing bytes directly via 0xFD diagnostic.
         if (data[1] == 0x31 && len > g_longest_len) {
             g_longest_len = len;
-            for (uint16_t i = 0; i < 80 && i < len; i++) {
+            for (uint16_t i = 0; i < MIC_DEBUG_FRAME_BYTES && i < len; i++) {
                 g_longest_frame[i] = data[i];
             }
         }

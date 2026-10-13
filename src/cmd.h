@@ -23,6 +23,10 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer,uint16_t bufsize);
 #define PICO_CMD_OLED_MIRROR 0xef // vendor interface only, GET, 1028 bytes (proto 1.4)
 #define PICO_PROTO_MINOR 15
 
+// 0xFE mic-debug dump: frame bytes kept of the longest 0x31 seen, so the
+// reply (2 length bytes + these) fits the 63-byte cap.
+#define MIC_DEBUG_FRAME_BYTES 61
+
 // Result of the last 0xF6 SET, reported in 0xF1.
 enum : uint8_t {
     CMD_RESULT_OK = 0,

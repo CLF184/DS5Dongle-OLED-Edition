@@ -80,7 +80,7 @@ extern volatile uint16_t g_31_len_max;
 extern volatile uint8_t  g_last_other_prefix[8];
 extern volatile uint8_t  g_last_any_prefix[16];
 extern volatile uint16_t g_longest_len;
-extern volatile uint8_t  g_longest_frame[80];
+extern volatile uint8_t  g_longest_frame[MIC_DEBUG_FRAME_BYTES];
 extern volatile uint32_t g_host_out02_total;
 extern volatile uint32_t g_host_out02_trig_allow;
 extern volatile uint32_t g_host_out02_to_bt;
@@ -702,9 +702,9 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         return (reqlen < want) ? reqlen : want;
     }
     if (report_id == 0xfe) {
-        // 0xFE: full content of the LONGEST 0x31 frame seen. Bytes 0-1
-        // = length (uint16 LE), bytes 2+ = the captured frame bytes.
-        constexpr uint16_t want = 82;  // 2 length + 80 frame bytes
+        // 0xFE: the LONGEST 0x31 frame seen. Bytes 0-1 = its length
+        // (uint16 LE), bytes 2..62 = its first 61 bytes (the 63-byte cap).
+        constexpr uint16_t want = 2 + MIC_DEBUG_FRAME_BYTES;
         const uint16_t lim = (reqlen < want) ? reqlen : want;
         for (uint16_t i = 0; i < lim; i++) buffer[i] = 0;
         const uint16_t llen = g_longest_len;
@@ -712,7 +712,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
             buffer[0] = (uint8_t)(llen & 0xFF);
             buffer[1] = (uint8_t)((llen >> 8) & 0xFF);
         }
-        for (uint16_t i = 0; i < 80 && (i + 2) < lim; i++) {
+        for (uint16_t i = 0; i < MIC_DEBUG_FRAME_BYTES && (i + 2) < lim; i++) {
             buffer[2 + i] = g_longest_frame[i];
         }
         return lim;
