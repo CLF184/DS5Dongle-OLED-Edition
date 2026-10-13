@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include "bt.h"
+#include "rssi_poll.h"
 #include "core0_ram.h"
 #include "voice.h"
 #include "audio.h"
@@ -244,16 +245,20 @@ void bt_connection_watchdog_tick() {
     }
 }
 
+static RssiPoll rssi_poll;
+
 void bt_get_signal_strength(int8_t *rssi) {
     // gap_read_rssi() completes asynchronously, so this function can only
-    // return the last cached RSSI value. Trigger a refresh afterwards so a
-    // subsequent call can observe the updated value once the RSSI event arrives.
+    // return the last cached RSSI value. Ask for a refresh afterwards so a
+    // later call sees the new value once the RSSI event arrives: at most
+    // 10 Hz, one request in flight (src/rssi_poll.h), however many readers
+    // (OLED BT Signal screen, app 0xF9). Nothing else polls it.
     if (rssi != nullptr) {
         *rssi = bt_rssi;
     }
-    if (acl_handle != HCI_CON_HANDLE_INVALID) {
-        gap_read_rssi(acl_handle);
-    }
+    if (acl_handle == HCI_CON_HANDLE_INVALID) return;
+    const uint64_t now = time_us_64();
+    if (rssi_poll.ready(now) && gap_read_rssi(acl_handle) == 0) rssi_poll.sent(now);
 }
 
 void bt_l2cap_init() {
@@ -425,6 +430,7 @@ static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t cha
                 const hci_con_handle_t handle = hci_event_connection_complete_get_connection_handle(packet);
                 acl_handle = handle;
                 bt_rssi = 0;
+                rssi_poll.reset();
                 hci_event_connection_complete_get_bd_addr(packet, current_device_addr);
                 printf("[HCI] ACL connected handle=0x%04X\n", handle);
                 printf("[HCI] Request authentication on handle=0x%04X\n", handle);
@@ -540,6 +546,7 @@ static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t cha
             connect_attempt_started = 0; // disarm — every teardown clears here
             acl_handle = HCI_CON_HANDLE_INVALID;
             bt_rssi = 0;
+            rssi_poll.reset();
             hid_control_cid = 0;
             hid_interrupt_cid = 0;
             feature_data.clear();
@@ -565,6 +572,7 @@ static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t cha
         case GAP_EVENT_RSSI_MEASUREMENT: {
             const hci_con_handle_t handle = gap_event_rssi_measurement_get_con_handle(packet);
             if (handle == acl_handle) {
+                rssi_poll.replied();
                 bt_rssi = static_cast<int8_t>(gap_event_rssi_measurement_get_rssi(packet));
             }
             break;

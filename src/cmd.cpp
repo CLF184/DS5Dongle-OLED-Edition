@@ -506,11 +506,9 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     }
     if (report_id == 0xf9) {
         // [-128,0]
+        if (reqlen == 0) return 0;  // nothing to answer: don't ask the controller
         int8_t rssi = 0;
         bt_get_signal_strength(&rssi);
-        if (reqlen == 0) {
-            return 0;
-        }
         buffer[0] = rssi;
 #if ENABLE_VERBOSE
         printf("[HID] 0xf9 RSSI=%d raw=0x%02X\n", rssi, buffer[0]);
