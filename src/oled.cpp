@@ -158,7 +158,13 @@ bool settings_dirty = false;
 bool settings_init_done = false;
 uint8_t settings_last_dpad = 8;  // 8 = released
 uint8_t settings_last_face = 0;
-const char* settings_save_status = "";  // shown briefly after Triangle press
+// Save / reset / wipe feedback: 2 s in the footer, not over the title.
+const char* settings_save_status = "";
+uint32_t settings_status_until_us = 0;
+void settings_show_status(const char *text) {
+    settings_save_status = text;
+    settings_status_until_us = (uint32_t)time_us_32() + 2000000;
+}
 
 // Factory-reset hold-Triangle-2s state. Borrowed from zurce/DS5Dongle-OLED's
 // "hold to wipe" UX pattern (https://github.com/zurce/DS5Dongle-OLED).
@@ -1657,23 +1663,22 @@ void settings_handle_input() {
                 settings_power = config_power_flags();
                 lightbar_load_config(); // refresh RAM lightbar state (no reboot here)
                 settings_dirty = false;
-                settings_save_status = "Reset!";
+                settings_show_status("Reset!");
             } else {
-                settings_save_status = "Reset FAIL";
+                settings_show_status("Reset FAIL");
             }
         } else {
             bt_wipe_all_slots();
-            settings_save_status = "Slots wiped!";
+            settings_show_status("Slots wiped!");
         }
     }
     if (!tri_now && tri_prev) {
         if (!is_hold_item && !settings_reset_triggered) {
             set_config(settings_local);
             config_set_power_flags(settings_power);
-            settings_save_status = config_save() ? "Saved!" : "Save FAIL";
-            if (settings_save_status[0] == 'S' && settings_save_status[1] == 'a') {
-                settings_dirty = false;
-            }
+            const bool saved = config_save();
+            settings_show_status(saved ? "Saved!" : "Save FAIL");
+            if (saved) settings_dirty = false;  // a failed save keeps the (*) marker
         }
         settings_reset_triggered = false;
     }
@@ -1762,9 +1767,6 @@ __attribute__((noinline)) void render_screen_settings() {
     char buf[24];
     snprintf(buf, sizeof(buf), "Settings %s", settings_dirty ? "(*)" : "   ");
     draw_text(kContentX, 0, buf);
-    if (settings_save_status[0]) {
-        draw_text(86, 0, settings_save_status);
-    }
 
     constexpr int kVisible = 5;
     int top = 0;
@@ -1775,7 +1777,11 @@ __attribute__((noinline)) void render_screen_settings() {
         draw_text(kContentX, 9 + i * 9, line);
     }
 
-    if (settings_sel == kSettingsResetIdx) {
+    const bool status_live = settings_save_status[0]
+        && (int32_t)(time_us_32() - settings_status_until_us) < 0;
+    if (status_live) {
+        draw_text(kContentX, 56, settings_save_status);
+    } else if (settings_sel == kSettingsResetIdx) {
         draw_text(kContentX, 56, "Hold Tri 2s = RESET");
     } else if (settings_sel == kSettingsWipeSlotsIdx) {
         draw_text(kContentX, 56, "Hold Tri 2s = WIPE");
