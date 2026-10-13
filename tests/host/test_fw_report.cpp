@@ -81,31 +81,19 @@ TEST(fw_report_host_report_bounds) {
     CHECK_EQ(fw_report::host_report(id_only, 1, false, true, buf, 63), 0);
 }
 
-// Rumble flags (Linux hid-playstation): new firmware / Edge -> HAPTICS_SELECT
-// + COMPATIBLE_VIBRATION2 at [38]; old DualSense firmware -> legacy bit.
-TEST(fw_report_rumble_flags_by_update_version) {
-    auto old_fw = fw_cache(0x0B, 0x00);
-    old_fw[44] = 0x14; old_fw[45] = 0x02;  // 2.20
-    CHECK_EQ(fw_report::update_version(old_fw.data(), old_fw.size()), 0x0214);
-    auto f = fw_report::rumble_flags(old_fw.data(), old_fw.size());
-    CHECK_EQ(f.flag0, 0x03);
-    CHECK_EQ(f.flag2, 0x00);
+// Update version [44..45]; 0 when nothing (or not a 0x20) is cached.
+TEST(fw_report_update_version) {
+    auto fw = fw_cache(0x0B, 0x00);
+    fw[44] = 0x30; fw[45] = 0x06;
+    CHECK_EQ(fw_report::update_version(fw.data(), fw.size()), 0x0630);
+    CHECK_EQ(fw_report::update_version(nullptr, 0), 0);
+}
 
-    auto new_fw = old_fw;
-    new_fw[44] = 0x15;  // 2.21
-    f = fw_report::rumble_flags(new_fw.data(), new_fw.size());
-    CHECK_EQ(f.flag0, 0x02);
-    CHECK_EQ(f.flag2, 0x04);
-    f = fw_report::rumble_flags(fw_report::kLatestKnownDs5, sizeof(fw_report::kLatestKnownDs5));  // 0x0630
-    CHECK_EQ(f.flag0, 0x02);
-    CHECK_EQ(f.flag2, 0x04);
-
-    auto edge_old = fw_cache(0x44, 0x00);  // Edge: improved whatever the version
-    edge_old[44] = 0x01; edge_old[45] = 0x01;
-    f = fw_report::rumble_flags(edge_old.data(), edge_old.size());
-    CHECK_EQ(f.flag2, 0x04);
-
-    f = fw_report::rumble_flags(nullptr, 0);  // nothing cached: assume updated (SDL)
-    CHECK_EQ(f.flag0, 0x02);
-    CHECK_EQ(f.flag2, 0x04);
+// Grip test flags: one HAPTICS_SELECT-only report, then legacy emulation
+// (hardware result on update version 0x0630; the improved mode was silent).
+TEST(fw_report_grip_rumble_flags) {
+    CHECK_EQ(fw_report::kRumbleSelect.flag0, 0x02);
+    CHECK_EQ(fw_report::kRumbleSelect.flag2, 0x00);
+    CHECK_EQ(fw_report::kRumbleLegacy.flag0, 0x03);
+    CHECK_EQ(fw_report::kRumbleLegacy.flag2, 0x00);
 }

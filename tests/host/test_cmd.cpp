@@ -382,6 +382,35 @@ TEST(cmd_grip_test_holds_steadily) {
     CHECK_EQ(g_fake_rumbles.size(), n);  // nothing after the stop
 }
 
+// Each test starts with ONE HAPTICS_SELECT-only report (flag0 0x02, motors
+// 0), then legacy reports (0x03): on update version 0x0630 that holds steady
+// where legacy alone pulses (hardware result, fw_report.h). A stop sends none.
+TEST(cmd_grip_test_starts_with_one_select) {
+    fresh();
+    g_fake_rumbles.clear();
+    g_fake_rumble_flags.clear();
+    const uint8_t both[] = {0x0E, 2, 10};
+    pico_cmd_set(PICO_CMD_SET, both, sizeof(both));
+    grip_run(500'000);
+    CHECK(g_fake_rumble_flags.size() >= 3);
+    CHECK_EQ(g_fake_rumble_flags[0], 0x02);
+    for (size_t i = 1; i < g_fake_rumble_flags.size(); i++) CHECK_EQ(g_fake_rumble_flags[i], 0x03);
+    // A new test (replace) starts with its own select.
+    g_fake_rumble_flags.clear();
+    pico_cmd_set(PICO_CMD_SET, both, sizeof(both));
+    grip_run(10'000);  // (the old test's refresh may land first this tick)
+    const size_t n = g_fake_rumble_flags.size();
+    CHECK(n >= 2);
+    CHECK_EQ(g_fake_rumble_flags[n - 2], 0x02);
+    CHECK_EQ(g_fake_rumble_flags[n - 1], 0x03);
+    g_fake_rumble_flags.clear();
+    const uint8_t stop[] = {0x0E, 2, 0};
+    pico_cmd_set(PICO_CMD_SET, stop, sizeof(stop));
+    grip_run(10'000);
+    CHECK_EQ(g_fake_rumble_flags.size(), 1u);
+    CHECK_EQ(g_fake_rumble_flags[0], 0x03);
+}
+
 TEST(cmd_grip_test_clamps_to_5s) {
     fresh();
     const uint8_t long_one[] = {0x0E, 1, 200};

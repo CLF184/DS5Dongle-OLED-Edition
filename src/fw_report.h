@@ -76,26 +76,19 @@ inline uint16_t update_version(const uint8_t *rep, size_t len) {
     return static_cast<uint16_t>(rep[kUpdateVersionOffset] | (rep[kUpdateVersionOffset + 1] << 8));
 }
 
-// Rumble emulation flags for a BT 0x31 / USB 0x02 SetStateData, as Linux
-// hid-playstation's dualsense_output_worker sets them: HAPTICS_SELECT
-// (flag0 bit1, UseRumbleNotHaptics) always, plus COMPATIBLE_VIBRATION2
-// (flag2 [38] bit2, EnableImprovedRumbleEmulation) when the controller does
-// the improved emulation, else the legacy COMPATIBLE_VIBRATION (flag0 bit0,
-// EnableRumbleEmulation; pulses on new firmware). Improved: an Edge always,
-// a DualSense from update version 2.21 (Linux DS_FEATURE_VERSION(2, 21));
-// unknown (no 0x20 cached, 0) counts as updated, as SDL does over Bluetooth.
-constexpr uint16_t kImprovedRumbleMinVersion = 0x0215;
+// Grip test rumble flags (SetStateData [0] flag0, [38] flag2). Hardware
+// result on a DualSense with update version 0x0630, not documented by Sony:
+// the legacy emulation (flag0 0x03 EnableRumbleEmulation | UseRumbleNotHaptics,
+// [38] 0) re-sent every 100 ms pulses ("bzz..bzz"), but right after ONE
+// report with flag0 0x02 only (HAPTICS_SELECT, motors 0) the same legacy
+// reports feel steady. The improved emulation Linux hid-playstation / SDL use
+// (flag0 0x02 + [38] 0x04 COMPATIBLE_VIBRATION2) was nearly silent at full
+// strength on this controller, so the grip test does not use it.
 struct RumbleFlags {
     uint8_t flag0;  // SetStateData [0]
     uint8_t flag2;  // SetStateData [38]
 };
-inline bool improved_rumble(const uint8_t *rep, size_t len) {
-    if (is_edge(rep, len)) return true;
-    const uint16_t v = update_version(rep, len);
-    return v == 0 || v >= kImprovedRumbleMinVersion;
-}
-inline RumbleFlags rumble_flags(const uint8_t *rep, size_t len) {
-    return improved_rumble(rep, len) ? RumbleFlags{0x02, 0x04} : RumbleFlags{0x03, 0x00};
-}
+constexpr RumbleFlags kRumbleSelect{0x02, 0x00};  // once, at the start of each grip test
+constexpr RumbleFlags kRumbleLegacy{0x03, 0x00};  // every grip test report after it
 
 }  // namespace fw_report

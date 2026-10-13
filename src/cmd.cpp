@@ -31,6 +31,7 @@
 
 // main.cpp: the grip test's rumble (0x0E).
 void send_rumble(uint8_t left, uint8_t right);
+void send_rumble_select();  // once at each test's start (flag0 0x02, motors 0)
 uint8_t grip_test_level(bool left);
 
 // The grip test (0xF6 0x0E [side, tenths]): a steady rumble on one or both
@@ -316,6 +317,9 @@ void cmd_task() {
             s_grip_side = s_pending_arg;
             s_grip_until_us = time_us_64() + (uint64_t) s_pending_arg2 * 100'000;
             s_grip_next_us = 0;
+            // One HAPTICS_SELECT-only report first: the legacy reports after
+            // it hold steady instead of pulsing (fw_report.h).
+            send_rumble_select();
             grip_test_task();  // the first report now
             break;
         case 0x0B:

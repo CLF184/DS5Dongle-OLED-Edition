@@ -48,21 +48,29 @@ static uint8_t scale_rumble(uint8_t v, float gain) {
 
 // Rumble only (nothing else in the report is allowed to change), for the
 // app's grip test (0xF6 0x0E). Main-loop context, like the host forward.
-void send_rumble(uint8_t left, uint8_t right) {
+static void send_rumble_flags(fw_report::RumbleFlags f, uint8_t left, uint8_t right) {
     uint8_t outputData[78]{};
     outputData[0] = 0x31;
     outputData[1] = reportSeqCounter << 4;
     reportSeqCounter = (reportSeqCounter + 1) & 0x0F;
     outputData[2] = 0x10;
-    // Improved rumble emulation where the firmware has it (steady; the legacy
-    // bit pulses), like Linux hid-playstation. SetStateData starts at [3].
-    const std::vector<uint8_t> fw = bt_peek_feature(0x20);
-    const fw_report::RumbleFlags f = fw_report::rumble_flags(fw.data(), fw.size());
-    outputData[3] = f.flag0;       // UseRumbleNotHaptics [| EnableRumbleEmulation]
-    outputData[3 + 38] = f.flag2;  // EnableImprovedRumbleEmulation
+    outputData[3] = f.flag0;       // SetStateData starts at [3]
+    outputData[3 + 38] = f.flag2;
     outputData[3 + 2] = right;     // RumbleEmulationRight (light)
     outputData[3 + 3] = left;      // RumbleEmulationLeft (heavy)
     bt_write(outputData, sizeof(outputData));
+}
+
+// Legacy emulation (flag0 0x03, [38] 0); see fw_report.h for why.
+void send_rumble(uint8_t left, uint8_t right) {
+    send_rumble_flags(fw_report::kRumbleLegacy, left, right);
+}
+
+// ONE report with flag0 0x02 only (HAPTICS_SELECT, motors 0) at the start of
+// each grip test: after it the legacy reports feel steady instead of pulsing
+// (hardware result, see fw_report.h).
+void send_rumble_select() {
+    send_rumble_flags(fw_report::kRumbleSelect, 0, 0);
 }
 
 // The grip test's level before the strength (strength 1 = 64, 4+ = full).
