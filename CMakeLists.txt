@@ -238,6 +238,16 @@ relocate_to_ram(lib/tinyusb/src/portable/raspberrypi/rp2040/dcd_rp2040.c.o
 relocate_to_ram(lib/tinyusb/src/class/audio/audio_device.c.o
     ".text.tud_audio_n_read=.time_critical.tud_audio_n_read|.text.tud_audio_n_write=.time_critical.tud_audio_n_write|.text.audiod_calc_tx_packet_sz.isra.0=.time_critical.audiod_calc_tx_packet_sz|.text.audiod_xfer_isr=.time_critical.audiod_xfer_isr"
     "B.3: tinyusb audio class data path -> RAM")
+# B.4 (the rest; the queue ops above are on every board): input-report tail.
+relocate_to_ram(lib/tinyusb/src/class/hid/hid_device.c.o
+    ".text.tud_hid_n_report=.time_critical.tud_hid_n_report|.text.tud_hid_n_ready=.time_critical.tud_hid_n_ready|.text.hidd_xfer_cb=.time_critical.hidd_xfer_cb"
+    "B.4: tinyusb HID report path -> RAM")
+relocate_to_ram(src/rp2_common/pico_cyw43_arch/cyw43_arch.c.o
+    ".text.cyw43_arch_poll=.time_critical.cyw43_arch_poll"
+    "B.4: cyw43_arch_poll -> RAM")
+relocate_to_ram(lib/btstack/src/btstack_run_loop.c.o
+    ".text.btstack_run_loop_base_poll_data_sources=.time_critical.btstack_run_loop_base_poll_data_sources|.text.btstack_run_loop_poll_data_sources_from_irq=.time_critical.btstack_run_loop_poll_data_sources_from_irq"
+    "B.4: btstack run-loop data-source poll -> RAM")
 endif ()
 
 # B.5: RAM memcpy/memset/memmove (newlib's live in flash; libopus calls them

@@ -69,6 +69,8 @@ CORE0=""
   cyw43_ll.c:cyw43_write_backplane cyw43_ll.c:cyw43_read_backplane.constprop.0
   tud_task_ext usbd_edpt_xfer dcd_edpt_xfer dcd_edpt_iso_activate
   tud_audio_n_read tud_audio_n_write audio_device.c:audiod_calc_tx_packet_sz.isra.0 audiod_xfer_isr
+  tud_hid_n_report tud_hid_n_ready hidd_xfer_cb cyw43_arch_poll
+  btstack_run_loop_base_poll_data_sources btstack_run_loop_poll_data_sources_from_irq
 "
 # FUNC/OBJECT symbols as "file:name addr" (locals, grouped after their FILE
 # entry) and "name addr" (globals and weak), one per line.
