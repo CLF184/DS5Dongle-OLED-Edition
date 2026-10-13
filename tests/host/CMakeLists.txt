@@ -44,3 +44,5 @@ target_compile_definitions(host_tests PRIVATE
 # Same char signedness as the firmware build (CMakeLists.txt: -fsigned-char).
 target_compile_options(host_tests PRIVATE -O1 -g -fsigned-char -Wall -Wextra -Wno-unused-parameter ${SAN})
 target_link_options(host_tests PRIVATE ${SAN})
+find_package(Threads REQUIRED)  # test_perf.cpp: a writer thread stands in for core1
+target_link_libraries(host_tests PRIVATE Threads::Threads)

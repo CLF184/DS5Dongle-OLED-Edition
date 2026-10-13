@@ -23,15 +23,21 @@ size_t perf_serialize(uint8_t *out, size_t cap) {
     const uint32_t gen = g_perf_gen;
     for (int i = 0; i < PERF_NUM_STAGES; i++) {
         const PerfStat &s = g_perf[i];
-        uint32_t sum = 0, count = 0, max = 0;
-        // The writer may be another core: retry if a sample landed mid-read.
-        for (int tries = 0; tries < 4; tries++) {
+        uint32_t sum = 0, count = 0, max = 0, sgen = 0;
+        // The writer may be another core: retry while it is mid-update or a
+        // sample landed mid-read (an update is a few stores, so this ends
+        // fast; bounded so a writer stopped mid-update can't hang core0).
+        for (int tries = 0; tries < 1000; tries++) {
+            const uint32_t seq = s.seq;
+            __dmb();
             count = s.count;
             sum = s.sum;
             max = s.max;
-            if (s.count == count) break;
+            sgen = s.gen;
+            __dmb();
+            if (!(seq & 1) && s.seq == seq) break;
         }
-        if (s.gen != gen) sum = count = max = 0;  // nothing since the reset
+        if (sgen != gen) sum = count = max = 0;  // nothing since the reset
         const uint32_t avg_ns = count ? (uint32_t) ((uint64_t) sum * 1000u / PERF_TICKS_PER_US / count) : 0;
         const uint32_t max_us_full = (max + PERF_TICKS_PER_US - 1) / PERF_TICKS_PER_US;
         const uint16_t max_us = max_us_full > 0xFFFF ? 0xFFFF : (uint16_t) max_us_full;

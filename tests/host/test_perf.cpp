@@ -1,7 +1,9 @@
 // src/perf.h / perf.cpp: running average with halving, max, the reset
 // generation, and the 0xFC byte layout. On the host a tick is 1 us (the
 // RP2040 configuration); on RP2350 it is a CPU cycle.
+#include <atomic>
 #include <cstring>
+#include <thread>
 #include "fakes.h"
 #include "perf.h"
 #include "test.h"
@@ -59,4 +61,27 @@ TEST(perf_reset_zeroes_on_next_sample_and_in_reports) {
     perf_serialize(r, sizeof(r));
     CHECK_EQ(avg_ns(r, PERF_CYW43), 10000u);
     CHECK_EQ(max_us(r, PERF_CYW43), 10);
+}
+
+// F15: the 0xFC reader runs on core0 while core1 records. With 2^28-tick
+// samples every fourth one halves sum and count, so a reader that pairs a new
+// sum with the old count (a torn read) reports a different average.
+TEST(perf_reader_never_tears) {
+    perf_reset();
+    constexpr uint32_t kTicks = 1u << 28;
+    perf_record(PERF_C1_SPEAKER, kTicks);
+    std::atomic<bool> stop{false};
+    std::thread writer([&] {
+        while (!stop.load(std::memory_order_relaxed)) perf_record(PERF_C1_SPEAKER, kTicks);
+    });
+    const uint32_t want = (uint32_t) ((uint64_t) kTicks * 1000u);  // as perf_serialize truncates it
+    int torn = 0;
+    uint8_t r[kPerfReportBytes];
+    for (int i = 0; i < 200000; i++) {
+        perf_serialize(r, sizeof(r));
+        torn += avg_ns(r, PERF_C1_SPEAKER) != want;
+    }
+    stop = true;
+    writer.join();
+    CHECK_EQ(torn, 0);
 }

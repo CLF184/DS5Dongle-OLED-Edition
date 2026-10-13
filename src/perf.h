@@ -5,7 +5,8 @@
 // Ticks are CPU cycles on RP2350 (the core's own DWT cycle counter, enabled
 // per core by perf_core_init) and microseconds on RP2040, which has no cycle
 // counter. Each stage has exactly one writer core; the reader (the 0xFC GET on
-// core0) copes with a sample landing mid-read. A reset (0xF6 0x15) only bumps
+// core0) copes with a sample landing mid-read through the stage's sequence
+// number (odd while the writer is mid-update). A reset (0xF6 0x15) only bumps
 // a generation number; each writer zeroes its own stage on its next sample,
 // so no core ever writes another core's counters.
 #ifndef DS5_BRIDGE_PERF_H
@@ -14,6 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "pico.h"
+#include "hardware/sync.h"
 #include "hardware/timer.h"
 #if PICO_RP2350
 #include "hardware/structs/m33.h"
@@ -42,6 +44,7 @@ struct PerfStat {
     volatile uint32_t count;
     volatile uint32_t max;    // ticks
     volatile uint32_t gen;    // reset generation these numbers belong to
+    volatile uint32_t seq;    // seqlock: odd while perf_record writes, the reader retries
 };
 
 extern PerfStat g_perf[PERF_NUM_STAGES];
@@ -76,10 +79,8 @@ static __force_inline void perf_record(PerfStage stage, uint32_t ticks) {
     PerfStat &s = g_perf[stage];
     const uint32_t gen = g_perf_gen;
     uint32_t sum = s.sum, count = s.count, max = s.max;
-    if (s.gen != gen) {
-        sum = count = max = 0;
-        s.gen = gen;
-    }
+    const bool stale = s.gen != gen;
+    if (stale) sum = count = max = 0;
     // A sample is under 2^31 ticks (the watchdog fires long before), so this
     // can't overflow; past 2^31 or 65536 samples both halve, which keeps the
     // average and weighs older samples down (a recent-history average).
@@ -90,9 +91,14 @@ static __force_inline void perf_record(PerfStage stage, uint32_t ticks) {
         count >>= 1;
     }
     if (ticks > max) max = ticks;
+    s.seq = s.seq + 1;  // odd: mid-update (a halving rewrites sum and count together)
+    __dmb();
     s.sum = sum;
     s.count = count;
     s.max = max;
+    if (stale) s.gen = gen;
+    __dmb();
+    s.seq = s.seq + 1;
 }
 
 // Starts a new measurement window (all stages, both cores).
