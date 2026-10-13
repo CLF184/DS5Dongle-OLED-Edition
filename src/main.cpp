@@ -5,6 +5,7 @@
 #include <cstdio>
 #include "bsp/board_api.h"
 #include "bt.h"
+#include "core0_ram.h"
 #include "utils.h"
 #include "resample.h"
 #include "audio.h"
@@ -129,7 +130,7 @@ uint8_t interrupt_in_data[63] = {
 critical_section_t report_cs;
 volatile bool report_dirty = false;
 
-void interrupt_loop() {
+void CORE0_RAM_FUNC(interrupt_loop)() {
     // OLED Edition: hold PS + Mute for 2 seconds to soft-reboot the dongle.
     // Works whether or not the OLED add-on is present. PS+Mute is uncommon
     // during gameplay and the long hold avoids accidental triggers.
@@ -196,7 +197,7 @@ void interrupt_loop() {
     }
 }
 
-void on_bt_data(CHANNEL_TYPE channel, uint8_t *data, uint16_t len) {
+void CORE0_RAM_FUNC(on_bt_data)(CHANNEL_TYPE channel, uint8_t *data, uint16_t len) {
     // printf("[Main] BT data callback: channel=%u len=%u\n", channel, len);
     // Track ALL INTERRUPT input reports, not just 0x31. The mic stream
     // may live on a different report ID — confirmed 2026-05-19 that data[2]

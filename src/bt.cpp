@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include "bt.h"
+#include "core0_ram.h"
 #include "voice.h"
 #include "audio.h"
 #include <queue>
@@ -306,7 +307,7 @@ int bt_init() {
     }
 }*/
 
-static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size) {
+static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size) {
     (void) channel;
 
     const uint8_t event_type = hci_event_packet_get_type(packet);
@@ -567,7 +568,7 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
     }
 }
 
-static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size) {
+static void CORE0_RAM_FUNC(l2cap_packet_handler)(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size) {
     (void) channel;
 
     if (packet_type == L2CAP_DATA_PACKET) {
@@ -763,7 +764,7 @@ void bt_send_state() {
     bt_write(report32, sizeof(report32));
 }
 
-void bt_write(const uint8_t *data, const uint16_t len) {
+void CORE0_RAM_FUNC(bt_write)(const uint8_t *data, const uint16_t len) {
     if (hid_interrupt_cid == 0) return;
     if (len + 1u > sizeof(send_element::data)) {
         printf("[L2CAP bt_write] Error: %u-byte report exceeds send buffer\n", len);
