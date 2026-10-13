@@ -10,7 +10,7 @@
 
 ## 🛠️ Get started: download the app
 
-**[→ Download the DS5 Dongle OLED Edition Configurator](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/latest)** (Linux AppImage and Windows portable exe, both tested; the macOS build is untested)
+**[→ Download the DS5 Dongle OLED Edition Configurator](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/latest)** (Linux AppImage and Windows portable exe, both tested; the macOS build is community-tested: [reported working on macOS 27.0.1](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/issues/17))
 
 The app is all you need. Each release includes the matching firmware, so the app installs it on your Pico, keeps it up to date, and configures everything:
 
@@ -151,7 +151,7 @@ The [app](#️-get-started-download-the-app) does this for you. To flash by hand
 
 There are four ways to configure the firmware:
 
-**Configurator app (recommended):** the [DS5 Dongle OLED Edition Configurator](#️-get-started-download-the-app) for Linux and Windows (a macOS build is included, untested; the Games page is Linux-only for now). It finds the dongle by itself, applies changes live, and saves to the dongle's flash with one click. Needs firmware v0.8+.
+**Configurator app (recommended):** the [DS5 Dongle OLED Edition Configurator](#️-get-started-download-the-app) for Linux and Windows (a macOS build is included, reported working on macOS 27.0.1; the Games page is Linux-only for now). It finds the dongle by itself, applies changes live, and saves to the dongle's flash with one click. Needs firmware v0.8+.
 
 **On-device (OLED add-on present):** use the on-screen **Settings** menu (10th screen). D-pad ▲▼ moves selection, ▶◀ adjusts values, △ saves to flash.
 
