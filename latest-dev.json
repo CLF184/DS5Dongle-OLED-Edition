@@ -32,12 +32,12 @@
     }
   },
   "proton": {
-    "name": "GE-Proton11-7-DualSense",
-    "notes_url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/tag/proton-GE-Proton11-7-DualSense",
+    "name": "GE-Proton11-7.2-DualSense",
+    "notes_url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/tag/proton-GE-Proton11-7.2-DualSense",
     "tarball": {
-      "url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/download/proton-GE-Proton11-7-DualSense/GE-Proton11-7-DualSense.tar.gz",
-      "size": 565186419,
-      "sha256": "5c730586b92c4b8c5dd163e1539eda86fc9db0b3736cccd377aea41951043b5c"
+      "url": "https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/download/proton-GE-Proton11-7.2-DualSense/GE-Proton11-7.2-DualSense.tar.gz",
+      "size": 565224414,
+      "sha256": "edca4cc31aef382e7d9d75ba5cbb6f9e30572892534a5311ad55c7875ad68fa2"
     }
   }
 }
