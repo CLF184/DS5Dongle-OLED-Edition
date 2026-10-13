@@ -40,9 +40,8 @@ void cmd_task();
 // fields it caches (lightbar, brightness, Settings snapshot).
 uint32_t cmd_host_config_gen();
 
-// While the app's grip test (0xF6 0x0E) runs: true, and its motor levels, so
-// main.cpp's host forward keeps them on the game's reports.
-bool grip_test_hold(uint8_t *left, uint8_t *right);
+// True while the app's grip test (0xF6 0x0E) runs.
+bool grip_test_running();
 
 // The connected controller: 0 DualSense, 1 DualSense Edge, 0xFF not known yet
 // (identity [26], 0xEB header [8]).

@@ -113,11 +113,11 @@ uint8_t audio_peak_haptic() { return 13; }
 #include "state_mgr.h"
 #include "oled.h"
 #include "voice.h"
-std::vector<std::pair<uint8_t, uint8_t>> g_fake_rumbles;
-std::vector<uint8_t> g_fake_rumble_flags;  // flag0 of each grip test report, in order
-void send_rumble(uint8_t l, uint8_t r) { g_fake_rumbles.push_back({l, r}); g_fake_rumble_flags.push_back(0x03); }
-void send_rumble_select() { g_fake_rumble_flags.push_back(0x02); }
-uint8_t grip_test_level(bool) { return 64; }
+std::vector<std::vector<uint8_t>> g_fake_out02;  // host_out02_forward reports, in order
+bool host_out02_forward(const uint8_t *buffer, uint16_t bufsize) {
+    g_fake_out02.emplace_back(buffer, buffer + bufsize);
+    return true;
+}
 void state_get_led(uint8_t *r, uint8_t *g, uint8_t *b) { *r = 1; *g = 2; *b = 3; }
 uint8_t state_get_player_leds() { return 0x04; }
 void oled_send_trigger_preset(int) {}

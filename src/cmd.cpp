@@ -28,34 +28,33 @@
 #include "ctrl_info.h"
 #include "dse.h"
 #include "usb_power.h"
+#include "fw_report.h"
 
-// main.cpp: the grip test's rumble (0x0E).
-void send_rumble(uint8_t left, uint8_t right);
-void send_rumble_select();  // once at each test's start (flag0 0x02, motors 0)
-uint8_t grip_test_level(bool left);
+// main.cpp: the host's output report 0x02 forward (state_update + BT 0x31).
+bool host_out02_forward(const uint8_t *buffer, uint16_t bufsize);
 
 // The grip test (0xF6 0x0E [side, tenths]): a steady rumble on one or both
-// grips until s_grip_until_us. The rumble-only report is sent again every
-// kGripRefreshUs so it never lapses (and so a host report that zeroes the
-// motors meanwhile is corrected within one refresh; main.cpp also stamps the
-// test's levels on every forwarded host report, grip_test_hold()).
-constexpr uint64_t kGripRefreshUs = 100'000;
+// grips until s_grip_until_us, sent the way a game's rumble is. It is the
+// report Linux hid-playstation sends for FF_RUMBLE (fw_report.h), through the
+// host forward, which scales each motor by its grip haptics strength
+// (kGripLevel 64: strength 1 = 64, 4+ = full). The controller holds a rumble
+// until told otherwise, so one report starts it and one with the motors at 0
+// ends it, as the kernel does. Game reports keep flowing meanwhile; one that
+// sets the rumble (HAPTICS_SELECT / vibration flags) overrides the test.
+constexpr uint8_t kGripLevel = 64;
 constexpr uint8_t kGripDefaultTenths = 5;  // no duration byte: 0.5 s, as before 1.15
 constexpr uint8_t kGripMaxTenths = 50;     // 5 s
 static uint64_t s_grip_until_us = 0;       // 0: no test running
-static uint64_t s_grip_next_us = 0;
-static uint8_t s_grip_side = 0;            // 0 left, 1 right, 2 both
 
-static void grip_levels(uint8_t *left, uint8_t *right) {
-    *left = s_grip_side != 1 ? grip_test_level(true) : 0;
-    *right = s_grip_side != 0 ? grip_test_level(false) : 0;
+static void grip_send(bool left, bool right) {
+    const auto fw = bt_peek_feature(0x20);
+    uint8_t rep[fw_report::kUsbOut02Len];
+    fw_report::linux_rumble_report(rep, fw_report::update_version(fw.data(), fw.size()), is_dse,
+                                   left ? kGripLevel : 0, right ? kGripLevel : 0);
+    host_out02_forward(rep, sizeof(rep));
 }
 
-bool grip_test_hold(uint8_t *left, uint8_t *right) {
-    if (!s_grip_until_us) return false;
-    grip_levels(left, right);
-    return true;
-}
+bool grip_test_running() { return s_grip_until_us != 0; }
 
 static void grip_test_task() {
     if (!s_grip_until_us) return;
@@ -63,17 +62,9 @@ static void grip_test_task() {
         s_grip_until_us = 0;
         return;
     }
-    const uint64_t now = time_us_64();
-    if (now >= s_grip_until_us) {
+    if (time_us_64() >= s_grip_until_us) {
         s_grip_until_us = 0;
-        send_rumble(0, 0);
-        return;
-    }
-    if (now >= s_grip_next_us) {
-        uint8_t l, r;
-        grip_levels(&l, &r);
-        send_rumble(l, r);
-        s_grip_next_us = now + kGripRefreshUs;
+        grip_send(false, false);
     }
 }
 
@@ -303,7 +294,7 @@ void cmd_task() {
             break;
         case 0x0E: // grip test: 0 left, 1 right, 2 both, held steadily for arg2 tenths at the current strengths
             if (s_pending_arg2 == 0) {  // stop (proto 1.15)
-                if (s_grip_until_us && bt_is_connected()) send_rumble(0, 0);
+                if (s_grip_until_us && bt_is_connected()) grip_send(false, false);
                 s_grip_until_us = 0;
                 break;
             }
@@ -314,13 +305,8 @@ void cmd_task() {
             }
             // A new test replaces a running one (side and time) at once; its
             // report sets both motors, so the other side stops with no gap.
-            s_grip_side = s_pending_arg;
             s_grip_until_us = time_us_64() + (uint64_t) s_pending_arg2 * 100'000;
-            s_grip_next_us = 0;
-            // One HAPTICS_SELECT-only report first: the legacy reports after
-            // it hold steady instead of pulsing (fw_report.h).
-            send_rumble_select();
-            grip_test_task();  // the first report now
+            grip_send(s_pending_arg != 1, s_pending_arg != 0);
             break;
         case 0x0B:
             result = config_save_narrator(s_pending_arg) ? CMD_RESULT_OK : CMD_RESULT_FAILED;

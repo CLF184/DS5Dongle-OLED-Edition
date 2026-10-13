@@ -46,37 +46,6 @@ static uint8_t scale_rumble(uint8_t v, float gain) {
     return (uint8_t) (s > 255 ? 255 : s);
 }
 
-// Rumble only (nothing else in the report is allowed to change), for the
-// app's grip test (0xF6 0x0E). Main-loop context, like the host forward.
-static void send_rumble_flags(fw_report::RumbleFlags f, uint8_t left, uint8_t right) {
-    uint8_t outputData[78]{};
-    outputData[0] = 0x31;
-    outputData[1] = reportSeqCounter << 4;
-    reportSeqCounter = (reportSeqCounter + 1) & 0x0F;
-    outputData[2] = 0x10;
-    outputData[3] = f.flag0;       // SetStateData starts at [3]
-    outputData[3 + 38] = f.flag2;
-    outputData[3 + 2] = right;     // RumbleEmulationRight (light)
-    outputData[3 + 3] = left;      // RumbleEmulationLeft (heavy)
-    bt_write(outputData, sizeof(outputData));
-}
-
-// Legacy emulation (flag0 0x03, [38] 0); see fw_report.h for why.
-void send_rumble(uint8_t left, uint8_t right) {
-    send_rumble_flags(fw_report::kRumbleLegacy, left, right);
-}
-
-// ONE report with flag0 0x02 only (HAPTICS_SELECT, motors 0) at the start of
-// each grip test: after it the legacy reports feel steady instead of pulsing
-// (hardware result, see fw_report.h).
-void send_rumble_select() {
-    send_rumble_flags(fw_report::kRumbleSelect, 0, 0);
-}
-
-// The grip test's level before the strength (strength 1 = 64, 4+ = full).
-uint8_t grip_test_level(bool left) {
-    return scale_rumble(64, left ? get_config().haptics_gain : get_config().haptics_gain_right);
-}
 uint8_t packetCounter = 0;
 bool spk_active = false;
 extern bool g_lightbar_override; // oled.cpp: OLED owns the lightbar
@@ -450,6 +419,42 @@ extern "C" int __wrap_flash_safe_execute(void (*func)(void *), void *param, uint
     return rc;
 }
 
+// A USB output report 0x02 (id at [0]) to the controller as BT 0x31: the
+// host's own reports, and the app's grip test (cmd.cpp), which sends the
+// report Linux hid-playstation sends for rumble so it takes the same path.
+// Main-loop context (TinyUSB callbacks). False: too short, not sent.
+bool host_out02_forward(const uint8_t *buffer, uint16_t bufsize) {
+    if (bufsize < 2) return false;
+    // state[] still tracks the host's state for the OLED (LED readout,
+    // trigger screens) and the BT-connect init.
+    state_update(buffer + 1, bufsize - 1);
+    if ((size_t) bufsize - 1 < sizeof(SetStateData)) return false;
+    // Forward the host's report as-is, every time, as upstream does.
+    // Audio frames (0x39) no longer carry state, so this is the only
+    // path to the controller; sending the host's own allow bits (not a
+    // latched copy) also ends the trigger re-fire buzz (#11).
+    uint8_t outputData[78]{};
+    outputData[0] = 0x31;
+    outputData[1] = reportSeqCounter << 4;
+    reportSeqCounter = (reportSeqCounter + 1) & 0x0F;
+    outputData[2] = 0x10;
+    memcpy(outputData + 3, buffer + 1, sizeof(SetStateData));
+    // Classic rumble follows the grip haptics strengths too
+    // (SetStateData [2] right / light motor, [3] left / heavy).
+    outputData[3 + 2] = scale_rumble(outputData[3 + 2], get_config().haptics_gain_right);
+    outputData[3 + 3] = scale_rumble(outputData[3 + 3], get_config().haptics_gain);
+    if (g_lightbar_override) {
+        outputData[3 + 1] &= ~0x04; // OLED owns the lightbar: drop AllowLedColor
+    }
+    // Protocol 1.13 settings on the game's own report: trigger
+    // reduction, speaker pre-gain, mic choice, volume lock. With
+    // all of them at "the game's own" the report goes out as the
+    // game sent it (upstream #228's fix).
+    state_stamp_config(outputData + 3, true);
+    bt_write(outputData, sizeof(outputData));
+    return true;
+}
+
 void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer,
                            uint16_t bufsize) {
     (void) itf;
@@ -488,42 +493,7 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
                     memcpy(g_last_out02, buffer + 1, sizeof(g_last_out02));
                     if (buffer[1] & 0x0C) memcpy(g_last_out02_trig, buffer + 1, sizeof(g_last_out02_trig));
                 }
-                // state[] still tracks the host's state for the OLED (LED readout,
-                // trigger screens) and the BT-connect init.
-                state_update(buffer + 1, bufsize - 1);
-                if ((size_t) bufsize - 1 < sizeof(SetStateData)) break;
-                // Forward the host's report as-is, every time, as upstream does.
-                // Audio frames (0x39) no longer carry state, so this is the only
-                // path to the controller; sending the host's own allow bits (not a
-                // latched copy) also ends the trigger re-fire buzz (#11).
-                uint8_t outputData[78]{};
-                outputData[0] = 0x31;
-                outputData[1] = reportSeqCounter << 4;
-                reportSeqCounter = (reportSeqCounter + 1) & 0x0F;
-                outputData[2] = 0x10;
-                memcpy(outputData + 3, buffer + 1, sizeof(SetStateData));
-                // Classic rumble follows the grip haptics strengths too
-                // (SetStateData [2] right / light motor, [3] left / heavy).
-                outputData[3 + 2] = scale_rumble(outputData[3 + 2], get_config().haptics_gain_right);
-                outputData[3 + 3] = scale_rumble(outputData[3 + 3], get_config().haptics_gain);
-                // While the app's grip test runs, its rumble wins over the
-                // game's (a game report zeroing the motors would cut it short).
-                uint8_t grip_l, grip_r;
-                if (grip_test_hold(&grip_l, &grip_r)) {
-                    outputData[3] |= 0x03;  // EnableRumbleEmulation | UseRumbleNotHaptics
-                    outputData[3 + 2] = grip_r;
-                    outputData[3 + 3] = grip_l;
-                }
-                if (g_lightbar_override) {
-                    outputData[3 + 1] &= ~0x04; // OLED owns the lightbar: drop AllowLedColor
-                }
-                // Protocol 1.13 settings on the game's own report: trigger
-                // reduction, speaker pre-gain, mic choice, volume lock. With
-                // all of them at "the game's own" the report goes out as the
-                // game sent it (upstream #228's fix).
-                state_stamp_config(outputData + 3, true);
-                bt_write(outputData, sizeof(outputData));
-                g_host_out02_to_bt++;
+                if (host_out02_forward(buffer, bufsize)) g_host_out02_to_bt++;
                 break;
             }
         }

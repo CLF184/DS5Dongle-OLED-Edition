@@ -89,11 +89,25 @@ TEST(fw_report_update_version) {
     CHECK_EQ(fw_report::update_version(nullptr, 0), 0);
 }
 
-// Grip test flags: one HAPTICS_SELECT-only report, then legacy emulation
-// (hardware result on update version 0x0630; the improved mode was silent).
-TEST(fw_report_grip_rumble_flags) {
-    CHECK_EQ(fw_report::kRumbleSelect.flag0, 0x02);
-    CHECK_EQ(fw_report::kRumbleSelect.flag2, 0x00);
-    CHECK_EQ(fw_report::kRumbleLegacy.flag0, 0x03);
-    CHECK_EQ(fw_report::kRumbleLegacy.flag2, 0x00);
+// Linux hid-playstation's FF_RUMBLE report (dualsense_output_worker).
+TEST(fw_report_linux_rumble_report) {
+    uint8_t r[fw_report::kUsbOut02Len];
+    fw_report::linux_rumble_report(r, 0x0630, false, 0xFF, 0x80);
+    CHECK_EQ(r[0], 0x02);
+    CHECK_EQ(r[1], 0x02);   // HAPTICS_SELECT only
+    CHECK_EQ(r[3], 0x80);   // motor_right (weak)
+    CHECK_EQ(r[4], 0xFF);   // motor_left (strong)
+    CHECK_EQ(r[39], 0x04);  // valid_flag2 COMPATIBLE_VIBRATION2
+    int nonzero = 0;
+    for (uint8_t b : r) nonzero += b != 0;
+    CHECK_EQ(nonzero, 5);
+    fw_report::linux_rumble_report(r, 0x0214, false, 1, 2);
+    CHECK_EQ(r[1], 0x03);   // + COMPATIBLE_VIBRATION
+    CHECK_EQ(r[39], 0x00);
+    fw_report::linux_rumble_report(r, 0x0215, false, 1, 2);
+    CHECK_EQ(r[1], 0x02);
+    CHECK_EQ(r[39], 0x04);
+    fw_report::linux_rumble_report(r, 0x0100, true, 1, 2);  // Edge: always v2
+    CHECK_EQ(r[1], 0x02);
+    CHECK_EQ(r[39], 0x04);
 }

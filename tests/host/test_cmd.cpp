@@ -319,96 +319,98 @@ TEST(cmd_reconnect_uses_usb_power) {
 }
 
 // Protocol 1.15: 0xF6 0x0E [side, tenths] holds the grip test's rumble for the
-// whole time (re-sent every 100 ms, no gap), then stops it; no duration byte
-// keeps the old 0.5 s; > 50 clamps to 5 s; 0 or a new 0x0E replaces it.
+// whole time, then stops it; no duration byte keeps the old 0.5 s; > 50
+// clamps to 5 s; 0 or a new 0x0E replaces it. Each report is the one Linux
+// hid-playstation sends for FF_RUMBLE, through the host 0x02 forward: one to
+// start, one with the motors at 0 to end, nothing in between.
 namespace {
 int grip_run(uint64_t us) {  // advance in 10 ms steps; reports sent meanwhile
-    const size_t before = g_fake_rumbles.size();
+    const size_t before = g_fake_out02.size();
     for (uint64_t t = 0; t < us; t += 10'000) {
         g_fake_time_us += 10'000;
         cmd_task();
     }
-    return (int) (g_fake_rumbles.size() - before);
+    return (int) (g_fake_out02.size() - before);
 }
-bool grip_running() {
-    uint8_t l, r;
-    return grip_test_hold(&l, &r);
+bool grip_running() { return grip_test_running(); }
+uint8_t motor_l(const std::vector<uint8_t> &r) { return r[4]; }  // [1 + 3] motor_left
+uint8_t motor_r(const std::vector<uint8_t> &r) { return r[3]; }  // [1 + 2] motor_right
+// The kernel's report for strong/weak >> 8 = left/right (dualsense_output_worker).
+std::vector<uint8_t> linux_bytes(bool v2, uint8_t left, uint8_t right) {
+    std::vector<uint8_t> r(63, 0);
+    r[0] = 0x02;
+    r[1] = v2 ? 0x02 : 0x03;  // HAPTICS_SELECT (| COMPATIBLE_VIBRATION on old firmware)
+    r[3] = right;
+    r[4] = left;
+    if (v2) r[39] = 0x04;     // valid_flag2 COMPATIBLE_VIBRATION2
+    return r;
+}
+void set_update_version(uint16_t v) {
+    std::vector<uint8_t> fw(64, 0);
+    fw[0] = 0x20;
+    fw[44] = v & 0xFF;
+    fw[45] = v >> 8;
+    g_fake_features[0x20] = fw;
 }
 }  // namespace
 
 TEST(cmd_grip_test_default_half_second) {
     fresh();
-    g_fake_rumbles.clear();
+    g_fake_out02.clear();
     const uint8_t old_app[] = {0x0E, 2};
     pico_cmd_set(PICO_CMD_SET, old_app, sizeof(old_app));
     CHECK_EQ(last_result(), CMD_RESULT_PENDING);
     grip_run(10'000);
     CHECK_EQ(last_result(), CMD_RESULT_OK);
-    CHECK(g_fake_rumbles.size() >= 1);
-    CHECK_EQ(g_fake_rumbles[0].first, 64);
-    CHECK_EQ(g_fake_rumbles[0].second, 64);
+    CHECK_EQ(g_fake_out02.size(), 1u);
+    CHECK_EQ(motor_l(g_fake_out02[0]), 64);
+    CHECK_EQ(motor_r(g_fake_out02[0]), 64);
     grip_run(400'000);
     CHECK(grip_running());
+    CHECK_EQ(g_fake_out02.size(), 1u);  // no refresh: the controller holds it
     grip_run(200'000);
     CHECK(!grip_running());
-    CHECK(g_fake_rumbles.back() == std::make_pair((uint8_t) 0, (uint8_t) 0));
+    CHECK_EQ(g_fake_out02.size(), 2u);
+    CHECK_EQ(motor_l(g_fake_out02[1]), 0);
+    CHECK_EQ(motor_r(g_fake_out02[1]), 0);
 }
 
-TEST(cmd_grip_test_holds_steadily) {
+// The bytes equal Linux's rumble report: v2 (valid_flag2 0x04) on update
+// version 0x0630 (and the Edge), v1 (flag0 0x03) before 2.21; the end report
+// is the same with both motors 0.
+TEST(cmd_grip_test_sends_linux_rumble_bytes) {
     fresh();
-    g_fake_rumbles.clear();
-    const uint8_t left3s[] = {0x0E, 0, 30};
-    pico_cmd_set(PICO_CMD_SET, left3s, sizeof(left3s));
+    is_dse = false;
+    set_update_version(0x0630);
+    g_fake_out02.clear();
+    const uint8_t left1s[] = {0x0E, 0, 10};
+    pico_cmd_set(PICO_CMD_SET, left1s, sizeof(left1s));
+    grip_run(1'100'000);
+    CHECK_EQ(g_fake_out02.size(), 2u);
+    CHECK(g_fake_out02[0] == linux_bytes(true, 64, 0));
+    CHECK(g_fake_out02[1] == linux_bytes(true, 0, 0));
+
+    set_update_version(0x0214);  // before 2.21
+    g_fake_out02.clear();
+    const uint8_t both1s[] = {0x0E, 2, 10};
+    pico_cmd_set(PICO_CMD_SET, both1s, sizeof(both1s));
+    grip_run(1'100'000);
+    CHECK_EQ(g_fake_out02.size(), 2u);
+    CHECK(g_fake_out02[0] == linux_bytes(false, 64, 64));
+    CHECK(g_fake_out02[1] == linux_bytes(false, 0, 0));
+
+    is_dse = true;  // the Edge: always v2
+    g_fake_out02.clear();
+    const uint8_t right1s[] = {0x0E, 1, 10};
+    pico_cmd_set(PICO_CMD_SET, right1s, sizeof(right1s));
     grip_run(10'000);
-    CHECK_EQ(last_result(), CMD_RESULT_OK);
-    // Refreshed every 100 ms for 3 s, never a zero in between.
-    grip_run(2'900'000);
-    CHECK(grip_running());
-    CHECK(g_fake_rumbles.size() >= 29);
-    for (auto &r : g_fake_rumbles) {
-        CHECK_EQ(r.first, 64);
-        CHECK_EQ(r.second, 0);
-    }
-    // A host report meanwhile carries the test's levels.
-    uint8_t l = 0, r = 9;
-    CHECK(grip_test_hold(&l, &r));
-    CHECK_EQ(l, 64);
-    CHECK_EQ(r, 0);
-    grip_run(200'000);
-    CHECK(!grip_running());
-    CHECK(g_fake_rumbles.back() == std::make_pair((uint8_t) 0, (uint8_t) 0));
-    const size_t n = g_fake_rumbles.size();
-    grip_run(500'000);
-    CHECK_EQ(g_fake_rumbles.size(), n);  // nothing after the stop
-}
-
-// Each test starts with ONE HAPTICS_SELECT-only report (flag0 0x02, motors
-// 0), then legacy reports (0x03): on update version 0x0630 that holds steady
-// where legacy alone pulses (hardware result, fw_report.h). A stop sends none.
-TEST(cmd_grip_test_starts_with_one_select) {
-    fresh();
-    g_fake_rumbles.clear();
-    g_fake_rumble_flags.clear();
-    const uint8_t both[] = {0x0E, 2, 10};
-    pico_cmd_set(PICO_CMD_SET, both, sizeof(both));
-    grip_run(500'000);
-    CHECK(g_fake_rumble_flags.size() >= 3);
-    CHECK_EQ(g_fake_rumble_flags[0], 0x02);
-    for (size_t i = 1; i < g_fake_rumble_flags.size(); i++) CHECK_EQ(g_fake_rumble_flags[i], 0x03);
-    // A new test (replace) starts with its own select.
-    g_fake_rumble_flags.clear();
-    pico_cmd_set(PICO_CMD_SET, both, sizeof(both));
-    grip_run(10'000);  // (the old test's refresh may land first this tick)
-    const size_t n = g_fake_rumble_flags.size();
-    CHECK(n >= 2);
-    CHECK_EQ(g_fake_rumble_flags[n - 2], 0x02);
-    CHECK_EQ(g_fake_rumble_flags[n - 1], 0x03);
-    g_fake_rumble_flags.clear();
+    CHECK(g_fake_out02[0] == linux_bytes(true, 0, 64));
     const uint8_t stop[] = {0x0E, 2, 0};
     pico_cmd_set(PICO_CMD_SET, stop, sizeof(stop));
     grip_run(10'000);
-    CHECK_EQ(g_fake_rumble_flags.size(), 1u);
-    CHECK_EQ(g_fake_rumble_flags[0], 0x03);
+    CHECK(g_fake_out02.back() == linux_bytes(true, 0, 0));
+    is_dse = false;
+    g_fake_features.erase(0x20);
 }
 
 TEST(cmd_grip_test_clamps_to_5s) {
@@ -429,7 +431,6 @@ TEST(cmd_grip_test_clamps_to_5s) {
 
 TEST(cmd_grip_test_stop_and_replace) {
     fresh();
-    g_fake_rumbles.clear();
     const uint8_t left[] = {0x0E, 0, 30};
     const uint8_t right[] = {0x0E, 1, 30};
     const uint8_t stop[] = {0x0E, 2, 0};
@@ -437,26 +438,28 @@ TEST(cmd_grip_test_stop_and_replace) {
     grip_run(1'000'000);
     // Another side replaces it: one report sets the left motor to 0 and the
     // right one on, and the right one runs a fresh 3 s.
+    g_fake_out02.clear();
     pico_cmd_set(PICO_CMD_SET, right, sizeof(right));
-    g_fake_rumbles.clear();
     grip_run(10'000);
-    CHECK(!g_fake_rumbles.empty());
-    CHECK(g_fake_rumbles.back() == std::make_pair((uint8_t) 0, (uint8_t) 64));
+    CHECK_EQ(g_fake_out02.size(), 1u);
+    CHECK_EQ(motor_l(g_fake_out02[0]), 0);
+    CHECK_EQ(motor_r(g_fake_out02[0]), 64);
     grip_run(2'500'000);
     CHECK(grip_running());  // the new 3 s, not what was left of the first
     // Duration 0 stops at once.
-    g_fake_rumbles.clear();
+    g_fake_out02.clear();
     pico_cmd_set(PICO_CMD_SET, stop, sizeof(stop));
     grip_run(10'000);
     CHECK_EQ(last_result(), CMD_RESULT_OK);
     CHECK(!grip_running());
-    CHECK_EQ(g_fake_rumbles.size(), 1u);
-    CHECK(g_fake_rumbles[0] == std::make_pair((uint8_t) 0, (uint8_t) 0));
+    CHECK_EQ(g_fake_out02.size(), 1u);
+    CHECK_EQ(motor_l(g_fake_out02[0]), 0);
+    CHECK_EQ(motor_r(g_fake_out02[0]), 0);
     // A stop with nothing running is fine and sends nothing.
     pico_cmd_set(PICO_CMD_SET, stop, sizeof(stop));
     grip_run(10'000);
     CHECK_EQ(last_result(), CMD_RESULT_OK);
-    CHECK_EQ(g_fake_rumbles.size(), 1u);
+    CHECK_EQ(g_fake_out02.size(), 1u);
     // Bad side, no controller.
     const uint8_t bad[] = {0x0E, 3, 30};
     pico_cmd_set(PICO_CMD_SET, bad, sizeof(bad));

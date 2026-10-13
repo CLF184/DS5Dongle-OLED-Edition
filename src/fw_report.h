@@ -76,19 +76,26 @@ inline uint16_t update_version(const uint8_t *rep, size_t len) {
     return static_cast<uint16_t>(rep[kUpdateVersionOffset] | (rep[kUpdateVersionOffset + 1] << 8));
 }
 
-// Grip test rumble flags (SetStateData [0] flag0, [38] flag2). Hardware
-// result on a DualSense with update version 0x0630, not documented by Sony:
-// the legacy emulation (flag0 0x03 EnableRumbleEmulation | UseRumbleNotHaptics,
-// [38] 0) re-sent every 100 ms pulses ("bzz..bzz"), but right after ONE
-// report with flag0 0x02 only (HAPTICS_SELECT, motors 0) the same legacy
-// reports feel steady. The improved emulation Linux hid-playstation / SDL use
-// (flag0 0x02 + [38] 0x04 COMPATIBLE_VIBRATION2) was nearly silent at full
-// strength on this controller, so the grip test does not use it.
-struct RumbleFlags {
-    uint8_t flag0;  // SetStateData [0]
-    uint8_t flag2;  // SetStateData [38]
-};
-constexpr RumbleFlags kRumbleSelect{0x02, 0x00};  // once, at the start of each grip test
-constexpr RumbleFlags kRumbleLegacy{0x03, 0x00};  // every grip test report after it
+// The rumble report Linux hid-playstation sends for FF_RUMBLE
+// (dualsense_output_worker, update_rumble set, nothing else pending): USB
+// output report 0x02, 63 bytes, all zero but valid_flag0 HAPTICS_SELECT
+// (0x02), then COMPATIBLE_VIBRATION2 (valid_flag2 [1 + 38] 0x04) on update
+// version 2.21+ (0x0215) or an Edge, else COMPATIBLE_VIBRATION (flag0 0x01);
+// motor_right [1 + 2] = weak >> 8, motor_left [1 + 3] = strong >> 8. On the
+// owner's DualSense (0x0630) this, through the host forward, is the rumble
+// that feels right; the grip test sends exactly it. Unknown version (0): the
+// v2 mode, as every DualSense since 2021 has it.
+constexpr size_t kUsbOut02Len = 63;
+constexpr uint16_t kVibrationV2Version = 0x0215;  // DS_FEATURE_VERSION(2, 21)
+inline void linux_rumble_report(uint8_t out[kUsbOut02Len], uint16_t update_version, bool edge, uint8_t left,
+                                uint8_t right) {
+    std::memset(out, 0, kUsbOut02Len);
+    out[0] = 0x02;
+    out[1] = 0x02;  // valid_flag0: HAPTICS_SELECT
+    if (edge || update_version == 0 || update_version >= kVibrationV2Version) out[1 + 38] |= 0x04;
+    else out[1] |= 0x01;
+    out[1 + 2] = right;
+    out[1 + 3] = left;
+}
 
 }  // namespace fw_report
