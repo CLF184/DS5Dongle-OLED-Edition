@@ -12,7 +12,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 - **The DualSense Edge on the OLED, for the first time:** with an Edge connected, the Status screen shows its Fn buttons and back buttons (LB / RB) and lights them as you press them.
 
-  ![The OLED Status screen: DualSense, DualSense Edge, and the Edge with its buttons pressed](https://raw.githubusercontent.com/MarcelineVPQ/DS5Dongle-OLED-Edition/master/docs/screenshots/oled-status-dualsense-edge.png)
+  ![The OLED Status screen: DualSense, DualSense Edge, and the Edge with its buttons pressed](https://raw.githubusercontent.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web/master/docs/screenshots/oled-status-dualsense-edge.png)
 
 - **Controller health & info (protocol 1.12):** the configurator can show the connected controller's own firmware (build date, hardware, main / SBL / DSP versions, Bluetooth patch), its lifetime counters (play and charge time, haptics and trigger time, charge cycles, connections, button presses, stick travel) and its battery voltage. GET 0xEB (vendor interface only; wValue's high byte picks the header, the firmware info or a result page) and 0xF6 0x16 [dev, action, pages], which queues one of two read-only Sony test commands (counters 0x70/1, battery voltage 0x04/3; anything else is refused) and runs it from the main loop after the connect-time colorway read, one 0x81 request at a time, never inside a USB transfer. The controller's serial number and the Edge stick modules' serials in the counters block are blanked before the app can read them, and the device-info bytes of report 0x20 are withheld. Identity [46] bit 0 announces it. Counter layout from daidr/dualsense-tester (MIT).
 
