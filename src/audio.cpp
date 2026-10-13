@@ -423,6 +423,12 @@ void CORE0_RAM_FUNC(audio_loop)() {
     constexpr uint16_t NATIVE_THRESHOLD     = 256;
     static int native_silent_count = NATIVE_SILENT_TIMEOUT * 2;
     const bool fallback_active = (auto_mode == 1) && (native_silent_count >= NATIVE_SILENT_TIMEOUT);
+#if !DISABLE_SPEAKER_PROC
+    // No speaker encoder (yet, or core1 couldn't get its memory, issue #15):
+    // nothing would take the PCM, so don't convert and queue it only to drop
+    // it (upstream 4929996 skips this work when the speaker is off).
+    const bool spk_ready = g_spk_ready;
+#endif
 
     for (int i = 0; i < frames; i++) {
         // VU peak tracking
@@ -443,20 +449,22 @@ void CORE0_RAM_FUNC(audio_loop)() {
  #if !DISABLE_SPEAKER_PROC
         // speaker_volume can boost up to +12 dB: clip at full scale rather than
         // hand the encoder samples past +-1.
-        audio_buf[audio_buf_pos++] = std::clamp(raw[i * INPUT_CHANNELS] / 32768.0f * audio_gain, -1.0f, 1.0f);
-        audio_buf[audio_buf_pos++] = std::clamp(raw[i * INPUT_CHANNELS + 1] / 32768.0f * audio_gain, -1.0f, 1.0f);
-        if (audio_buf_pos == 512 * 2) {
-            static audio_raw_element element{};
-            memcpy(element.data, audio_buf, 512 * 2 * 4);
-            if (queue_is_full(&audio_fifo)) {
-                queue_try_remove(&audio_fifo,NULL);
-                g_drop_raw++;
+        if (spk_ready) {
+            audio_buf[audio_buf_pos++] = std::clamp(raw[i * INPUT_CHANNELS] / 32768.0f * audio_gain, -1.0f, 1.0f);
+            audio_buf[audio_buf_pos++] = std::clamp(raw[i * INPUT_CHANNELS + 1] / 32768.0f * audio_gain, -1.0f, 1.0f);
+            if (audio_buf_pos == 512 * 2) {
+                static audio_raw_element element{};
+                memcpy(element.data, audio_buf, 512 * 2 * 4);
+                if (queue_is_full(&audio_fifo)) {
+                    queue_try_remove(&audio_fifo,NULL);
+                    g_drop_raw++;
+                }
+                g_raw_push++;
+                if (!queue_try_add(&audio_fifo, &element)) {
+                    printf("[Audio] Warning: audio_fifo add failed\n");
+                }
+                audio_buf_pos = 0;
             }
-            g_raw_push++;
-            if (!queue_try_add(&audio_fifo, &element)) {
-                printf("[Audio] Warning: audio_fifo add failed\n");
-            }
-            audio_buf_pos = 0;
         }
 #endif
         float h_l = raw[i * INPUT_CHANNELS + 2] / 32768.0f;
