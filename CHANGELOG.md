@@ -16,6 +16,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 - **Controller health test (protocol 1.12) hardening:** a page the controller answers twice (a re-asked GET) is kept once, where it used to land unblanked at the next page's offset; for 1 s after a test ends, a late reply of ours (it may hold the serial) is dropped from the feature cache instead of being served to a host GET 0x81; while a test runs and during that second, a host SET 0x80 is not forwarded and a host GET 0x81 is refused (stalled), so neither takes the test's pages, and a 0x81 reply that isn't the test's is no longer thrown away; and a 0xF6 0x16 sent in the loop pass the controller connects in answers FAILED instead of being accepted and then reported as "no controller".
 - **Per-stage timings (0xFC) could read half the real average:** reading a stage while core1 halved its sum and count could pair the new sum with the old count. Each stage now has a sequence number the reader checks (a seqlock); a host test with a writer thread checks it.
+- **The Status title's scroll froze for up to ~36 minutes** (local builds, whose version label is longer than the title's space) when the Status screen had been away for more than ~35 minutes: its timer was 32-bit microseconds. It is 64-bit now (`src/title_scroll.h`, host-tested).
 
 ## [0.9.5-dev.6-oled-edition] - 2026-10-12
 

@@ -2,6 +2,7 @@
 #include "oled_font.h"
 #include "oled_flush.h"
 #include "oled_pad.h"
+#include "title_scroll.h"
 #include "version_label.h"
 #include "bt.h"
 #include "slots.h"
@@ -355,25 +356,13 @@ constexpr auto kStatusTitle = version_label::make("DS5 B. ", FIRMWARE_VERSION);
 // readable range for short tickers), 1.5 s pauses at each end. A title that
 // fits is drawn once and costs nothing (unchanged frames aren't flushed).
 void draw_title_scrolling(int x_min, int x_max, int y, const char *s, int n) {
-    static int offset = 0, dir = 1;
-    static uint32_t next_us = 0;
+    static TitleScroll scroll;
     const int overflow = (n * 6 - 1) - (x_max - x_min);
     if (overflow <= 0) {
         draw_text(x_min, y, s);
         return;
     }
-    const uint32_t now = time_us_32();
-    if ((int32_t) (now - next_us) >= 0) {
-        offset += dir;
-        uint32_t wait = 0; // the next frame (one pixel per frame)
-        if (offset >= overflow || offset <= 0) {
-            offset = offset >= overflow ? overflow : 0;
-            dir = -dir;
-            wait = 1500000;
-        }
-        next_us = now + wait;
-    }
-    draw_text_clipped(x_min - offset, y, s, x_min, x_max);
+    draw_text_clipped(x_min - scroll.step(time_us_64(), overflow), y, s, x_min, x_max);
 }
 
 // Button-chrome strip on the left edge of every screen. KEY0 (top button)
