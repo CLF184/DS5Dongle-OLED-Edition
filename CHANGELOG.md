@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+### Changed
+- **Core0's Bluetooth/USB hot path now runs from RAM on the Pico 2 W** (ported from upstream awalol B.1–B.4, a2772a9, 57f185b and the rest of A.1): our Bluetooth handlers, `bt_write`, `on_bt_data`, `interrupt_loop`, `audio_loop`, `audio_bt_task`, `mic_add_queue` and the CRC32 table, plus BTstack's HCI/L2CAP dispatch and TX pumps, the CYW43 SPI transport and SDPCM pump, and TinyUSB's FIFO, task, HID report and audio class data paths, so none of them wait on the flash cache that the OLED and BTstack keep evicting. Costs ~39 KB of SRAM (core1 still has room for the speaker encoder and mic decoder). `tools/check_ram_residency.sh` checks every one in CI and releases. The original Pico W keeps them in flash (its RP2040 has no RAM to spare). Clock unchanged at 320 MHz.
+
 ## [0.9.5-dev.7-oled-edition] - 2026-10-13
 
 ### Changed
