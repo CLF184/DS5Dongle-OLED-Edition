@@ -857,6 +857,7 @@ __attribute__((noinline)) void render_screen_rssi() {
 // D-pad up/down. No cursor — there's nothing to select.
 int   diag_scroll = 0;
 uint8_t diag_last_dpad = 8; // edge-trigger N/E/S/W like settings_handle_input
+constexpr int kDiagVisible = 5;
 
 // Per-second rates sampled once per render, shared across format_diag_row's
 // rate-based rows so they stay in sync.
@@ -981,8 +982,7 @@ __attribute__((noinline)) void render_screen_diag() {
     draw_text(kContentX, 0, "Diagnostics");
 
     sample_diag_rates();
-    constexpr int kVisible = 5;
-    diag_handle_input(kVisible);
+    constexpr int kVisible = kDiagVisible;
 
     char line[28];
     for (int i = 0; i < kVisible && diag_scroll + i < kNumDiagRows; i++) {
@@ -1067,7 +1067,6 @@ void triggers_handle_input() {
 }
 
 __attribute__((noinline)) void render_screen_triggers() {
-    triggers_handle_input();
     fb_clear();
     draw_text(kContentX, 0, "Trigger Test");
 
@@ -1318,7 +1317,6 @@ void lightbar_handle_input() {
 }
 
 __attribute__((noinline)) void render_screen_lightbar() {
-    lightbar_handle_input();
     fb_clear();
     draw_text(kContentX, 0, "Lightbar");
     draw_text(86, 0, lb_mode_tag(lb_mode));
@@ -1760,13 +1758,6 @@ __attribute__((noinline)) void format_settings_item(int idx, char* line, size_t 
 }
 
 __attribute__((noinline)) void render_screen_settings() {
-    if (!settings_init_done) {
-        settings_local = get_config();
-        settings_power = config_power_flags();
-        settings_init_done = true;
-    }
-    settings_handle_input();
-
     fb_clear();
     char buf[24];
     snprintf(buf, sizeof(buf), "Settings %s", settings_dirty ? "(*)" : "   ");
@@ -1857,19 +1848,14 @@ void slots_handle_input() {
 }
 
 __attribute__((noinline)) void render_screen_slots() {
-    slots_handle_input();
     if (slots_cursor < 0) slots_cursor = bt_get_slot();
 
     fb_clear();
     char hdr[24];
     const int active = bt_get_slot();
     const bool conn = bt_is_connected();
-    snprintf(hdr, sizeof(hdr), "Slots         [s%d %s]", active, conn ? "ON" : "--");
+    snprintf(hdr, sizeof(hdr), "Slots        [s%d %s]", active, conn ? "ON" : "--");
     draw_text(kContentX, 0, hdr);
-
-    if (slots_status[0] && (uint32_t)time_us_32() < slots_status_until_us) {
-        draw_text(80, 0, slots_status);
-    }
 
     for (int i = 0; i < kNumSlots; i++) {
         char line[28];
@@ -1878,7 +1864,7 @@ __attribute__((noinline)) void render_screen_slots() {
         if (slot_occupied(i)) {
             uint8_t a[6];
             slot_get_addr(i, a);
-            snprintf(line, sizeof(line), "%s%d%s %02X:%02X:%02X:%02X:%02X:%02X",
+            snprintf(line, sizeof(line), "%s%d%s%02X:%02X:%02X:%02X:%02X:%02X",
                      cursor_mark, i, active_mark, a[0], a[1], a[2], a[3], a[4], a[5]);
         } else {
             snprintf(line, sizeof(line), "%s%d%s (empty)", cursor_mark, i, active_mark);
@@ -1886,7 +1872,9 @@ __attribute__((noinline)) void render_screen_slots() {
         draw_text(kContentX, 9 + i * 9, line);
     }
 
-    draw_text(kContentX, 56, "Tri=switch Sq hold=wipe");
+    const bool status_live = slots_status[0]
+        && (int32_t)(time_us_32() - slots_status_until_us) < 0;
+    draw_text(kContentX, 56, status_live ? slots_status : "Tri=sw Sq hold=wipe");
     flush_fb();
 }
 
@@ -1907,6 +1895,27 @@ void boot_splash() {
     draw_text(cx_for(l3), 44, l3);
     flush_fb();
     sleep_ms(1500);
+}
+
+// Sample controller edges every main-loop pass, independently of the 10 Hz
+// display cadence. A short press can begin and end between rendered frames.
+void screen_input_tick() {
+    if (oled_power_state != OLED_ACTIVE) return;
+    switch (current_screen) {
+        case kScreenSlots: slots_handle_input(); break;
+        case kScreenLightbar: lightbar_handle_input(); break;
+        case kScreenTriggers: triggers_handle_input(); break;
+        case kScreenDiag: diag_handle_input(kDiagVisible); break;
+        case kScreenSettings:
+            if (!settings_init_done) {
+                settings_local = get_config();
+                settings_power = config_power_flags();
+                settings_init_done = true;
+            }
+            settings_handle_input();
+            break;
+        default: break;
+    }
 }
 
 } // namespace
@@ -1999,6 +2008,7 @@ static void sync_host_config_changes() {
 void oled_loop() {
     sync_host_config_changes();
     handle_buttons();
+    screen_input_tick();
     const uint32_t now = time_us_32();
     rumble_burst_tick(now);
     if ((now - last_render_us) < kFrameUs) return;
