@@ -488,10 +488,19 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
     }
 }
 
+#if PICO_RP2350 && SYS_CLOCK_KHZ == 150000 && SYS_CLK_KHZ != 150000
+#error "the Pico 2 W build assumes the SDK boots clk_sys at 150 MHz"
+#endif
+
 int main() {
+    // The Pico 2 W runs at the clock and core voltage it boots with (150 MHz,
+    // default voltage), as upstream awalol v0.7.0 does. The Pico W (200 MHz)
+    // and the DS5_CLOCK_KHZ=320000 fallback raise voltage and clock here.
+#if SYS_CLOCK_KHZ != 150000
     vreg_set_voltage(VREG_VOLTAGE_1_20);
     sleep_ms(1000);
     set_sys_clock_khz(SYS_CLOCK_KHZ, true);
+#endif
 
     board_init();
     tusb_rhport_init_t dev_init = {

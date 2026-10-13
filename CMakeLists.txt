@@ -58,13 +58,24 @@ else ()
         set(DISABLE_SPEAKER_PROC_VALUE 0)
 endif ()
 option(PICO_W_BUILD "Build for Rasberry Pi Pico W, audio is missing" OFF)
+# Pico 2 W clock. The default is upstream awalol v0.7.0's (a023371): the
+# RP2350's rated 150 MHz at the boot-default core voltage, CYW43 PIO clock
+# divider 2; main() leaves clock and voltage as the bootrom/SDK set them.
+# DS5_CLOCK_KHZ=320000 builds the old overclock (1.20 V, PIO divider 5) as a
+# fallback for one release; it goes away after that.
+set(DS5_CLOCK_KHZ 150000 CACHE STRING "Pico 2 W clk_sys in kHz: 150000 (default) or 320000 (old overclock, fallback)")
 if (PICO_W_BUILD)
         set(CYW43_PIO_CLOCK_DIV_VALUE 3)
         set(SYS_CLOCK_KHZ_VALUE 200000)
         set(DISABLE_SPEAKER_PROC_VALUE 1)
-else ()
+elseif (DS5_CLOCK_KHZ STREQUAL "150000")
+        set(CYW43_PIO_CLOCK_DIV_VALUE 2)
+        set(SYS_CLOCK_KHZ_VALUE 150000)
+elseif (DS5_CLOCK_KHZ STREQUAL "320000")
         set(CYW43_PIO_CLOCK_DIV_VALUE 5)
         set(SYS_CLOCK_KHZ_VALUE 320000)
+else ()
+        message(FATAL_ERROR "DS5_CLOCK_KHZ must be 150000 or 320000 (got '${DS5_CLOCK_KHZ}')")
 endif ()
 
 
@@ -293,6 +304,23 @@ target_compile_definitions(ds5-bridge PRIVATE
         DISABLE_SPEAKER_PROC=${DISABLE_SPEAKER_PROC_VALUE}
         OPUS_ENCODER_CELT_ONLY=${OPUS_ENCODER_CELT_ONLY_VALUE}
 )
+
+# Flash (XIP) setup, RP2350 only. The bootrom leaves the QMI flash interface
+# at a slow, conservative setting unless the image carries its own XIP setup
+# (boot2); crt0 then runs it at boot (PICO_EMBED_XIP_SETUP, SDK 2.x) with
+# PICO_FLASH_SPI_CLKDIV. Upstream awalol does the same (99da904, e5d99f0):
+# divider 4 above 266 MHz, else 2. Without it core1 crashed on some boards
+# (issue #15). The RP2040 (Pico W) always runs its boot2, at the board's
+# divider 2, as upstream leaves it.
+if (PICO_PLATFORM MATCHES "^rp2350")
+        if (SYS_CLOCK_KHZ_VALUE GREATER 266000)
+                set(DS5_FLASH_CLKDIV 4)
+        else ()
+                set(DS5_FLASH_CLKDIV 2)
+        endif ()
+        target_compile_definitions(bs2_default PRIVATE PICO_FLASH_SPI_CLKDIV=${DS5_FLASH_CLKDIV})
+        target_compile_definitions(ds5-bridge PRIVATE PICO_EMBED_XIP_SETUP=1)
+endif ()
 if (ENABLE_STACK_USAGE)
         target_compile_options(ds5-bridge PRIVATE -fstack-usage)
         target_compile_options(opus PRIVATE -fstack-usage)
@@ -401,4 +429,30 @@ target_link_libraries(ds5-bridge
 target_link_options(ds5-bridge PRIVATE -Wl,--wrap=flash_safe_execute)
 
 pico_add_extra_outputs(ds5-bridge)
+
+# Gate (issue #15): an RP2350 build must embed its XIP setup, and the flash
+# clock it sets (clk_sys / divider) must stay within ~100 MHz. Checked on the
+# final target properties, so a later edit that drops either fails here.
+# tools/check_xip_setup.sh checks the built ELF for the same thing.
+if (PICO_PLATFORM MATCHES "^rp2350")
+        get_target_property(_ds5_defs ds5-bridge COMPILE_DEFINITIONS)
+        if (NOT "PICO_EMBED_XIP_SETUP=1" IN_LIST _ds5_defs)
+                message(FATAL_ERROR "RP2350 build without PICO_EMBED_XIP_SETUP=1 on ds5-bridge: the flash keeps the bootrom's setup (issue #15)")
+        endif ()
+        get_target_property(_bs2_defs bs2_default COMPILE_DEFINITIONS)
+        set(_ds5_clkdiv "")
+        foreach (_d IN LISTS _bs2_defs)
+                if (_d MATCHES "^PICO_FLASH_SPI_CLKDIV=([0-9]+)$")
+                        set(_ds5_clkdiv ${CMAKE_MATCH_1})
+                endif ()
+        endforeach ()
+        if (_ds5_clkdiv STREQUAL "" OR _ds5_clkdiv EQUAL 0)
+                message(FATAL_ERROR "RP2350 build without PICO_FLASH_SPI_CLKDIV on bs2_default (issue #15)")
+        endif ()
+        math(EXPR _ds5_flash_khz "${SYS_CLOCK_KHZ_VALUE} / ${_ds5_clkdiv}")
+        if (_ds5_flash_khz GREATER 100000)
+                message(FATAL_ERROR "Flash clock ${_ds5_flash_khz} kHz (clk_sys ${SYS_CLOCK_KHZ_VALUE} kHz / divider ${_ds5_clkdiv}) is above 100 MHz")
+        endif ()
+        message(STATUS "Pico 2 W: clk_sys ${SYS_CLOCK_KHZ_VALUE} kHz, flash ${_ds5_flash_khz} kHz (divider ${_ds5_clkdiv}, embedded XIP setup), CYW43 PIO divider ${CYW43_PIO_CLOCK_DIV_VALUE}")
+endif ()
 
