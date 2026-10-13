@@ -15,9 +15,9 @@ if (WIN32)
 else ()
     set(USERHOME $ENV{HOME})
 endif ()
-set(sdkVersion 2.2.0)
-set(toolchainVersion 14_2_Rel1)
-set(picotoolVersion 2.2.0-a4)
+set(sdkVersion 2.3.0)
+set(toolchainVersion 15_2_Rel1)
+set(picotoolVersion 2.3.0)
 set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
 if (EXISTS ${picoVscode})
     include(${picoVscode})
@@ -87,6 +87,26 @@ project(ds5-bridge C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
+
+# The pins are in tools/toolchain.env (Pico SDK 2.3.0, TinyUSB 0.21 at upstream's
+# commit). The relocate_to_ram() section names below are TinyUSB 0.21's, and a
+# name that matches nothing silently leaves that code in flash, so refuse any
+# other TinyUSB minor version rather than build a slower firmware.
+# (The SDK resolves PICO_TINYUSB_PATH in its own directory scope, the same way.)
+set(_tusb_dir "${PICO_TINYUSB_PATH}")
+if (NOT _tusb_dir)
+    set(_tusb_dir "$ENV{PICO_TINYUSB_PATH}")
+endif ()
+if (NOT _tusb_dir)
+    set(_tusb_dir "${PICO_SDK_PATH}/lib/tinyusb")
+endif ()
+file(STRINGS "${_tusb_dir}/src/tusb_option.h" _tusb_ver
+     REGEX "^#define TUSB_VERSION_(MAJOR|MINOR) +[0-9]+")
+string(REGEX REPLACE ".*MAJOR +([0-9]+).*MINOR +([0-9]+).*" "\\1.\\2" _tusb_ver "${_tusb_ver}")
+if (NOT _tusb_ver STREQUAL "0.21")
+    message(FATAL_ERROR "TinyUSB at ${_tusb_dir} is ${_tusb_ver}; this firmware needs 0.21 "
+        "(tools/toolchain.env: Pico SDK 2.3.0 with lib/tinyusb at TINYUSB_REF; see CLAUDE.md, Build)")
+endif ()
 
 # Add executable. Default name is the project name, version 0.1
 
@@ -206,10 +226,12 @@ relocate_to_ram(src/common/pico_util/queue.c.o
 
 # --- Core0's Bluetooth/USB hot path in RAM (upstream awalol Phases B.2-B.4),
 # RP2350 only (see src/core0_ram.h: the Pico W's RP2040 can't spare the RAM).
-# Section names are TinyUSB 0.20's (pico-sdk 2.2.0): upstream's newer list
-# names tu_fifo_*_n_access_mode, which 0.20 doesn't have, and a rename that
-# matches nothing does nothing (upstream 76690ab). tools/check_ram_residency.sh
-# checks every one of these landed in SRAM.
+# Section names are TinyUSB 0.21's (pico-sdk 2.3.0; the configure check above
+# refuses another TinyUSB). A rename that matches nothing does nothing: 0.21's
+# FIFO bulk movers are tu_fifo_{read,write}_n_access_mode, and tu_fifo_read_n /
+# write_n / count became always-inline wrappers with no section of their own
+# (upstream 76690ab). tools/check_ram_residency.sh checks every one of these
+# landed in SRAM.
 if (PICO_RP2350)
 # B.2: per-packet BT/USB transport.
 relocate_to_ram(lib/btstack/src/hci.c.o
@@ -219,7 +241,7 @@ relocate_to_ram(lib/btstack/src/l2cap.c.o
     ".text.l2cap_acl_handler=.time_critical.l2cap_acl_handler"
     "B.2: btstack l2cap.c l2cap_acl_handler (inbound demux) -> RAM")
 relocate_to_ram(lib/tinyusb/src/common/tusb_fifo.c.o
-    ".text.tu_fifo_read=.time_critical.tu_fifo_read|.text.tu_fifo_read_n=.time_critical.tu_fifo_read_n|.text.tu_fifo_write=.time_critical.tu_fifo_write|.text.tu_fifo_write_n=.time_critical.tu_fifo_write_n|.text.tu_fifo_count=.time_critical.tu_fifo_count"
+    ".text.tu_fifo_read=.time_critical.tu_fifo_read|.text.tu_fifo_read_n_access_mode=.time_critical.tu_fifo_read_n_access_mode|.text.tu_fifo_write=.time_critical.tu_fifo_write|.text.tu_fifo_write_n_access_mode=.time_critical.tu_fifo_write_n_access_mode"
     "B.2: tinyusb FIFO data path -> RAM")
 relocate_to_ram(src/rp2_common/pico_cyw43_driver/cyw43_bus_pio_spi.c.o
     ".text.cyw43_spi_transfer=.time_critical.cyw43_spi_transfer|.text.cyw43_read_bytes=.time_critical.cyw43_read_bytes|.text.cyw43_write_bytes=.time_critical.cyw43_write_bytes|.text.cyw43_read_reg_u32=.time_critical.cyw43_read_reg_u32|.text.cyw43_read_reg_u16=.time_critical.cyw43_read_reg_u16|.text.cyw43_read_reg_u8=.time_critical.cyw43_read_reg_u8|.text.cyw43_write_reg_u32=.time_critical.cyw43_write_reg_u32|.text.cyw43_write_reg_u16=.time_critical.cyw43_write_reg_u16|.text.cyw43_write_reg_u8=.time_critical.cyw43_write_reg_u8|.text.read_reg_u32_swap=.time_critical.read_reg_u32_swap|.text.write_reg_u32_swap=.time_critical.write_reg_u32_swap|.text.ns_delay.constprop.0=.time_critical.cyw43_ns_delay"

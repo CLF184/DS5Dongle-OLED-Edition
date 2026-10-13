@@ -32,15 +32,12 @@ env:
   # What to build from: the tag (both repos), or master for a dry run.
   SRC_REF: ${{ github.event_name == 'push' && github.ref_name || 'master' }}
   DRY_RUN: ${{ github.event_name != 'push' }}
-  PICO_SDK_REF: 2.2.0
-  TINYUSB_REF: 0.20.0
   PICO_SDK_PATH: ${{ github.workspace }}/pico-sdk
   APP_REPO: MarcelineVPQ/DS5Dongle-OLED-Config-Web
   NPM: npx -y npm@11.6.2
-  # ARM's own toolchain (as upstream awalol 425061f), not Ubuntu's
-  # gcc-arm-none-eabi: the same compiler on every run, cached below.
-  ARM_TOOLCHAIN_VERSION: 14.2.rel1
-  ARM_TOOLCHAIN_URL: https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi.tar.xz
+  # PICO_SDK_REF, TINYUSB_REF and ARM's own toolchain (ARM_TOOLCHAIN_VERSION /
+  # _URL; not Ubuntu's gcc-arm-none-eabi, as upstream awalol 425061f) are pinned
+  # in tools/toolchain.env, loaded by the first step after checkout.
   ARM_TOOLCHAIN_PATH: ${{ github.workspace }}/arm-toolchain
   APT_PACKAGES: >-
     cmake
@@ -61,6 +58,9 @@ jobs:
         with:
           ref: ${{ env.SRC_REF }}
           submodules: recursive
+
+      - name: Load toolchain pins
+        run: grep -E '^[A-Z_]+=' tools/toolchain.env >> "$GITHUB_ENV"
 
       - name: Prepare build dependency cache
         id: apt-cache
@@ -118,12 +118,16 @@ jobs:
           git clone --depth 1 --branch "$PICO_SDK_REF" https://github.com/raspberrypi/pico-sdk.git "$PICO_SDK_PATH"
           git -C "$PICO_SDK_PATH" submodule update --init --recursive
 
-      - name: Switch TinyUSB to configured tag
+      - name: Switch TinyUSB to the pinned commit
         run: |
-          if ! git -C "$PICO_SDK_PATH/lib/tinyusb" rev-parse -q --verify "refs/tags/$TINYUSB_REF" >/dev/null; then
-            git -C "$PICO_SDK_PATH/lib/tinyusb" fetch --depth 1 origin "refs/tags/$TINYUSB_REF:refs/tags/$TINYUSB_REF"
+          tusb="$PICO_SDK_PATH/lib/tinyusb"
+          if git -C "$tusb" cat-file -e "$TINYUSB_REF^{commit}" 2>/dev/null; then
+            git -C "$tusb" checkout --detach "$TINYUSB_REF"
+          else
+            git -C "$tusb" fetch --depth 1 origin "$TINYUSB_REF"
+            git -C "$tusb" checkout --detach FETCH_HEAD
           fi
-          git -C "$PICO_SDK_PATH/lib/tinyusb" checkout --detach "$TINYUSB_REF"
+          git -C "$tusb" log -1 --format='TinyUSB %H %s'
 
       - name: lib/* stay submodule gitlinks
         run: tools/check_gitlinks.sh
