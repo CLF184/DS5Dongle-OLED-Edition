@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+## [0.9.5-dev.7-oled-edition] - 2026-10-13
+
 ### Changed
 
 - **Release and CI gates (quality pass F41-F43):** `tools/check_gitlinks.sh` fails the build when `lib/opus` or `lib/WDL` stops being a submodule gitlink (a committed symlink broke every fresh checkout once, 5d869f1); `tools/release.sh` and the release workflow now run the host unit tests before building the UF2; and `tools/check_ram_residency.sh` checks every CI and release ELF for core1's RAM rule (no `__memcpy_chk` / `__memset_chk` / `__memmove_chk`, and core1's entry, the libopus encode / decode entry points, the resampler's hot methods, the queue ops and our `memcpy` / `memset` / `memmove` in SRAM), which before was only visible on hardware as the OLED's `Drop r` count.
