@@ -15,3 +15,4 @@ extern std::map<uint8_t, std::vector<uint8_t>> g_fake_features;
 extern std::vector<std::vector<uint8_t>> g_fake_feature_sets;
 extern int g_fake_feature_gets;
 extern void (*g_fake_feature_get_hook)(uint8_t id);
+extern std::vector<std::vector<uint8_t>> g_fake_control_sends;  // bt_send_control (raw, e.g. SET 0x65)

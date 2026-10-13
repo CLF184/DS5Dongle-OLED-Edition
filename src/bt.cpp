@@ -19,6 +19,7 @@
 #include "bsp/board_api.h"
 #include "classic/sdp_server.h"
 #include "config.h"
+#include "dse.h"
 #include "fw_report.h"
 #include "state_mgr.h"
 #include "pico/util/queue.h"
@@ -541,6 +542,7 @@ static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t cha
             hid_control_cid = 0;
             hid_interrupt_cid = 0;
             feature_data.clear();
+            dse_reset();
             // Packets still queued for the old link would leave every output
             // dead after a reconnect (bt_write only asks to send when the
             // queue goes from empty to one). Upstream a1492fd/697ade0.
@@ -613,8 +615,10 @@ static void CORE0_RAM_FUNC(l2cap_packet_handler)(uint8_t packet_type, uint16_t c
                     const auto &fw = feature_data[0x20];
                     is_dse = fw_report::is_edge(fw.data(), fw.size());
                     printf("Connected %s Controller\n", is_dse ? "DSE" : "DS5");
-                    // The Edge's profile report, cached at connect as before.
-                    if (is_dse) get_feature_data(0x70, 64);
+                    // Edge: unlock and fetch its profiles for PS Accessories
+                    // (dse.cpp; this replaces the old GET 0x70 at connect).
+                    if (is_dse) dse_on_connect();
+                    else dse_reset();
                     connect_attempt_started = 0; // fully up — disarm watchdog
 #if !ENABLE_SERIAL
                     tud_connect();
@@ -796,7 +800,10 @@ vector<uint8_t> get_feature_data(uint8_t reportId, uint16_t len) {
         // DSE: Set Profile Save?
         reportId == 0x63 ||
         reportId == 0x65 ||
-        reportId == 0x64
+        reportId == 0x64 ||
+        // Edge profiles: answered from the cache, refreshed in the background
+        // (PS Accessories reads them again after a save).
+        dse_is_profile_report(reportId)
     ) {
         if (hid_control_cid != 0) {
             uint8_t get_feature[] = {0x43, reportId};

@@ -76,6 +76,8 @@ void set_feature_data(uint8_t id, uint8_t *data, uint16_t len) {
     v.insert(v.end(), data, data + len);
     g_fake_feature_sets.push_back(v);
 }
+std::vector<std::vector<uint8_t>> g_fake_control_sends;
+void bt_send_control(uint8_t *data, uint16_t len) { g_fake_control_sends.emplace_back(data, data + len); }
 int bt_get_slot() { return g_fake_slot; }
 void bt_set_slot(int slot) { g_fake_slot = slot; }
 void bt_forget_slot(int) {}

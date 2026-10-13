@@ -28,6 +28,7 @@
 #include "calib.h"
 #include "perf.h"
 #include "ctrl_info.h"
+#include "dse.h"
 #include "fw_report.h"
 
 // Pico SDK speciifically for waiting on conditions
@@ -361,6 +362,14 @@ static uint16_t get_report_impl(uint8_t itf, uint8_t report_id, hid_report_type_
     // The dongle's controller test owns the 0x81 result slot: busy (stall).
     if (report_id == 0x81 && ctrl_test_owns_0x81()) return 0;
 
+    // Edge profiles before the connect fetch is done: refused (stall), so PS
+    // Accessories retries rather than keeping an empty snapshot. The GET still
+    // goes to the controller, as upstream 8a2f576 does.
+    if (dse_is_profile_report(report_id) && !dse_profiles_ready()) {
+        (void) get_feature_data(report_id, reqlen);
+        return 0;
+    }
+
     std::vector<uint8_t> feature_data = get_feature_data(report_id, reqlen);
     if (!feature_data.empty()) {
         memcpy(buffer, feature_data.data() + 1, feature_data.size() - 1);
@@ -490,6 +499,7 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
         report_id == 0x62 ||
         report_id == 0x61) {
         set_feature_data(report_id, const_cast<uint8_t *>(buffer), bufsize);
+        dse_on_profile_write(report_id);  // 0x60-0x62: re-read the profiles
         return;
     }
 }

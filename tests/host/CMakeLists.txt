@@ -20,6 +20,7 @@ add_executable(host_tests
         test_config.cpp
         test_cmd.cpp
         test_ctrl_info.cpp
+        test_dse.cpp
         test_perf.cpp
         test_version_label.cpp
         test_title_scroll.cpp
@@ -32,6 +33,7 @@ add_executable(host_tests
         ${FW}/src/cmd.cpp
         ${FW}/src/perf.cpp
         ${FW}/src/ctrl_info.cpp
+        ${FW}/src/dse.cpp
         # The reference the haptics decimator is checked against (lib/WDL submodule).
         ${FW}/lib/WDL/WDL/resample.cpp
 )
