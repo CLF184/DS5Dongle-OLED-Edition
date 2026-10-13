@@ -68,4 +68,34 @@ inline uint16_t host_report(const uint8_t *real, size_t real_len, bool is_dse, b
     return n;
 }
 
+// Update version [44..45] little-endian (Linux hid-playstation
+// dualsense_get_firmware_info, SDL firmware_version). 0 = unknown.
+constexpr size_t kUpdateVersionOffset = 44;
+inline uint16_t update_version(const uint8_t *rep, size_t len) {
+    if (rep == nullptr || len < kUpdateVersionOffset + 2 || rep[0] != 0x20) return 0;
+    return static_cast<uint16_t>(rep[kUpdateVersionOffset] | (rep[kUpdateVersionOffset + 1] << 8));
+}
+
+// Rumble emulation flags for a BT 0x31 / USB 0x02 SetStateData, as Linux
+// hid-playstation's dualsense_output_worker sets them: HAPTICS_SELECT
+// (flag0 bit1, UseRumbleNotHaptics) always, plus COMPATIBLE_VIBRATION2
+// (flag2 [38] bit2, EnableImprovedRumbleEmulation) when the controller does
+// the improved emulation, else the legacy COMPATIBLE_VIBRATION (flag0 bit0,
+// EnableRumbleEmulation; pulses on new firmware). Improved: an Edge always,
+// a DualSense from update version 2.21 (Linux DS_FEATURE_VERSION(2, 21));
+// unknown (no 0x20 cached, 0) counts as updated, as SDL does over Bluetooth.
+constexpr uint16_t kImprovedRumbleMinVersion = 0x0215;
+struct RumbleFlags {
+    uint8_t flag0;  // SetStateData [0]
+    uint8_t flag2;  // SetStateData [38]
+};
+inline bool improved_rumble(const uint8_t *rep, size_t len) {
+    if (is_edge(rep, len)) return true;
+    const uint16_t v = update_version(rep, len);
+    return v == 0 || v >= kImprovedRumbleMinVersion;
+}
+inline RumbleFlags rumble_flags(const uint8_t *rep, size_t len) {
+    return improved_rumble(rep, len) ? RumbleFlags{0x02, 0x04} : RumbleFlags{0x03, 0x00};
+}
+
 }  // namespace fw_report

@@ -54,7 +54,12 @@ void send_rumble(uint8_t left, uint8_t right) {
     outputData[1] = reportSeqCounter << 4;
     reportSeqCounter = (reportSeqCounter + 1) & 0x0F;
     outputData[2] = 0x10;
-    outputData[3] = 0x03;          // EnableRumbleEmulation | UseRumbleNotHaptics
+    // Improved rumble emulation where the firmware has it (steady; the legacy
+    // bit pulses), like Linux hid-playstation. SetStateData starts at [3].
+    const std::vector<uint8_t> fw = bt_peek_feature(0x20);
+    const fw_report::RumbleFlags f = fw_report::rumble_flags(fw.data(), fw.size());
+    outputData[3] = f.flag0;       // UseRumbleNotHaptics [| EnableRumbleEmulation]
+    outputData[3 + 38] = f.flag2;  // EnableImprovedRumbleEmulation
     outputData[3 + 2] = right;     // RumbleEmulationRight (light)
     outputData[3 + 3] = left;      // RumbleEmulationLeft (heavy)
     bt_write(outputData, sizeof(outputData));
