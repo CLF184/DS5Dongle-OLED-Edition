@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+### Changed
+- **Haptics are cut from 48 kHz to the controller's 3 kHz by taking every 16th sample** (upstream awalol 4929996) instead of running them through the WDL resampler. The resampler was set to plain linear interpolation at an exact 16:1 ratio, so it was already doing exactly that: the bytes sent to the controller are the same (a host test checks the new code against WDL itself over ten minutes of audio, and over short USB reads), with less work on core0 for every 1 ms USB audio packet. Audio Auto Haptics, the per-grip gains and the narrator are unchanged. Upstream put the resampler back an hour later (91b3a28) without giving a reason; the test shows the output is identical either way.
+
 ## [0.9.5-dev.8-oled-edition] - 2026-10-13
 
 ### Changed

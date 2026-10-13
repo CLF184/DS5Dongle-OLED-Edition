@@ -7,6 +7,7 @@
 #include "audio.h"
 #include "bt.h"
 #include "core0_ram.h"
+#include "haptics_decimate.h"
 #include "resample.h"
 #include "tusb.h"
 #include <algorithm>
@@ -25,7 +26,6 @@
 #include "perf.h"
 
 #define INPUT_CHANNELS    4
-#define OUTPUT_CHANNELS   2
 #define SAMPLE_SIZE       64
 // Upstream's packed audio report (awalol 8eb8612): two haptic + two speaker
 // frames per BT packet, no SetStateData. Controller state now travels in its own
@@ -47,7 +47,6 @@
 using std::clamp;
 using std::max;
 
-static WDL_Resampler resampler;
 extern uint8_t reportSeqCounter; // shared with main.cpp's 0x31 forwards
 static uint8_t packetCounter = 0;
 static bool plug_headset = false;
@@ -396,9 +395,10 @@ void CORE0_RAM_FUNC(audio_loop)() {
 
     static float audio_buf[512 * 2];
     static uint audio_buf_pos = 0;
-    // 2. 从4ch中提取ch3/ch4，转换为float输入重采样器
-    WDL_ResampleSample *in_buf;
-    int nframes = resampler.ResamplePrepare(frames, OUTPUT_CHANNELS, &in_buf);
+    // 2. ch3/ch4 are the haptics: every 16th frame becomes a 3 kHz sample.
+    static HapticDecimator decimator;
+    static int8_t haptic_buf[SAMPLE_SIZE];
+    static int haptic_buf_pos = 0;
 
     const float audio_gain = mute[0] ? 0.0f : powf(10.0f, get_config().speaker_volume / 20.0f);
     const float haptics_gain = get_config().haptics_gain;             // left grip
@@ -424,7 +424,7 @@ void CORE0_RAM_FUNC(audio_loop)() {
     static int native_silent_count = NATIVE_SILENT_TIMEOUT * 2;
     const bool fallback_active = (auto_mode == 1) && (native_silent_count >= NATIVE_SILENT_TIMEOUT);
 
-    for (int i = 0; i < nframes; i++) {
+    for (int i = 0; i < frames; i++) {
         // VU peak tracking
         {
             int16_t sl = raw[i * INPUT_CHANNELS];
@@ -489,32 +489,13 @@ void CORE0_RAM_FUNC(audio_loop)() {
             }
         }
 
-        in_buf[i * 2]     = static_cast<WDL_ResampleSample>(clamp(h_l, -1.0f, 1.0f));
-        in_buf[i * 2 + 1] = static_cast<WDL_ResampleSample>(clamp(h_r, -1.0f, 1.0f));
-    }
-    g_peak_spk = spk_max;
-    g_peak_hap = hap_max;
-    if (hap_max > NATIVE_THRESHOLD) {
-        native_silent_count = 0;
-    } else if (native_silent_count < NATIVE_SILENT_TIMEOUT * 2) {
-        native_silent_count++;
-    }
+        // 3. 48 kHz -> 3 kHz (Auto Haptics above still sees every frame, its
+        // filters need them). Gain after the rate change, as upstream a55fd46.
+        if (!decimator.take()) continue;
+        haptic_buf[haptic_buf_pos++] = haptic_to_s8(h_l, haptics_gain);
+        haptic_buf[haptic_buf_pos++] = haptic_to_s8(h_r, haptics_gain_r);
 
-    // 3. 48kHz -> 3kHz 重采样
-    static WDL_ResampleSample out_buf[SAMPLE_SIZE]; // 64 floats = 32帧 × 2ch
-    const int out_frames = resampler.ResampleOut(out_buf, nframes, nframes / 4, OUTPUT_CHANNELS);
-
-    static int8_t haptic_buf[SAMPLE_SIZE];
-    static int haptic_buf_pos = 0;
-
-    // 4. 转换为int8并缓冲，满64字节即组包发送
-    for (int i = 0; i < out_frames; i++) {
-        // Gain after the resampler, as upstream (a55fd46).
-        int val_l = static_cast<int>(out_buf[i * 2] * 127.0f * haptics_gain);
-        int val_r = static_cast<int>(out_buf[i * 2 + 1] * 127.0f * haptics_gain_r);
-        haptic_buf[haptic_buf_pos++] = (int8_t) clamp(val_l, -128, 127); // 似乎clamp有点多余？还是以防万一吧
-        haptic_buf[haptic_buf_pos++] = (int8_t) clamp(val_r, -128, 127);
-
+        // 4. A full 64-byte frame (32 samples x 2 grips) goes to audio_bt_task.
         if (haptic_buf_pos != SAMPLE_SIZE) {
             continue;
         }
@@ -528,14 +509,17 @@ void CORE0_RAM_FUNC(audio_loop)() {
         queue_try_add(&haptics_fifo, &element);
         haptic_buf_pos = 0;
     }
+    g_peak_spk = spk_max;
+    g_peak_hap = hap_max;
+    if (hap_max > NATIVE_THRESHOLD) {
+        native_silent_count = 0;
+    } else if (native_silent_count < NATIVE_SILENT_TIMEOUT * 2) {
+        native_silent_count++;
+    }
     audio_bt_task();
 }
 
 void audio_init() {
-    resampler.SetMode(true, 0, false);
-    resampler.SetRates(48000, 3000);
-    resampler.SetFeedMode(true);
-    resampler.Prealloc(2, 48, 4);
     queue_init(&haptics_fifo, sizeof(haptics_element), 2);
 #if !DISABLE_SPEAKER_PROC
     queue_init(&audio_fifo, sizeof(audio_raw_element), 2);
