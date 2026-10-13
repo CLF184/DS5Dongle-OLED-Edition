@@ -75,6 +75,7 @@ echo "== Firmware build check (release configuration)"
 cmake -S "$FW_DIR" -B "$BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_COMPANION_VENDOR=ON -DVERSION="$TAG" >/dev/null
 cmake --build "$BUILD_DIR" --target ds5-bridge >/dev/null
 "$FW_DIR/tools/check_ram_residency.sh" "$BUILD_DIR/ds5-bridge-oled.elf"
+"$FW_DIR/tools/check_xip_setup.sh" "$BUILD_DIR/ds5-bridge-oled.elf" 2 11
 
 if [ "$DEV" = true ]; then
   echo "== CHANGELOGs: [Unreleased] becomes [$VERSION]"
