@@ -119,7 +119,7 @@ Native triggers work identically on Heroic, but non-Steam launchers are sensitiv
 | Item | Notes | Approx. price |
 |---|---|---|
 | **Waveshare Pico-OLED-1.3** | 128×64 SH1107 OLED add-on board (SKU HIPI1798). Plugs directly onto the Pico 2 W headers. Firmware drives it automatically when present and gracefully no-ops when absent. [Product page](https://www.waveshare.com/pico-oled-1.3.htm) · [Wiki](https://www.waveshare.com/wiki/Pico-OLED-1.3) | ~$6 USD |
-| **Small heatsink** for the RP2350 | The firmware overclocks the MCU to 320 MHz at 1.20 V (see [Performance / Overclocking](#performance--overclocking)). A small heatsink or thermal pad helps under sustained gameplay. | $1–3 USD |
+| **Small heatsink** for the RP2350 | Not needed: the firmware runs the RP2350 at its rated 150 MHz and default voltage (see [Performance / Clock](#performance--clock)). Harmless if you already have one. | $1–3 USD |
 
 ### Where to buy
 
@@ -217,7 +217,6 @@ This was long believed impossible — earlier versions of this fork documented i
 
 ## Known Issues
 
-- Overclocking to 320 MHz @ 1.20 V is **required** for stable BT pairing. Dropping voltage to 1.10 V or clock to stock breaks the CYW43 PIO SPI bus and BT stops working. A small heatsink on the RP2350 is recommended for sustained gameplay.
 - HD haptics may not fire in every game on Linux + Steam; this is game-side (some titles only send HD-haptic audio under Windows-specific APIs). Tested working in Spider-Man Remastered; not delivered in Ghost of Tsushima — same firmware, same controller.
 - **USB 3.0 ports can disrupt pairing** — the controller may get stuck on a solid amber/yellow lightbar and never connect, while the same dongle works fine on a USB 2.0 port. This is RF interference, not a firmware bug; see [USB 3.0 ports & Bluetooth interference](#usb-30-ports--bluetooth-interference) below. (As of v0.6.8 the firmware auto-retries a stalled connection instead of hanging, which recovers many — but not all — marginal cases.)
 - **Windows: the app can't open the dongle** on PCs where a real DualSense was plugged in by USB before (the dongle shares its USB IDs, and Windows remembered "no driver needed" for them). From app 0.9.2 the setup screen offers **Repair USB driver**: one admin prompt, then replug. The full PowerShell it runs, line by line, is in the [app's README](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web#repair-usb-driver-exactly-what-it-runs).
@@ -236,20 +235,18 @@ Mitigations, roughly in order of effectiveness:
 
 The firmware will keep retrying a stalled connection on its own, so leaving it plugged in for ~10–20 s after the lightbar goes amber may let it recover without a replug.
 
-## Performance / Overclocking
+## Performance / Clock
 
-**You don't need to do anything for this — the overclock is baked into the firmware.** When you flash a UF2 from this repo, the Pico 2 W boots at the settings below automatically. There is no separate tool to run, no config file to edit, no fuses to blow.
+**You don't need to do anything for this.** The Pico 2 W runs at the same settings as upstream awalol/DS5Dongle v0.7.0:
 
-Baked-in settings:
+- **Clock: 150 MHz**, the RP2350's rated clock (the one it boots with)
+- **Core voltage: 1.10 V**, the default. The firmware sets it at boot, because the RP2350 keeps an older firmware's voltage until it is unplugged.
+- **Bluetooth chip bus (CYW43 PIO SPI): clock divider 2**
+- **Flash: 75 MHz** (divider 2), set up by the firmware itself at boot (`PICO_EMBED_XIP_SETUP`). Leaving it at the bootrom's setting made core1 crash on some boards ([issue #15](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/issues/15)).
 
-- **Voltage: 1.20 V** (`vreg_set_voltage(VREG_VOLTAGE_1_20)`)
-- **Clock: 320 MHz** (`set_sys_clock_khz(SYS_CLOCK_KHZ, true)`)
+Older releases overclocked to 320 MHz at 1.20 V, a setting inherited from upstream. Upstream moved to 150 MHz once the audio path ran from RAM, and so does this fork now that the audio path and core0's Bluetooth/USB hot path both run from RAM. 1.20 V is above the RP2350's 1.16 V operating maximum, and no heatsink is needed at 150 MHz.
 
-Why it's required: at stock clock/voltage the CYW43 PIO SPI bus (the path the firmware uses to talk to the on-board Bluetooth chip) is unreliable and pairing fails. 320 MHz @ 1.20 V is the lowest combination we've verified to produce a stable BT link on this board.
-
-If your device fails to boot a build you compiled yourself (unusual — only relevant when you've changed source), try increasing voltage slightly or lowering the clock in `src/main.cpp`. End users running official UF2 releases should not need to touch this.
-
-A small heatsink on the RP2350 is **recommended for sustained gameplay** but not required for pairing or short sessions.
+For one release, a source build can still use the old overclock as a fallback: `-DDS5_CLOCK_KHZ=320000` (1.20 V, Bluetooth bus divider 5, flash divider 4). The build refuses a Pico 2 W configuration without the embedded flash setup or with the flash above 100 MHz. The Pico W build is unchanged (200 MHz).
 
 ## Build Instructions
 
