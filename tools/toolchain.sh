@@ -5,7 +5,9 @@
 #   PICO_SDK_PATH        the Pico SDK (default ~/pico-sdk), its lib/tinyusb at
 #                        TINYUSB_REF
 #   PICO_TOOLCHAIN_PATH  an ARM GNU toolchain folder (the one holding bin/);
-#                        unset = the arm-none-eabi-gcc on PATH
+#                        unset = ~/.local/opt/arm-gnu-toolchain-<pin> if it
+#                        exists (tools/install_toolchain.sh), else the
+#                        arm-none-eabi-gcc on PATH
 #
 # e.g. PICO_SDK_PATH=~/sdk23/pico-sdk PICO_TOOLCHAIN_PATH=~/sdk23/arm-toolchain \
 #        tools/dev_firmware.sh
@@ -23,6 +25,10 @@ toolchain_setup() {
   : "${PICO_SDK_PATH:=$HOME/pico-sdk}"
   export PICO_SDK_PATH
   [ -d "$PICO_SDK_PATH" ] || { echo "Pico SDK not found at $PICO_SDK_PATH (set PICO_SDK_PATH)" >&2; return 1; }
+  # The pinned ARM toolchain where tools/install_toolchain.sh puts it, if present.
+  if [ -z "${PICO_TOOLCHAIN_PATH:-}" ] && [ -x "$HOME/.local/opt/arm-gnu-toolchain-$PIN_ARM_TOOLCHAIN_VERSION/bin/arm-none-eabi-gcc" ]; then
+    PICO_TOOLCHAIN_PATH="$HOME/.local/opt/arm-gnu-toolchain-$PIN_ARM_TOOLCHAIN_VERSION"
+  fi
   if [ -n "${PICO_TOOLCHAIN_PATH:-}" ]; then
     export PICO_TOOLCHAIN_PATH
     TOOLCHAIN_CC="$PICO_TOOLCHAIN_PATH/bin/arm-none-eabi-gcc"
