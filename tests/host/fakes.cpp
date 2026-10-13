@@ -113,7 +113,8 @@ uint8_t audio_peak_haptic() { return 13; }
 #include "state_mgr.h"
 #include "oled.h"
 #include "voice.h"
-void send_rumble(uint8_t, uint8_t) {}
+std::vector<std::pair<uint8_t, uint8_t>> g_fake_rumbles;
+void send_rumble(uint8_t l, uint8_t r) { g_fake_rumbles.push_back({l, r}); }
 uint8_t grip_test_level(bool) { return 64; }
 void state_get_led(uint8_t *r, uint8_t *g, uint8_t *b) { *r = 1; *g = 2; *b = 3; }
 uint8_t state_get_player_leds() { return 0x04; }

@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <map>
+#include <utility>
 #include <vector>
 void fake_flash_erase_all();
 extern bool g_fake_flash_fail;
@@ -17,3 +18,4 @@ extern std::vector<std::vector<uint8_t>> g_fake_feature_sets;
 extern int g_fake_feature_gets;
 extern void (*g_fake_feature_get_hook)(uint8_t id);
 extern std::vector<std::vector<uint8_t>> g_fake_control_sends;  // bt_send_control (raw, e.g. SET 0x65)
+extern std::vector<std::pair<uint8_t, uint8_t>> g_fake_rumbles;  // send_rumble (left, right), the grip test

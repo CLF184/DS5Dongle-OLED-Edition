@@ -32,7 +32,49 @@
 // main.cpp: the grip test's rumble (0x0E).
 void send_rumble(uint8_t left, uint8_t right);
 uint8_t grip_test_level(bool left);
-static uint64_t s_rumble_stop_us = 0; // a grip test is buzzing until then
+
+// The grip test (0xF6 0x0E [side, tenths]): a steady rumble on one or both
+// grips until s_grip_until_us. The rumble-only report is sent again every
+// kGripRefreshUs so it never lapses (and so a host report that zeroes the
+// motors meanwhile is corrected within one refresh; main.cpp also stamps the
+// test's levels on every forwarded host report, grip_test_hold()).
+constexpr uint64_t kGripRefreshUs = 100'000;
+constexpr uint8_t kGripDefaultTenths = 5;  // no duration byte: 0.5 s, as before 1.15
+constexpr uint8_t kGripMaxTenths = 50;     // 5 s
+static uint64_t s_grip_until_us = 0;       // 0: no test running
+static uint64_t s_grip_next_us = 0;
+static uint8_t s_grip_side = 0;            // 0 left, 1 right, 2 both
+
+static void grip_levels(uint8_t *left, uint8_t *right) {
+    *left = s_grip_side != 1 ? grip_test_level(true) : 0;
+    *right = s_grip_side != 0 ? grip_test_level(false) : 0;
+}
+
+bool grip_test_hold(uint8_t *left, uint8_t *right) {
+    if (!s_grip_until_us) return false;
+    grip_levels(left, right);
+    return true;
+}
+
+static void grip_test_task() {
+    if (!s_grip_until_us) return;
+    if (!bt_is_connected()) {  // gone: nothing to stop
+        s_grip_until_us = 0;
+        return;
+    }
+    const uint64_t now = time_us_64();
+    if (now >= s_grip_until_us) {
+        s_grip_until_us = 0;
+        send_rumble(0, 0);
+        return;
+    }
+    if (now >= s_grip_next_us) {
+        uint8_t l, r;
+        grip_levels(&l, &r);
+        send_rumble(l, r);
+        s_grip_next_us = now + kGripRefreshUs;
+    }
+}
 
 uint16_t cpu_temp_raw_smoothed() {
     // One-time ADC bring-up. This is the only place the ADC is initialised
@@ -103,6 +145,7 @@ static uint32_t s_host_gen = 0;
 static bool s_pending = false;
 static uint8_t s_pending_func = 0;
 static uint8_t s_pending_arg = 0;
+static uint8_t s_pending_arg2 = 0;  // 0x0E: the duration in tenths (0 = stop)
 static uint64_t s_pending_due_us = 0;
 
 uint32_t cmd_host_config_gen() { return s_host_gen; }
@@ -218,10 +261,7 @@ void cmd_task() {
 #else
     dse_task(true);
 #endif
-    if (s_rumble_stop_us && time_us_64() >= s_rumble_stop_us) {
-        s_rumble_stop_us = 0;
-        if (bt_is_connected()) send_rumble(0, 0);
-    }
+    grip_test_task();
     if (!s_pending || time_us_64() < s_pending_due_us) return;
     s_pending = false;
     uint8_t result = CMD_RESULT_OK;
@@ -260,13 +300,23 @@ void cmd_task() {
             if (bt_is_connected()) oled_send_trigger_preset(s_pending_arg);
             else result = CMD_RESULT_FAILED;
             break;
-        case 0x0E: // grip test: 0 left, 1 right, 2 both, ~0.5 s at the current strengths
+        case 0x0E: // grip test: 0 left, 1 right, 2 both, held steadily for arg2 tenths at the current strengths
+            if (s_pending_arg2 == 0) {  // stop (proto 1.15)
+                if (s_grip_until_us && bt_is_connected()) send_rumble(0, 0);
+                s_grip_until_us = 0;
+                break;
+            }
             if (!bt_is_connected()) {
+                s_grip_until_us = 0;
                 result = CMD_RESULT_FAILED;
                 break;
             }
-            send_rumble(s_pending_arg != 1 ? grip_test_level(true) : 0, s_pending_arg != 0 ? grip_test_level(false) : 0);
-            s_rumble_stop_us = time_us_64() + 500000;
+            // A new test replaces a running one (side and time) at once; its
+            // report sets both motors, so the other side stops with no gap.
+            s_grip_side = s_pending_arg;
+            s_grip_until_us = time_us_64() + (uint64_t) s_pending_arg2 * 100'000;
+            s_grip_next_us = 0;
+            grip_test_task();  // the first report now
             break;
         case 0x0B:
             result = config_save_narrator(s_pending_arg) ? CMD_RESULT_OK : CMD_RESULT_FAILED;
@@ -456,7 +506,8 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         // reduction, speaker pre-gain, volume lock, mic and speaker choice,
         // status pin), read with a GET 0xF7 of sizeof(Config_body).
         // bit2 (proto 1.14): PC sleep options (0xF6 0x17, [47]).
-        buffer[46] = (ENABLE_COMPANION_VENDOR ? 0x01 : 0) | 0x02 | 0x04;
+        // bit3 (proto 1.15): timed grip test (0xF6 0x0E [side, tenths]).
+        buffer[46] = (ENABLE_COMPANION_VENDOR ? 0x01 : 0) | 0x02 | 0x04 | 0x08;
         if (reqlen < 48) return 47;
         buffer[47] = config_power_flags();
         return 48;
@@ -743,6 +794,9 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     //   0x0B [v] narrator: 0xFF off, 1..7 language; saved (deferred)
     //   0x0C [line][lang] say a narrator line now (app preview)
     //   0x0D calibration (below)           0x10 remap table (below)
+    //   0x0E [side][tenths] grip test: side 0 left, 1 right, 2 both; held
+    //        steadily for tenths x 0.1 s (no byte: 0.5 s; 0 stops; max 5 s);
+    //        a new one replaces the running one (deferred)
     //   0x11 remap table for now (below)   0x12 back to the saved remap table
     //                                         (and the saved stick curves)
     //   0x13 Edge extra buttons (below)    0x14 stick response curves (below)
@@ -792,10 +846,18 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
             if (arg >= kNumTriggerPresets) s_last_result = CMD_RESULT_INVALID;
             else defer(func, arg, 0);
             break;
-        case 0x0E:
+        case 0x0E: {
+            // [side, tenths]: no duration byte = 0.5 s (apps before 1.15),
+            // 0 = stop, else clamped to 0.1..5 s.
+            uint8_t tenths = bufsize >= 3 ? buffer[2] : kGripDefaultTenths;
+            if (tenths > kGripMaxTenths) tenths = kGripMaxTenths;
             if (arg > 2) s_last_result = CMD_RESULT_INVALID;
-            else defer(func, arg, 0);
+            else {
+                defer(func, arg, 0);
+                s_pending_arg2 = tenths;
+            }
             break;
+        }
         case 0x17:
             if (bufsize < 2 || (arg & ~POWER_FLAGS_MASK)) s_last_result = CMD_RESULT_INVALID;
             else defer(func, arg, 0);

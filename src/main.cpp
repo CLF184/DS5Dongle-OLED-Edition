@@ -493,6 +493,14 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
                 // (SetStateData [2] right / light motor, [3] left / heavy).
                 outputData[3 + 2] = scale_rumble(outputData[3 + 2], get_config().haptics_gain_right);
                 outputData[3 + 3] = scale_rumble(outputData[3 + 3], get_config().haptics_gain);
+                // While the app's grip test runs, its rumble wins over the
+                // game's (a game report zeroing the motors would cut it short).
+                uint8_t grip_l, grip_r;
+                if (grip_test_hold(&grip_l, &grip_r)) {
+                    outputData[3] |= 0x03;  // EnableRumbleEmulation | UseRumbleNotHaptics
+                    outputData[3 + 2] = grip_r;
+                    outputData[3 + 3] = grip_l;
+                }
                 if (g_lightbar_override) {
                     outputData[3 + 1] &= ~0x04; // OLED owns the lightbar: drop AllowLedColor
                 }

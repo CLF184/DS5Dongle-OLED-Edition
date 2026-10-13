@@ -34,16 +34,17 @@ void settle() {  // let a deferred command run (reboot/BOOTSEL wait 50 ms)
 }
 }  // namespace
 
-TEST(cmd_identity_reports_protocol_1_14) {
+TEST(cmd_identity_reports_protocol_1_15) {
     fresh();
     uint8_t id[47]{};
     CHECK_EQ(pico_cmd_get(PICO_CMD_IDENTITY, id, sizeof(id)), 47);
     CHECK(std::memcmp(id, "DS5O", 4) == 0);
     CHECK_EQ(id[4], 1);
-    CHECK_EQ(id[5], 14);
+    CHECK_EQ(id[5], 15);
     CHECK_EQ(id[6], 49);
     CHECK(id[46] & 0x02);  // the 1.13 config fields
     CHECK(id[46] & 0x04);  // the 1.14 PC sleep options
+    CHECK(id[46] & 0x08);  // the 1.15 timed grip test
     CHECK_EQ(id[6], sizeof(Config_body));
     CHECK(id[29] & 0x80);  // timings in 0xFC
     CHECK(std::memcmp(id + 30, "Host", 5) == 0);
@@ -315,4 +316,134 @@ TEST(cmd_reconnect_uses_usb_power) {
     const uint8_t rc[] = {0x03};
     pico_cmd_set(PICO_CMD_SET, rc, sizeof(rc));
     CHECK_EQ(g_fake_usb_reconnects, before + 1);
+}
+
+// Protocol 1.15: 0xF6 0x0E [side, tenths] holds the grip test's rumble for the
+// whole time (re-sent every 100 ms, no gap), then stops it; no duration byte
+// keeps the old 0.5 s; > 50 clamps to 5 s; 0 or a new 0x0E replaces it.
+namespace {
+int grip_run(uint64_t us) {  // advance in 10 ms steps; reports sent meanwhile
+    const size_t before = g_fake_rumbles.size();
+    for (uint64_t t = 0; t < us; t += 10'000) {
+        g_fake_time_us += 10'000;
+        cmd_task();
+    }
+    return (int) (g_fake_rumbles.size() - before);
+}
+bool grip_running() {
+    uint8_t l, r;
+    return grip_test_hold(&l, &r);
+}
+}  // namespace
+
+TEST(cmd_grip_test_default_half_second) {
+    fresh();
+    g_fake_rumbles.clear();
+    const uint8_t old_app[] = {0x0E, 2};
+    pico_cmd_set(PICO_CMD_SET, old_app, sizeof(old_app));
+    CHECK_EQ(last_result(), CMD_RESULT_PENDING);
+    grip_run(10'000);
+    CHECK_EQ(last_result(), CMD_RESULT_OK);
+    CHECK(g_fake_rumbles.size() >= 1);
+    CHECK_EQ(g_fake_rumbles[0].first, 64);
+    CHECK_EQ(g_fake_rumbles[0].second, 64);
+    grip_run(400'000);
+    CHECK(grip_running());
+    grip_run(200'000);
+    CHECK(!grip_running());
+    CHECK(g_fake_rumbles.back() == std::make_pair((uint8_t) 0, (uint8_t) 0));
+}
+
+TEST(cmd_grip_test_holds_steadily) {
+    fresh();
+    g_fake_rumbles.clear();
+    const uint8_t left3s[] = {0x0E, 0, 30};
+    pico_cmd_set(PICO_CMD_SET, left3s, sizeof(left3s));
+    grip_run(10'000);
+    CHECK_EQ(last_result(), CMD_RESULT_OK);
+    // Refreshed every 100 ms for 3 s, never a zero in between.
+    grip_run(2'900'000);
+    CHECK(grip_running());
+    CHECK(g_fake_rumbles.size() >= 29);
+    for (auto &r : g_fake_rumbles) {
+        CHECK_EQ(r.first, 64);
+        CHECK_EQ(r.second, 0);
+    }
+    // A host report meanwhile carries the test's levels.
+    uint8_t l = 0, r = 9;
+    CHECK(grip_test_hold(&l, &r));
+    CHECK_EQ(l, 64);
+    CHECK_EQ(r, 0);
+    grip_run(200'000);
+    CHECK(!grip_running());
+    CHECK(g_fake_rumbles.back() == std::make_pair((uint8_t) 0, (uint8_t) 0));
+    const size_t n = g_fake_rumbles.size();
+    grip_run(500'000);
+    CHECK_EQ(g_fake_rumbles.size(), n);  // nothing after the stop
+}
+
+TEST(cmd_grip_test_clamps_to_5s) {
+    fresh();
+    const uint8_t long_one[] = {0x0E, 1, 200};
+    pico_cmd_set(PICO_CMD_SET, long_one, sizeof(long_one));
+    grip_run(4'900'000);
+    CHECK(grip_running());
+    grip_run(200'000);
+    CHECK(!grip_running());
+    const uint8_t shortest[] = {0x0E, 1, 1};
+    pico_cmd_set(PICO_CMD_SET, shortest, sizeof(shortest));
+    grip_run(50'000);
+    CHECK(grip_running());
+    grip_run(100'000);
+    CHECK(!grip_running());
+}
+
+TEST(cmd_grip_test_stop_and_replace) {
+    fresh();
+    g_fake_rumbles.clear();
+    const uint8_t left[] = {0x0E, 0, 30};
+    const uint8_t right[] = {0x0E, 1, 30};
+    const uint8_t stop[] = {0x0E, 2, 0};
+    pico_cmd_set(PICO_CMD_SET, left, sizeof(left));
+    grip_run(1'000'000);
+    // Another side replaces it: one report sets the left motor to 0 and the
+    // right one on, and the right one runs a fresh 3 s.
+    pico_cmd_set(PICO_CMD_SET, right, sizeof(right));
+    g_fake_rumbles.clear();
+    grip_run(10'000);
+    CHECK(!g_fake_rumbles.empty());
+    CHECK(g_fake_rumbles.back() == std::make_pair((uint8_t) 0, (uint8_t) 64));
+    grip_run(2'500'000);
+    CHECK(grip_running());  // the new 3 s, not what was left of the first
+    // Duration 0 stops at once.
+    g_fake_rumbles.clear();
+    pico_cmd_set(PICO_CMD_SET, stop, sizeof(stop));
+    grip_run(10'000);
+    CHECK_EQ(last_result(), CMD_RESULT_OK);
+    CHECK(!grip_running());
+    CHECK_EQ(g_fake_rumbles.size(), 1u);
+    CHECK(g_fake_rumbles[0] == std::make_pair((uint8_t) 0, (uint8_t) 0));
+    // A stop with nothing running is fine and sends nothing.
+    pico_cmd_set(PICO_CMD_SET, stop, sizeof(stop));
+    grip_run(10'000);
+    CHECK_EQ(last_result(), CMD_RESULT_OK);
+    CHECK_EQ(g_fake_rumbles.size(), 1u);
+    // Bad side, no controller.
+    const uint8_t bad[] = {0x0E, 3, 30};
+    pico_cmd_set(PICO_CMD_SET, bad, sizeof(bad));
+    CHECK_EQ(last_result(), CMD_RESULT_INVALID);
+    g_fake_bt_connected = false;
+    pico_cmd_set(PICO_CMD_SET, left, sizeof(left));
+    grip_run(10'000);
+    CHECK_EQ(last_result(), CMD_RESULT_FAILED);
+    CHECK(!grip_running());
+    // A disconnect mid-test ends it.
+    g_fake_bt_connected = true;
+    pico_cmd_set(PICO_CMD_SET, left, sizeof(left));
+    grip_run(10'000);
+    CHECK(grip_running());
+    g_fake_bt_connected = false;
+    grip_run(10'000);
+    CHECK(!grip_running());
+    g_fake_bt_connected = true;
 }

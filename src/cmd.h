@@ -21,7 +21,7 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer,uint16_t bufsize);
 #define PICO_CMD_REMAP_EXTRA 0xed // vendor interface only, GET, Edge extra-button remap (proto 1.9)
 #define PICO_CMD_CALIB 0xee       // vendor interface only, GET, calibration body (proto 1.5)
 #define PICO_CMD_OLED_MIRROR 0xef // vendor interface only, GET, 1028 bytes (proto 1.4)
-#define PICO_PROTO_MINOR 14
+#define PICO_PROTO_MINOR 15
 
 // Result of the last 0xF6 SET, reported in 0xF1.
 enum : uint8_t {
@@ -39,6 +39,10 @@ void cmd_task();
 // Bumped on every host-originated config change, so the OLED can re-read the
 // fields it caches (lightbar, brightness, Settings snapshot).
 uint32_t cmd_host_config_gen();
+
+// While the app's grip test (0xF6 0x0E) runs: true, and its motor levels, so
+// main.cpp's host forward keeps them on the game's reports.
+bool grip_test_hold(uint8_t *left, uint8_t *right);
 
 // The connected controller: 0 DualSense, 1 DualSense Edge, 0xFF not known yet
 // (identity [26], 0xEB header [8]).
