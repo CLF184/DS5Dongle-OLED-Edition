@@ -61,12 +61,48 @@ struct __attribute__((packed)) Config_body {
     // Right grip haptics strength [1.0,6.0] (protocol 1.6). Older configs and
     // erased flash (NaN) take the left value, so both sides stay as they were.
     float haptics_gain_right;
+    // Protocol 1.13 (upstream's batch 3, ported): appended, so a body saved
+    // by older firmware (42 bytes, the rest of the page 0xFF) reads every one
+    // as invalid and takes the default below.
+    // Weaker adaptive triggers: 0 = the game's own strength (default; the
+    // game's report passes through untouched, upstream #228), 1..10 = the
+    // controller's TriggerMotorPowerReduction forced on every game report
+    // (upstream a109481 / 0fba807 / a7824d9).
+    uint8_t trigger_reduce;
+    // The controller amp's pre-gain (SetStateData SpeakerCompPreGain): 0 = the
+    // game's own (default), 1..7 forced (upstream cc9be13). Not speaker_volume,
+    // which is our digital gain on the PCM before the encoder.
+    uint8_t speaker_gain;
+    // 1 = games can't change the controller's volume, mic volume, mute or mute
+    // light (their allow bits are cleared on the forward); the PC's own volume
+    // still applies (upstream ca1af99). Default 0.
+    uint8_t lock_volume;
+    // Which microphone the controller uses: 0 auto (default), 1 built-in, 2
+    // headset (SetStateData MicSelect, upstream ea93fad). Off stays
+    // bt_mic_enable.
+    uint8_t mic_select;
+    // Where the controller plays the PC's audio: 0 auto (headset when one is
+    // plugged in, default), 1 speaker, 2 headset, 3 off (upstream ea93fad).
+    uint8_t speaker_select;
+    // A GPIO that shows the controller connection (upstream 86da98c, #225):
+    // 0xFF off (default), else one of status_gpio.h's free pins. Mode 0 = high
+    // while connected, 1 = a 200 ms high pulse when a controller connects.
+    uint8_t status_gpio_pin;
+    uint8_t status_gpio_mode;
 };
 
-// What the dongle does when the PC sleeps (protocol 1.13, src/usb_power.h).
-// Kept after the body, not in it: the 0xF7 config GET is already 63 bytes
-// (body + remap block), the cap of both transports, so a longer body would push
-// the remap block out for every app. Read in identity [47], set with 0xF6 0x17.
+// The body as protocol 1.6 to 1.12 sent it. A config GET (0xF7) for the
+// whole 63 bytes still answers these 42 bytes and then the remap block at 42,
+// so older apps keep finding it; a shorter GET returns the whole body (the
+// app asks for sizeof(Config_body) from protocol 1.13 on).
+constexpr unsigned kConfigBodyV16 = 42;
+static_assert(__builtin_offsetof(Config_body, trigger_reduce) == kConfigBodyV16, "protocol 1.13 fields start after the 1.6 body");
+static_assert(sizeof(Config_body) == 49, "update cmd.cpp, the app's config.ts and CLAUDE.md with the body");
+
+// What the dongle does when the PC sleeps (protocol 1.14, src/usb_power.h).
+// Kept after the body, not in it: set and saved on its own (0xF6 0x17, like
+// the narrator) and read in identity [47], so it never rides on a body write
+// and needs no room in the 63-byte 0xF7 GET (see kConfigBodyV16).
 enum : uint8_t {
     POWER_SLEEP_CONTROLLER_OFF = 0x01, // controller off once the PC has slept 3 s (default on, as upstream)
     POWER_PS_WAKES_PC = 0x02,          // PS button wakes the PC (default off, as upstream enable_wake)

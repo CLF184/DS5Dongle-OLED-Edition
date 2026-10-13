@@ -130,7 +130,7 @@ TEST(ctrl_identity_feature_bit) {
     uint8_t id[47]{};
     CHECK_EQ(pico_cmd_get(PICO_CMD_IDENTITY, id, 46), 46);  // apps before 1.12 get what they asked for
     CHECK_EQ(pico_cmd_get(PICO_CMD_IDENTITY, id, 47), 47);
-    CHECK_EQ(id[5], 13);
+    CHECK_EQ(id[5], PICO_PROTO_MINOR);
     CHECK(id[46] & 0x01);
 }
 

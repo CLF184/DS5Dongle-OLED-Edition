@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstring>
 #include "config.h"
+#include <cstddef>
+#include "status_gpio.h"
 #include "fakes.h"
 #include "flash_layout.h"
 #include "hardware/flash.h"
@@ -22,7 +24,97 @@ TEST(config_erased_flash_gives_documented_defaults) {
     CHECK_EQ(c.narrator_voice, 0xFF);
     CHECK_EQ(c.screen_dim_timeout, 2);
     CHECK_EQ(c.screen_off_timeout, 15);
+    CHECK_EQ(c.polling_rate_mode, 1);  // 500 Hz on a fresh config (upstream 501d435)
+    CHECK_EQ(c.trigger_reduce, 0);
+    CHECK_EQ(c.speaker_gain, 0);
+    CHECK_EQ(c.lock_volume, 0);
+    CHECK_EQ(c.mic_select, 0);
+    CHECK_EQ(c.speaker_select, 0);
+    CHECK_EQ(c.status_gpio_pin, kStatusGpioOff);
+    CHECK_EQ(c.status_gpio_mode, 0);
     CHECK(config_unsaved());  // nothing valid saved yet
+}
+
+// A config saved by 1.6-1.12 firmware: a 42-byte body, the page 0xFF after
+// it. Its settings stay (a saved 250 Hz too), the 1.13 fields take defaults.
+TEST(config_older_body_keeps_settings_and_defaults_the_new_fields) {
+    fake_flash_erase_all();
+    g_fake_flash_fail = false;
+    config_load();
+    Config_body b = get_config();
+    b.polling_rate_mode = 0;  // 250 Hz, saved on purpose
+    b.inactive_time = 40;
+    set_config(b);
+    CHECK(config_save());
+    Config page{};
+    std::memcpy(&page, g_fake_flash + CONFIG_FLASH_OFFSET, sizeof(page));
+    uint8_t *raw = g_fake_flash + CONFIG_FLASH_OFFSET;
+    std::memset(raw + offsetof(Config, body) + kConfigBodyV16, 0xFF, sizeof(Config_body) - kConfigBodyV16);
+    page.size = kConfigBodyV16;
+    std::memcpy(raw + offsetof(Config, size), &page.size, sizeof(page.size));
+    config_default();
+    config_load();
+    const Config_body &c = get_config();
+    CHECK_EQ(c.polling_rate_mode, 0);
+    CHECK_EQ(c.inactive_time, 40);
+    CHECK_EQ(c.trigger_reduce, 0);
+    CHECK_EQ(c.speaker_select, 0);
+    CHECK_EQ(c.status_gpio_pin, kStatusGpioOff);
+}
+
+TEST(config_clamps_the_1_13_fields) {
+    fake_flash_erase_all();
+    config_load();
+    Config_body b = get_config();
+    b.trigger_reduce = 10;
+    b.speaker_gain = 7;
+    b.lock_volume = 1;
+    b.mic_select = 2;
+    b.speaker_select = 3;
+    b.status_gpio_pin = 22;
+    b.status_gpio_mode = 1;
+    set_config(b);
+    CHECK_EQ(get_config().trigger_reduce, 10);
+    CHECK_EQ(get_config().speaker_gain, 7);
+    CHECK_EQ(get_config().lock_volume, 1);
+    CHECK_EQ(get_config().mic_select, 2);
+    CHECK_EQ(get_config().speaker_select, 3);
+    CHECK_EQ(get_config().status_gpio_pin, 22);
+    CHECK_EQ(get_config().status_gpio_mode, 1);
+    b.trigger_reduce = 11;
+    b.speaker_gain = 8;
+    b.lock_volume = 2;
+    b.mic_select = 3;
+    b.speaker_select = 4;
+    b.status_gpio_pin = 9;  // the OLED's chip select
+    b.status_gpio_mode = 2;
+    set_config(b);
+    CHECK_EQ(get_config().trigger_reduce, 0);
+    CHECK_EQ(get_config().speaker_gain, 0);
+    CHECK_EQ(get_config().lock_volume, 0);
+    CHECK_EQ(get_config().mic_select, 0);
+    CHECK_EQ(get_config().speaker_select, 0);
+    CHECK_EQ(get_config().status_gpio_pin, kStatusGpioOff);
+    CHECK_EQ(get_config().status_gpio_mode, 0);
+}
+
+// An older app writes the 42-byte body: the 1.13 fields stay as they are.
+TEST(config_short_host_write_keeps_the_1_13_fields) {
+    fake_flash_erase_all();
+    config_load();
+    Config_body b = get_config();
+    b.trigger_reduce = 4;
+    set_config(reinterpret_cast<const uint8_t *>(&b), sizeof(b));
+    b.trigger_reduce = 0;
+    b.inactive_time = 50;
+    set_config(reinterpret_cast<const uint8_t *>(&b), kConfigBodyV16);
+    CHECK_EQ(get_config().inactive_time, 50);
+    CHECK_EQ(get_config().trigger_reduce, 4);
+}
+
+TEST(status_gpio_pins) {
+    for (int pin : {2, 3, 4, 5, 6, 7, 13, 14, 16, 18, 19, 20, 21, 22, 26, 27, 28, 0xFF}) CHECK(status_gpio_pin_valid((uint8_t) pin));
+    for (int pin : {0, 1, 8, 9, 10, 11, 12, 15, 17, 23, 24, 25, 29, 30, 47, 0xFE}) CHECK(!status_gpio_pin_valid((uint8_t) pin));
 }
 
 TEST(config_save_load_round_trip) {
@@ -60,7 +152,7 @@ TEST(config_clamps_bad_values) {
     CHECK(c.haptics_gain_right == 1.0f);  // falls back to the left grip's
     CHECK(c.speaker_volume == 0.0f);
     CHECK_EQ(c.inactive_time, 30);
-    CHECK_EQ(c.polling_rate_mode, 0);
+    CHECK_EQ(c.polling_rate_mode, 1);  // an invalid rate takes the 500 Hz default
     CHECK_EQ(c.current_slot, 0);
 }
 
@@ -95,7 +187,7 @@ TEST(config_migrates_legacy_sector) {
     CHECK(!config_unsaved());  // written to the new sector
 }
 
-// PC sleep options (Config::power_flags, after the body, protocol 1.13).
+// PC sleep options (Config::power_flags, after the body, protocol 1.14).
 TEST(config_power_flags_defaults_and_round_trip) {
     fake_flash_erase_all();
     g_fake_flash_fail = false;
@@ -108,7 +200,8 @@ TEST(config_power_flags_defaults_and_round_trip) {
     g_fake_flash[CONFIG_FLASH_OFFSET + offsetof(Config, power_flags)] = 0xFF;  // (the fake flash is RAM)
     config_load();
     CHECK_EQ(config_power_flags(), POWER_FLAGS_DEFAULT);
-    CHECK_EQ(sizeof(Config_body), 42u);  // the wire body (0xF7) doesn't grow
+    // Not part of the body (the 49-byte 1.13 body, CRC'd), right after it.
+    CHECK_EQ(offsetof(Config, power_flags), offsetof(Config, body) + sizeof(Config_body));
 
     // Saved on their own: an unsaved body edit stays unsaved.
     CHECK(config_save());

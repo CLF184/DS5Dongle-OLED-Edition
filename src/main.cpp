@@ -15,6 +15,7 @@
 #include "hardware/watchdog.h"
 #include "pico/cyw43_arch.h"
 #include "state_mgr.h"
+#include "status_gpio.h"
 #if ENABLE_SERIAL
 #include "pico/stdio_usb.h"
 #endif
@@ -495,6 +496,11 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
                 if (g_lightbar_override) {
                     outputData[3 + 1] &= ~0x04; // OLED owns the lightbar: drop AllowLedColor
                 }
+                // Protocol 1.13 settings on the game's own report: trigger
+                // reduction, speaker pre-gain, mic choice, volume lock. With
+                // all of them at "the game's own" the report goes out as the
+                // game sent it (upstream #228's fix).
+                state_stamp_config(outputData + 3, true);
                 bt_write(outputData, sizeof(outputData));
                 g_host_out02_to_bt++;
                 break;
@@ -548,6 +554,13 @@ int main() {
     board_init_after_tusb();
 #if ENABLE_SERIAL
     stdio_usb_init();
+    // Debug builds: wait for a serial terminal so the boot log isn't lost
+    // (upstream 356b69c), but not for ever: a debug build with nothing
+    // attached still starts after 5 s.
+    for (const uint64_t until = time_us_64() + 5000 * 1000; !stdio_usb_connected() && time_us_64() < until;) {
+        tud_task();
+    }
+    if (stdio_usb_connected()) sleep_ms(150);
 #endif
 
     if (cyw43_arch_init()) {
@@ -621,6 +634,8 @@ int main() {
         const uint32_t t2 = perf_now();
         perf_record(PERF_TUD, t2 - t1);
         cmd_task();
+        state_config_task();
+        status_gpio_task();
         const uint32_t t2c = perf_now();
         audio_loop();
         voice_task();

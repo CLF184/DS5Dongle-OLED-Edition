@@ -272,7 +272,7 @@ void cmd_task() {
             result = config_save_narrator(s_pending_arg) ? CMD_RESULT_OK : CMD_RESULT_FAILED;
             s_host_gen++;
             break;
-        case 0x17: // PC sleep options (proto 1.13), saved on their own like the narrator
+        case 0x17: // PC sleep options (proto 1.14), saved on their own like the narrator
             result = config_save_power_flags(s_pending_arg) ? CMD_RESULT_OK : CMD_RESULT_FAILED;
             s_host_gen++;
             break;
@@ -333,10 +333,11 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     //   [24] battery level in 10% steps 0..10, 0xFF without a controller
     //   proto 1.7 (when reqlen >= 46): [30..45] board name, ASCII, NUL-padded
     //   proto 1.12 (when reqlen >= 47): [46] feature bits 3, bit0 controller
-    //   health & info (0xEB, 0xF6 0x16)
-    //   proto 1.13 (when reqlen >= 48): [46] bit1 PC sleep options (0xF6 0x17),
-    //   [47] their current bits (POWER_*: bit0 controller off when the PC
-    //   sleeps, bit1 PS wakes the PC; 0 when [46] bit1 is clear)
+    //   health & info (0xEB, 0xF6 0x16); bit1 (1.13) the config body's
+    //   1.13 fields; bit2 (1.14) PC sleep options (0xF6 0x17, [47])
+    //   proto 1.14 (when reqlen >= 48): [47] the PC sleep options' current
+    //   bits (POWER_*: bit0 controller off when the PC sleeps, bit1 PS wakes
+    //   the PC; 0 when [46] bit2 is clear)
     //   proto 1.2 (when reqlen >= 26):
     //   [25] player indicator LEDs set by the host, bits 0..4 left to right
     //   [26] controller model: 0 DualSense, 1 DualSense Edge, 0xFF not known
@@ -451,33 +452,33 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         if (reqlen < 47) return 30 + kBoardNameLen;
         // proto 1.12: [46] a third feature byte. bit0 controller health &
         // info (GET 0xEB, 0xF6 0x16; ctrl_info.cpp).
-        // proto 1.13: bit1 PC sleep options (0xF6 0x17, [47]).
-        buffer[46] = (ENABLE_COMPANION_VENDOR ? 0x01 : 0) | 0x02;
+        // bit1 (proto 1.13): the config body's 1.13 fields (trigger
+        // reduction, speaker pre-gain, volume lock, mic and speaker choice,
+        // status pin), read with a GET 0xF7 of sizeof(Config_body).
+        // bit2 (proto 1.14): PC sleep options (0xF6 0x17, [47]).
+        buffer[46] = (ENABLE_COMPANION_VENDOR ? 0x01 : 0) | 0x02 | 0x04;
         if (reqlen < 48) return 47;
         buffer[47] = config_power_flags();
         return 48;
     }
     if (report_id == 0xf7) {
-        printf("[HID] Receive 0xf7 getting config\n");
-        const size_t cfg_len = sizeof(Config_body);
-        if (cfg_len > reqlen) {
-            printf("[Config] Warning: Config_body overflow\n");
-        }
-        const auto len = std::min(cfg_len, static_cast<size_t>(reqlen));
-        memcpy(buffer, &get_config(), len);
-
-        // OLED Edition: append the button-remap block right after Config_body
-        // when the host asked for enough room. Old clients request exactly
-        // sizeof(Config_body) and never see it; new web tools read config +
-        // remap in one GET (the 0xF6/0xF7 reports are 63 bytes, plenty).
+        // The config body, then (OLED Edition) the button-remap block. Both
+        // transports cap a reply at 63 bytes, and the 1.6 body (42) + the block
+        // (21) already filled them, so from protocol 1.13 a full-size GET still
+        // gets the 1.6 body + the block at 42 (what every app reads the remap
+        // from), and a shorter GET gets the whole body: apps from 1.13 ask for
+        // sizeof(Config_body) (identity [6]); older ones ask for 42 or less.
         //   [+0]      'R'
         //   [+1]      'M'
         //   [+2]      protocol version (kRemapProtoVer)
         //   [+3..+4]  revision uint16 LE (bumps on each successful set)
         //   [+5..+20] 16-byte remap table (source idx -> target idx, 0xFF=off)
         constexpr size_t kRemapBlock = 5 + kRemapCount;
-        if (reqlen >= cfg_len + kRemapBlock) {
-            uint8_t *p = buffer + cfg_len;
+        static_assert(kConfigBodyV16 + kRemapBlock == 63, "the remap block ends the 63-byte config GET");
+        static_assert(sizeof(Config_body) < kConfigBodyV16 + kRemapBlock, "a whole-body GET must be shorter than the remap GET");
+        if (reqlen >= kConfigBodyV16 + kRemapBlock) {
+            memcpy(buffer, &get_config(), kConfigBodyV16);
+            uint8_t *p = buffer + kConfigBodyV16;
             p[0] = 'R';
             p[1] = 'M';
             p[2] = kRemapProtoVer;
@@ -485,8 +486,10 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
             p[3] = (uint8_t)(rev & 0xFF);
             p[4] = (uint8_t)((rev >> 8) & 0xFF);
             remap_get(p + 5);
-            return cfg_len + kRemapBlock;
+            return kConfigBodyV16 + kRemapBlock;
         }
+        const auto len = std::min(sizeof(Config_body), static_cast<size_t>(reqlen));
+        memcpy(buffer, &get_config(), len);
         return len;
     }
     if (report_id == 0xf8) {
@@ -746,7 +749,7 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     //   0x15 reset the timing counters (0xFC [11..62], proto 1.11)
     //   0x16 [dev][action][pages] run a controller test command (proto 1.12,
     //        ctrl_info.cpp; read the answer with GET 0xEB)
-    //   0x17 [flags] PC sleep options (proto 1.13): bit0 controller off when
+    //   0x17 [flags] PC sleep options (proto 1.14): bit0 controller off when
     //        the PC sleeps, bit1 PS button wakes the PC; saved (deferred)
     s_last_result = CMD_RESULT_OK;
     switch (func) {
