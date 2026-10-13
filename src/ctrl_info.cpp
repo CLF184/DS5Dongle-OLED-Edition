@@ -49,6 +49,7 @@ namespace {
 constexpr uint64_t kAnswerTimeoutUs = 3000 * 1000;  // whole request, from the 0x80 SET
 constexpr uint64_t kReaskUs = 150 * 1000;           // a GET 0x81 that got no reply
 constexpr uint64_t kPollGapUs = 10 * 1000;          // between two GET 0x81
+constexpr uint64_t kScrubUs = 1000 * 1000;          // late replies dropped after the end (ColorRead::Scrub)
 
 enum : uint8_t { kStatusComplete = 2, kStatusMore = 3, kStatusTimeout = 0xFF };
 
@@ -61,6 +62,7 @@ struct Request {
 Request s_req;
 uint8_t s_block[kCtrlTestMaxPages * kCtrlTestPageBytes];
 bool s_was_connected = false;
+uint64_t s_scrub_until_us = 0;  // a late reply of ours (it may hold the serial) is dropped until then
 
 bool allowed(uint8_t dev, uint8_t action, uint8_t pages) {
     if (dev == kCtrlTestTelemetryDev && action == kCtrlTestTelemetryAction) return pages >= 1 && pages <= kCtrlTestMaxPages;
@@ -72,9 +74,14 @@ void blank(uint16_t from, uint16_t to) {  // block bytes [from, to)
     if (from < to && to <= sizeof(s_block)) memset(s_block + from, 0, to - from);
 }
 
+bool is_ours(const std::vector<uint8_t> &r) {
+    return r.size() >= 4 && r[0] == 0x81 && r[1] == s_req.dev && r[2] == s_req.action;
+}
+
 void finish(uint8_t state) {
     s_req.state = state;
     s_req.asking = false;
+    s_scrub_until_us = time_us_64() + kScrubUs;
     if (s_req.dev == kCtrlTestTelemetryDev) {
         blank(1, 1 + 17);  // controller serial
         if (is_dse) {
@@ -88,16 +95,8 @@ void finish(uint8_t state) {
     }
 }
 
-// One 0x81 reply. Returns true once the request is over.
+// One 0x81 reply of ours. Returns true once the request is over.
 bool take_reply(const std::vector<uint8_t> &r) {
-    const bool ours = r.size() >= 4 && r[0] == 0x81 && r[1] == s_req.dev && r[2] == s_req.action;
-    if (!ours) {
-        if (s_req.pages > 0) {  // header cleared after the last page
-            finish(CTRL_TEST_DONE);
-            return true;
-        }
-        return false;
-    }
     const uint8_t status = r[3];
     if (status == kStatusTimeout) {
         finish(s_req.pages > 0 ? CTRL_TEST_DONE : CTRL_TEST_NO_ANSWER);
@@ -106,6 +105,9 @@ bool take_reply(const std::vector<uint8_t> &r) {
     if (status != kStatusComplete && status != kStatusMore) return false;  // idle / running
     size_t n = r.size() - 4;
     if (n > kCtrlTestPageBytes) n = kCtrlTestPageBytes;  // the rest is the Bluetooth crc32
+    // A re-asked GET can bring the last page again: it would land unblanked
+    // at the next page's offset (page 0 holds the serial).
+    if (s_req.pages > 0 && memcmp(s_block + (size_t) (s_req.pages - 1) * kCtrlTestPageBytes, r.data() + 4, n) == 0) return false;
     memcpy(s_block + (size_t) s_req.pages * kCtrlTestPageBytes, r.data() + 4, n);
     s_req.pages++;
     if (status == kStatusComplete || s_req.pages >= s_req.max_pages) {
@@ -118,7 +120,9 @@ bool take_reply(const std::vector<uint8_t> &r) {
 
 uint8_t ctrl_test_start(const uint8_t *args, uint16_t len) {
     if (len < 3 || !allowed(args[0], args[1], args[2])) return CMD_RESULT_INVALID;
-    if (!bt_is_connected()) return CMD_RESULT_FAILED;
+    // Not before ctrl_test_task has seen the connection: its connect edge
+    // would turn this request into NO_CONTROLLER in the same loop pass.
+    if (!bt_is_connected() || !s_was_connected) return CMD_RESULT_FAILED;
     if (s_req.state == CTRL_TEST_RUNNING) return CMD_RESULT_BUSY;
     const uint8_t number = (uint8_t) (s_req.number + 1);
     s_req = Request{};
@@ -128,7 +132,12 @@ uint8_t ctrl_test_start(const uint8_t *args, uint16_t len) {
     s_req.max_pages = args[2];
     s_req.number = number;
     memset(s_block, 0, sizeof(s_block));
+    s_scrub_until_us = 0;
     return CMD_RESULT_OK;
+}
+
+bool ctrl_test_owns_0x81() {
+    return s_req.state == CTRL_TEST_RUNNING || (s_scrub_until_us && time_us_64() < s_scrub_until_us);
 }
 
 void ctrl_test_task(bool may_send) {
@@ -142,10 +151,15 @@ void ctrl_test_task(bool may_send) {
         s_req.number = number;
         s_req.state = was_running ? CTRL_TEST_NO_CONTROLLER : CTRL_TEST_IDLE;
         memset(s_block, 0, sizeof(s_block));
+        s_scrub_until_us = 0;
         return;
     }
-    if (s_req.state != CTRL_TEST_RUNNING) return;
     const uint64_t now = time_us_64();
+    if (s_req.state != CTRL_TEST_RUNNING) {
+        if (s_scrub_until_us && now >= s_scrub_until_us) s_scrub_until_us = 0;
+        if (s_scrub_until_us && is_ours(bt_peek_feature(0x81))) bt_drop_feature(0x81);
+        return;
+    }
     if (!s_req.sent) {
         if (!may_send) return;
         uint8_t cmd[63] = {s_req.dev, s_req.action};  // the crc32 is added by set_feature_data
@@ -157,12 +171,15 @@ void ctrl_test_task(bool may_send) {
         return;
     }
     const std::vector<uint8_t> r = bt_peek_feature(0x81);
-    if (!r.empty()) {
+    if (is_ours(r)) {
         bt_drop_feature(0x81);  // each reply is one page: never read it twice
         s_req.asking = false;
         s_req.next_ask_us = now + kPollGapUs;
         if (take_reply(r)) return;
-    }
+    } else if (!r.empty() && s_req.pages > 0) {  // header cleared after the last page
+        finish(CTRL_TEST_DONE);
+        return;
+    }  // anything else isn't ours to drop: the next GET replaces it
     if (now > s_req.deadline_us) {
         finish(s_req.pages > 0 ? CTRL_TEST_DONE : CTRL_TEST_NO_ANSWER);
         return;

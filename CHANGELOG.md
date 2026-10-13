@@ -12,6 +12,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 - **Release and CI gates (quality pass F41-F43):** `tools/check_gitlinks.sh` fails the build when `lib/opus` or `lib/WDL` stops being a submodule gitlink (a committed symlink broke every fresh checkout once, 5d869f1); `tools/release.sh` and the release workflow now run the host unit tests before building the UF2; and `tools/check_ram_residency.sh` checks every CI and release ELF for core1's RAM rule (no `__memcpy_chk` / `__memset_chk` / `__memmove_chk`, and core1's entry, the libopus encode / decode entry points, the resampler's hot methods, the queue ops and our `memcpy` / `memset` / `memmove` in SRAM), which before was only visible on hardware as the OLED's `Drop r` count.
 
+### Fixed
+
+- **Controller health test (protocol 1.12) hardening:** a page the controller answers twice (a re-asked GET) is kept once, where it used to land unblanked at the next page's offset; for 1 s after a test ends, a late reply of ours (it may hold the serial) is dropped from the feature cache instead of being served to a host GET 0x81; while a test runs and during that second, a host SET 0x80 is not forwarded and a host GET 0x81 is refused (stalled), so neither takes the test's pages, and a 0x81 reply that isn't the test's is no longer thrown away; and a 0xF6 0x16 sent in the loop pass the controller connects in answers FAILED instead of being accepted and then reported as "no controller".
+
 ## [0.9.5-dev.6-oled-edition] - 2026-10-12
 
 ### Added

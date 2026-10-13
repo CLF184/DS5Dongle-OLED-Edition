@@ -26,6 +26,7 @@
 #include "remap.h"
 #include "calib.h"
 #include "perf.h"
+#include "ctrl_info.h"
 
 // Pico SDK speciifically for waiting on conditions
 #include "pico/critical_section.h"
@@ -350,6 +351,9 @@ static uint16_t get_report_impl(uint8_t itf, uint8_t report_id, hid_report_type_
         return pico_cmd_get(report_id, buffer, reqlen);
     }
 
+    // The dongle's controller test owns the 0x81 result slot: busy (stall).
+    if (report_id == 0x81 && ctrl_test_owns_0x81()) return 0;
+
     std::vector<uint8_t> feature_data = get_feature_data(report_id, reqlen);
     if (!feature_data.empty()) {
         memcpy(buffer, feature_data.data() + 1, feature_data.size() - 1);
@@ -472,6 +476,7 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
             }
         }
     }
+    if (report_id == 0x80 && ctrl_test_owns_0x81()) return;  // busy: the dongle's test is running
     if (report_id == 0x80 ||
         // DSE: Write Profile Block
         report_id == 0x60 ||

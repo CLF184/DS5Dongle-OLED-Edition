@@ -42,6 +42,12 @@ uint8_t ctrl_test_start(const uint8_t *args, uint16_t len);
 // has finished, so the two never share the controller's single result slot.
 void ctrl_test_task(bool may_send);
 
+// While a test runs, and for a moment after (a late reply may hold the
+// serial), the controller's 0x81 result slot is the dongle's: a host SET 0x80
+// is not forwarded and a host GET 0x81 is refused (stalled) instead of taking
+// one of the test's pages or reading it from the feature cache.
+bool ctrl_test_owns_0x81();
+
 // GET 0xEB with the selector from wValue's high byte. Never writes past reqlen.
 uint16_t ctrl_info_get(uint8_t selector, uint8_t *buffer, uint16_t reqlen);
 

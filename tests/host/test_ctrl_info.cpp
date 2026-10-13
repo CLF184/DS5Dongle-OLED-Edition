@@ -19,6 +19,7 @@ struct SimController {
     std::vector<std::vector<uint8_t>> pages;  // 56 bytes each
     std::vector<uint8_t> statuses;   // per page
     bool clear_after = false;        // header cleared after the last page
+    bool repeat_first = false;       // page 0 served twice (a re-asked GET answered again)
     size_t next = 0;
     bool answers = true;
 };
@@ -43,7 +44,8 @@ void controller_hook(uint8_t id) {
         g_fake_features[0x81] = reply(sim.dev, sim.action, 1, {});
     } else if (sim.next < sim.pages.size()) {
         g_fake_features[0x81] = reply(sim.dev, sim.action, sim.statuses[sim.next], sim.pages[sim.next]);
-        sim.next++;
+        if (sim.repeat_first && sim.next == 0) sim.repeat_first = false;
+        else sim.next++;
     } else if (sim.clear_after) {
         g_fake_features[0x81] = reply(0, 0, 0, {});
     }
@@ -306,4 +308,63 @@ TEST(ctrl_every_selector_stays_in_bounds) {
         }
     }
     g_fake_feature_get_hook = nullptr;
+}
+
+// F14: a request in the loop pass that sees the connection come up used to be
+// accepted and then reported as "no controller" by the connect edge.
+TEST(ctrl_start_before_the_connect_is_seen_fails) {
+    g_fake_bt_connected = false;
+    tick();
+    g_fake_bt_connected = true;
+    CHECK_EQ(run(4, 3, 1), CMD_RESULT_FAILED);
+    tick();
+    CHECK_EQ(state(), CTRL_TEST_IDLE);
+}
+
+// F12: a page answered twice is kept once (it would land unblanked at the next
+// offset), and a late reply after the end is dropped from the cache for ~1 s.
+TEST(ctrl_duplicate_page_and_late_reply_dropped) {
+    connect_fresh(false);
+    const std::vector<uint8_t> b = block(3);
+    serve(b, 2);
+    sim.repeat_first = true;
+    CHECK_EQ(run(0x70, 1, 6), CMD_RESULT_OK);
+    wait_done();
+    CHECK_EQ(state(), CTRL_TEST_DONE);
+    uint8_t h[14];
+    ctrl_info_get(kCtrlInfoSelHeader, h, sizeof(h));
+    CHECK_EQ(h[6], 3);
+    const std::vector<uint8_t> got = read_block(3);
+    CHECK(zeros(got, 1, 18));
+    CHECK(std::memcmp(got.data() + 18, b.data() + 18, b.size() - 18) == 0);
+    // A late answer to one of our GETs, holding the serial page.
+    CHECK(ctrl_test_owns_0x81());
+    g_fake_features[0x81] = reply(0x70, 1, 3, sim.pages[0]);
+    tick();
+    CHECK(g_fake_features.find(0x81) == g_fake_features.end());
+    tick(100);
+    CHECK(!ctrl_test_owns_0x81());
+    g_fake_features[0x81] = reply(0x70, 1, 3, sim.pages[0]);  // past the window: the host's business
+    tick();
+    CHECK(g_fake_features.find(0x81) != g_fake_features.end());
+    g_fake_features.erase(0x81);
+}
+
+// F13: while a test runs the 0x81 slot is the dongle's (main.cpp refuses host
+// SET 0x80 / GET 0x81), and a reply that isn't the test's is left alone.
+TEST(ctrl_running_owns_0x81_and_leaves_other_replies) {
+    connect_fresh(false);
+    CHECK(!ctrl_test_owns_0x81());
+    sim.answers = false;
+    CHECK_EQ(run(0x70, 1, 4), CMD_RESULT_OK);
+    CHECK(ctrl_test_owns_0x81());
+    tick(5);
+    const std::vector<uint8_t> other = reply(0x01, 0x13, 2, {1, 2, 3});
+    g_fake_features[0x81] = other;
+    tick(20);
+    CHECK_EQ(state(), CTRL_TEST_RUNNING);
+    CHECK(g_fake_features[0x81] == other);
+    tick(400);
+    CHECK_EQ(state(), CTRL_TEST_NO_ANSWER);
+    g_fake_features.erase(0x81);
 }
