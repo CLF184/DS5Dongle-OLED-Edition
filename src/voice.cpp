@@ -168,6 +168,13 @@ void voice_task() {
         return;
     }
 
+    // The haptic feedback test is sending its own reports: her frames ride in
+    // them; her clock picks up from now when it ends.
+    if (audio_grip_test_sending()) {
+        s_next_report_us = now + kReportUs;
+        s_lead = 0;
+        return;
+    }
     // No host audio flowing: the line's reports go out on their own clock.
     if (s_pos && !audio_host_streaming() && now >= s_next_report_us) {
         audio_send_voice_report();

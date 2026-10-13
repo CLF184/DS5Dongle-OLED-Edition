@@ -419,11 +419,9 @@ extern "C" int __wrap_flash_safe_execute(void (*func)(void *), void *param, uint
     return rc;
 }
 
-// A USB output report 0x02 (id at [0]) to the controller as BT 0x31: the
-// host's own reports, and the app's grip test (cmd.cpp), which sends the
-// report Linux hid-playstation sends for rumble so it takes the same path.
-// Main-loop context (TinyUSB callbacks). False: too short, not sent.
-bool host_out02_forward(const uint8_t *buffer, uint16_t bufsize) {
+// A USB output report 0x02 (id at [0]) from the host to the controller as
+// BT 0x31. Main-loop context (TinyUSB callbacks). False: too short, not sent.
+static bool host_out02_forward(const uint8_t *buffer, uint16_t bufsize) {
     if (bufsize < 2) return false;
     // state[] still tracks the host's state for the OLED (LED readout,
     // trigger screens) and the BT-connect init.

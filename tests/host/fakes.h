@@ -3,6 +3,7 @@
 #include <map>
 #include <utility>
 #include <vector>
+#include "grip_wave.h"
 void fake_flash_erase_all();
 extern bool g_fake_flash_fail;
 extern uint64_t g_fake_time_us;
@@ -18,4 +19,4 @@ extern std::vector<std::vector<uint8_t>> g_fake_feature_sets;
 extern int g_fake_feature_gets;
 extern void (*g_fake_feature_get_hook)(uint8_t id);
 extern std::vector<std::vector<uint8_t>> g_fake_control_sends;  // bt_send_control (raw, e.g. SET 0x65)
-extern std::vector<std::vector<uint8_t>> g_fake_out02;  // host_out02_forward reports (id at [0]), the grip test
+extern GripWave g_fake_grip;  // the audio_grip_test_* fakes play it (cmd 0xF6 0x0E)

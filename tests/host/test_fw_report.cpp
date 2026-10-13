@@ -80,31 +80,3 @@ TEST(fw_report_host_report_bounds) {
     const uint8_t id_only[1] = {0x20};
     CHECK_EQ(fw_report::host_report(id_only, 1, false, true, buf, 63), 0);
 }
-
-// Update version [44..45]; 0 when nothing (or not a 0x20) is cached.
-TEST(fw_report_update_version) {
-    auto fw = fw_cache(0x0B, 0x00);
-    fw[44] = 0x30; fw[45] = 0x06;
-    CHECK_EQ(fw_report::update_version(fw.data(), fw.size()), 0x0630);
-    CHECK_EQ(fw_report::update_version(nullptr, 0), 0);
-}
-
-// The rumble report Linux actually sent through the dongle (measured on
-// hardware): valid_flag0 0x03, motors, nothing else, for every firmware.
-TEST(fw_report_linux_rumble_report) {
-    uint8_t r[fw_report::kUsbOut02Len];
-    for (uint16_t v : {(uint16_t) 0x0630, (uint16_t) 0x0214, (uint16_t) 0}) {
-        fw_report::linux_rumble_report(r, v, false, 0xFF, 0x80);
-        CHECK_EQ(r[0], 0x02);
-        CHECK_EQ(r[1], 0x03);   // COMPATIBLE_VIBRATION | HAPTICS_SELECT
-        CHECK_EQ(r[3], 0x80);   // motor_right (weak)
-        CHECK_EQ(r[4], 0xFF);   // motor_left (strong)
-        CHECK_EQ(r[39], 0x00);  // no COMPATIBLE_VIBRATION2 (silent on hardware)
-        int nonzero = 0;
-        for (uint8_t b : r) nonzero += b != 0;
-        CHECK_EQ(nonzero, 4);
-    }
-    fw_report::linux_rumble_report(r, 0x0100, true, 1, 2);  // Edge: the same bytes
-    CHECK_EQ(r[1], 0x03);
-    CHECK_EQ(r[39], 0x00);
-}

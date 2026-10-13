@@ -40,9 +40,6 @@ void cmd_task();
 // fields it caches (lightbar, brightness, Settings snapshot).
 uint32_t cmd_host_config_gen();
 
-// True while the app's grip test (0xF6 0x0E) runs.
-bool grip_test_running();
-
 // The connected controller: 0 DualSense, 1 DualSense Edge, 0xFF not known yet
 // (identity [26], 0xEB header [8]).
 uint8_t cmd_controller_model();

@@ -7,6 +7,7 @@
 #include "audio.h"
 #include "bt.h"
 #include "core0_ram.h"
+#include "grip_wave.h"
 #include "haptics_decimate.h"
 #include "resample.h"
 #include "tusb.h"
@@ -298,14 +299,9 @@ static void mic_drain() {
 static uint64_t s_host_audio_us = 0;
 bool audio_host_streaming() { return time_us_64() - s_host_audio_us < 60 * 1000; }
 
-static void CORE0_RAM_FUNC(audio_bt_task)() {
-    if (queue_get_level(&haptics_fifo) < 2) return;
-#if !DISABLE_SPEAKER_PROC
-    const bool spk_ready = g_spk_ready && speaker_output_on();
-    if (spk_ready && queue_get_level(&audio_spk_fifo) < 2) return;
-#endif
-
-    uint8_t pkt[REPORT_SIZE]{};
+// The 0x39 report's header and its haptic block's tag ([0..11]), for every
+// report this file sends; the 128 haptic bytes (2 frames) follow at [12].
+static inline __attribute__((always_inline)) void report_header(uint8_t *pkt) {
     pkt[0] = REPORT_ID;
     pkt[1] = reportSeqCounter << 4;
     reportSeqCounter = (reportSeqCounter + 1) & 0x0F;
@@ -322,6 +318,17 @@ static void CORE0_RAM_FUNC(audio_bt_task)() {
     // Haptics Audio Data (2 frames)
     pkt[10] = 0x12 | 1 << 6 | 1 << 7;
     pkt[11] = SAMPLE_SIZE;
+}
+
+static void CORE0_RAM_FUNC(audio_bt_task)() {
+    if (queue_get_level(&haptics_fifo) < 2) return;
+#if !DISABLE_SPEAKER_PROC
+    const bool spk_ready = g_spk_ready && speaker_output_on();
+    if (spk_ready && queue_get_level(&audio_spk_fifo) < 2) return;
+#endif
+
+    uint8_t pkt[REPORT_SIZE]{};
+    report_header(pkt);
     static haptics_element hap{};
     queue_try_remove(&haptics_fifo, &hap);
     memcpy(pkt + 12, hap.data, SAMPLE_SIZE);
@@ -365,20 +372,7 @@ static void CORE0_RAM_FUNC(audio_bt_task)() {
 void audio_send_voice_report() {
 #if !DISABLE_SPEAKER_PROC
     uint8_t pkt[REPORT_SIZE]{};
-    pkt[0] = REPORT_ID;
-    pkt[1] = reportSeqCounter << 4;
-    reportSeqCounter = (reportSeqCounter + 1) & 0x0F;
-    pkt[2] = 0x11 | 0 << 6 | 1 << 7;
-    pkt[3] = 6;
-    pkt[4] = audio_mic_wanted() ? 0b01111111 : 0b01111110;
-    const auto buf_len = get_config().audio_buffer_length;
-    pkt[5] = buf_len;
-    pkt[6] = buf_len;
-    pkt[7] = buf_len;
-    pkt[8] = buf_len;
-    pkt[9] = packetCounter += 2;
-    pkt[10] = 0x12 | 1 << 6 | 1 << 7;
-    pkt[11] = SAMPLE_SIZE;  // haptics: 2 frames of silence
+    report_header(pkt);  // haptics: 2 frames of silence
     pkt[140] = speaker_block_tag();
     pkt[141] = SPEAKER_OPUS_SIZE;
     if (!voice_take_frames(pkt + 142, pkt + 142 + SPEAKER_OPUS_SIZE, SPEAKER_OPUS_SIZE)) return;
@@ -387,12 +381,71 @@ void audio_send_voice_report() {
 #endif
 }
 
+// The haptic feedback test (0xF6 0x0E, src/grip_wave.h): while it runs, its
+// wave takes the place of the host's / Auto Haptics' samples in audio_loop.
+// With no host audio flowing nothing would carry them, so grip_test_task
+// sends its own 0x39 reports at the haptic packet rate (64 samples, 21.33 ms
+// each): the wave's two frames, and the narrator's frames if she is speaking
+// (voice_task leaves her reports to it meanwhile), else no speaker block (as
+// audio_bt_task sends haptics with the speaker off). When the time is up it
+// sends one silent report so the controller's last packet is silence.
+static GripWave s_grip;
+static GripReportClock s_grip_clock;
+static bool s_grip_tail = false;  // the silent closing report is still to send
+
+void audio_grip_test_start(bool left, bool right, uint32_t samples) {
+    s_grip.start(left, right, samples);
+    if (!s_grip.active()) s_grip_tail = s_grip_clock.running;
+}
+void audio_grip_test_stop() {
+    if (s_grip.active()) s_grip_tail = s_grip_clock.running;
+    s_grip.stop();
+}
+bool audio_grip_test_running() { return s_grip.active(); }
+bool audio_grip_test_sending() { return s_grip_clock.running; }
+
+static void CORE0_RAM_FUNC(grip_test_task)() {
+    if (!s_grip.active() && !s_grip_tail) {
+        s_grip_clock.reset();
+        return;
+    }
+    if (!bt_is_connected()) {  // gone: nothing to play it on
+        s_grip.stop();
+        s_grip_tail = false;
+        s_grip_clock.reset();
+        return;
+    }
+    if (audio_host_streaming()) {  // audio_loop puts the wave in the host's reports
+        s_grip_tail = false;
+        s_grip_clock.reset();
+        return;
+    }
+    const uint64_t now = time_us_64();
+    if (!s_grip_clock.due(now)) return;
+    uint8_t pkt[REPORT_SIZE]{};
+    report_header(pkt);
+    const bool tail = !s_grip.active();
+    s_grip.fill(reinterpret_cast<int8_t *>(pkt + 12), SAMPLE_SIZE, get_config().haptics_gain,
+                get_config().haptics_gain_right);
+#if !DISABLE_SPEAKER_PROC
+    if (voice_take_frames(pkt + 142, pkt + 142 + SPEAKER_OPUS_SIZE, SPEAKER_OPUS_SIZE)) {
+        pkt[140] = speaker_block_tag();
+        pkt[141] = SPEAKER_OPUS_SIZE;
+    }
+#endif
+    bt_write(pkt, sizeof(pkt));
+    g_bt_packets++;
+    s_grip_clock.sent(now);
+    s_grip_tail = !tail && !s_grip.active();
+}
+
 void CORE0_RAM_FUNC(audio_loop)() {
     // Only after enumeration: BT traffic during the fresh-pair feature handshake
     // delays controller detection past the connection watchdog (~10-15 s drop).
     if (tud_mounted()) mic_status_task();
     mic_drain();
     audio_bt_task();
+    grip_test_task();
 
     // 1. 读取 USB 音频数据
     if (!tud_audio_available()) return;
@@ -513,8 +566,13 @@ void CORE0_RAM_FUNC(audio_loop)() {
         // 3. 48 kHz -> 3 kHz (Auto Haptics above still sees every frame, its
         // filters need them). Gain after the rate change, as upstream a55fd46.
         if (!decimator.take()) continue;
-        haptic_buf[haptic_buf_pos++] = haptic_to_s8(h_l, haptics_gain);
-        haptic_buf[haptic_buf_pos++] = haptic_to_s8(h_r, haptics_gain_r);
+        if (s_grip.active()) {  // the haptic feedback test replaces both grips' samples
+            s_grip.next(haptic_buf + haptic_buf_pos, haptics_gain, haptics_gain_r);
+            haptic_buf_pos += 2;
+        } else {
+            haptic_buf[haptic_buf_pos++] = haptic_to_s8(h_l, haptics_gain);
+            haptic_buf[haptic_buf_pos++] = haptic_to_s8(h_r, haptics_gain_r);
+        }
 
         // 4. A full 64-byte frame (32 samples x 2 grips) goes to audio_bt_task.
         if (haptic_buf_pos != SAMPLE_SIZE) {

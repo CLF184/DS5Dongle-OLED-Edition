@@ -68,40 +68,4 @@ inline uint16_t host_report(const uint8_t *real, size_t real_len, bool is_dse, b
     return n;
 }
 
-// Update version [44..45] little-endian (Linux hid-playstation
-// dualsense_get_firmware_info, SDL firmware_version). 0 = unknown.
-constexpr size_t kUpdateVersionOffset = 44;
-inline uint16_t update_version(const uint8_t *rep, size_t len) {
-    if (rep == nullptr || len < kUpdateVersionOffset + 2 || rep[0] != 0x20) return 0;
-    return static_cast<uint16_t>(rep[kUpdateVersionOffset] | (rep[kUpdateVersionOffset + 1] << 8));
-}
-
-// The rumble report Linux hid-playstation sends for FF_RUMBLE
-// (dualsense_output_worker, update_rumble set, nothing else pending): USB
-// output report 0x02, 63 bytes, all zero but valid_flag0 HAPTICS_SELECT
-// (0x02), then COMPATIBLE_VIBRATION2 (valid_flag2 [1 + 38] 0x04) on update
-// version 2.21+ (0x0215) or an Edge, else COMPATIBLE_VIBRATION (flag0 0x01);
-// motor_right [1 + 2] = weak >> 8, motor_left [1 + 3] = strong >> 8. On the
-// owner's DualSense (0x0630) this, through the host forward, is the rumble
-// that feels right; the grip test sends exactly it. Unknown version (0): the
-// v2 mode, as every DualSense since 2021 has it.
-constexpr size_t kUsbOut02Len = 63;
-constexpr uint16_t kVibrationV2Version = 0x0215;  // DS_FEATURE_VERSION(2, 21)
-inline void linux_rumble_report(uint8_t out[kUsbOut02Len], uint16_t update_version, bool edge, uint8_t left,
-                                uint8_t right) {
-    std::memset(out, 0, kUsbOut02Len);
-    out[0] = 0x02;
-    // Measured on hardware (2026-10-13, DualSense update version 0x0630): the
-    // report Linux hid-playstation actually sends for a rumble effect through
-    // the dongle is valid_flag0 = 0x03 (COMPATIBLE_VIBRATION | HAPTICS_SELECT),
-    // valid_flag2 = 0, sent once; that is the steady full-strength rumble.
-    // The COMPATIBLE_VIBRATION2 variant (flag0 0x02 + flag2 0x04) was silent,
-    // and re-sending the report every 100 ms is what made it pulse.
-    (void) update_version;
-    (void) edge;
-    out[1] = 0x03;
-    out[1 + 2] = right;
-    out[1 + 3] = left;
-}
-
 }  // namespace fw_report

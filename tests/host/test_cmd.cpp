@@ -4,6 +4,7 @@
 #include <cstring>
 #include <memory>
 #include <random>
+#include "audio.h"
 #include "cmd.h"
 #include "config.h"
 #include "calib.h"
@@ -318,99 +319,63 @@ TEST(cmd_reconnect_uses_usb_power) {
     CHECK_EQ(g_fake_usb_reconnects, before + 1);
 }
 
-// Protocol 1.15: 0xF6 0x0E [side, tenths] holds the grip test's rumble for the
-// whole time, then stops it; no duration byte keeps the old 0.5 s; > 50
-// clamps to 5 s; 0 or a new 0x0E replaces it. Each report is the one Linux
-// hid-playstation sends for FF_RUMBLE, through the host 0x02 forward: one to
-// start, one with the motors at 0 to end, nothing in between.
+// Protocol 1.15: 0xF6 0x0E [side, tenths] runs the haptic feedback test's
+// wave (audio.cpp, src/grip_wave.h; the fake plays it at 3 kHz) for the whole
+// time on the chosen grip(s): no duration byte keeps the old 0.5 s, > 50
+// clamps to 5 s, 0 stops it, a new 0x0E replaces it.
 namespace {
-int grip_run(uint64_t us) {  // advance in 10 ms steps; reports sent meanwhile
-    const size_t before = g_fake_out02.size();
+struct GripSeen { int left = 0, right = 0; };  // samples played per grip
+GripSeen grip_run(uint64_t us) {  // advance in 10 ms steps (30 samples each)
+    GripSeen seen;
     for (uint64_t t = 0; t < us; t += 10'000) {
         g_fake_time_us += 10'000;
         cmd_task();
+        for (int i = 0; i < 30; i++) {
+            int8_t lr[2];
+            g_fake_grip.next(lr, 1.0f, 1.0f);
+            seen.left += lr[0] != 0;
+            seen.right += lr[1] != 0;
+        }
     }
-    return (int) (g_fake_out02.size() - before);
+    return seen;
 }
-bool grip_running() { return grip_test_running(); }
-uint8_t motor_l(const std::vector<uint8_t> &r) { return r[4]; }  // [1 + 3] motor_left
-uint8_t motor_r(const std::vector<uint8_t> &r) { return r[3]; }  // [1 + 2] motor_right
-// The kernel's report for strong/weak >> 8 = left/right (dualsense_output_worker).
-std::vector<uint8_t> linux_bytes(bool v2, uint8_t left, uint8_t right) {
-    std::vector<uint8_t> r(63, 0);
-    r[0] = 0x02;
-    (void) v2;                // measured: Linux sends the same bytes on every firmware
-    r[1] = 0x03;              // COMPATIBLE_VIBRATION | HAPTICS_SELECT
-    r[3] = right;
-    r[4] = left;
-    return r;
-}
-void set_update_version(uint16_t v) {
-    std::vector<uint8_t> fw(64, 0);
-    fw[0] = 0x20;
-    fw[44] = v & 0xFF;
-    fw[45] = v >> 8;
-    g_fake_features[0x20] = fw;
-}
+bool grip_running() { return audio_grip_test_running(); }
 }  // namespace
 
 TEST(cmd_grip_test_default_half_second) {
     fresh();
-    g_fake_out02.clear();
+    g_fake_grip.stop();
     const uint8_t old_app[] = {0x0E, 2};
     pico_cmd_set(PICO_CMD_SET, old_app, sizeof(old_app));
     CHECK_EQ(last_result(), CMD_RESULT_PENDING);
-    grip_run(10'000);
+    GripSeen seen = grip_run(10'000);
     CHECK_EQ(last_result(), CMD_RESULT_OK);
-    CHECK_EQ(g_fake_out02.size(), 1u);
-    CHECK_EQ(motor_l(g_fake_out02[0]), 64);
-    CHECK_EQ(motor_r(g_fake_out02[0]), 64);
+    CHECK_EQ(seen.left, 30);
+    CHECK_EQ(seen.right, 30);
     grip_run(400'000);
     CHECK(grip_running());
-    CHECK_EQ(g_fake_out02.size(), 1u);  // no refresh: the controller holds it
-    grip_run(200'000);
+    seen = grip_run(200'000);
     CHECK(!grip_running());
-    CHECK_EQ(g_fake_out02.size(), 2u);
-    CHECK_EQ(motor_l(g_fake_out02[1]), 0);
-    CHECK_EQ(motor_r(g_fake_out02[1]), 0);
+    CHECK_EQ(seen.left, 1500 - 41 * 30);  // exactly 0.5 s of samples in all
 }
 
-// The bytes equal Linux's rumble report: v2 (valid_flag2 0x04) on update
-// version 0x0630 (and the Edge), v1 (flag0 0x03) before 2.21; the end report
-// is the same with both motors 0.
-TEST(cmd_grip_test_sends_linux_rumble_bytes) {
+TEST(cmd_grip_test_sides) {
     fresh();
-    is_dse = false;
-    set_update_version(0x0630);
-    g_fake_out02.clear();
     const uint8_t left1s[] = {0x0E, 0, 10};
     pico_cmd_set(PICO_CMD_SET, left1s, sizeof(left1s));
-    grip_run(1'100'000);
-    CHECK_EQ(g_fake_out02.size(), 2u);
-    CHECK(g_fake_out02[0] == linux_bytes(true, 64, 0));
-    CHECK(g_fake_out02[1] == linux_bytes(true, 0, 0));
-
-    set_update_version(0x0214);  // before 2.21
-    g_fake_out02.clear();
-    const uint8_t both1s[] = {0x0E, 2, 10};
-    pico_cmd_set(PICO_CMD_SET, both1s, sizeof(both1s));
-    grip_run(1'100'000);
-    CHECK_EQ(g_fake_out02.size(), 2u);
-    CHECK(g_fake_out02[0] == linux_bytes(false, 64, 64));
-    CHECK(g_fake_out02[1] == linux_bytes(false, 0, 0));
-
-    is_dse = true;  // the Edge: always v2
-    g_fake_out02.clear();
+    GripSeen seen = grip_run(1'100'000);
+    CHECK_EQ(seen.left, 3000);
+    CHECK_EQ(seen.right, 0);
     const uint8_t right1s[] = {0x0E, 1, 10};
     pico_cmd_set(PICO_CMD_SET, right1s, sizeof(right1s));
-    grip_run(10'000);
-    CHECK(g_fake_out02[0] == linux_bytes(true, 0, 64));
-    const uint8_t stop[] = {0x0E, 2, 0};
-    pico_cmd_set(PICO_CMD_SET, stop, sizeof(stop));
-    grip_run(10'000);
-    CHECK(g_fake_out02.back() == linux_bytes(true, 0, 0));
-    is_dse = false;
-    g_fake_features.erase(0x20);
+    seen = grip_run(1'100'000);
+    CHECK_EQ(seen.left, 0);
+    CHECK_EQ(seen.right, 3000);
+    const uint8_t both1s[] = {0x0E, 2, 10};
+    pico_cmd_set(PICO_CMD_SET, both1s, sizeof(both1s));
+    seen = grip_run(1'100'000);
+    CHECK_EQ(seen.left, 3000);
+    CHECK_EQ(seen.right, 3000);
 }
 
 TEST(cmd_grip_test_clamps_to_5s) {
@@ -436,30 +401,23 @@ TEST(cmd_grip_test_stop_and_replace) {
     const uint8_t stop[] = {0x0E, 2, 0};
     pico_cmd_set(PICO_CMD_SET, left, sizeof(left));
     grip_run(1'000'000);
-    // Another side replaces it: one report sets the left motor to 0 and the
-    // right one on, and the right one runs a fresh 3 s.
-    g_fake_out02.clear();
+    // Another side replaces it at once, and runs a fresh 3 s.
     pico_cmd_set(PICO_CMD_SET, right, sizeof(right));
-    grip_run(10'000);
-    CHECK_EQ(g_fake_out02.size(), 1u);
-    CHECK_EQ(motor_l(g_fake_out02[0]), 0);
-    CHECK_EQ(motor_r(g_fake_out02[0]), 64);
+    GripSeen seen = grip_run(10'000);
+    CHECK_EQ(seen.left, 0);
+    CHECK_EQ(seen.right, 30);
     grip_run(2'500'000);
     CHECK(grip_running());  // the new 3 s, not what was left of the first
     // Duration 0 stops at once.
-    g_fake_out02.clear();
     pico_cmd_set(PICO_CMD_SET, stop, sizeof(stop));
-    grip_run(10'000);
+    seen = grip_run(10'000);
     CHECK_EQ(last_result(), CMD_RESULT_OK);
     CHECK(!grip_running());
-    CHECK_EQ(g_fake_out02.size(), 1u);
-    CHECK_EQ(motor_l(g_fake_out02[0]), 0);
-    CHECK_EQ(motor_r(g_fake_out02[0]), 0);
-    // A stop with nothing running is fine and sends nothing.
+    CHECK_EQ(seen.right, 0);
+    // A stop with nothing running is fine.
     pico_cmd_set(PICO_CMD_SET, stop, sizeof(stop));
     grip_run(10'000);
     CHECK_EQ(last_result(), CMD_RESULT_OK);
-    CHECK_EQ(g_fake_out02.size(), 1u);
     // Bad side, no controller.
     const uint8_t bad[] = {0x0E, 3, 30};
     pico_cmd_set(PICO_CMD_SET, bad, sizeof(bad));
@@ -468,14 +426,6 @@ TEST(cmd_grip_test_stop_and_replace) {
     pico_cmd_set(PICO_CMD_SET, left, sizeof(left));
     grip_run(10'000);
     CHECK_EQ(last_result(), CMD_RESULT_FAILED);
-    CHECK(!grip_running());
-    // A disconnect mid-test ends it.
-    g_fake_bt_connected = true;
-    pico_cmd_set(PICO_CMD_SET, left, sizeof(left));
-    grip_run(10'000);
-    CHECK(grip_running());
-    g_fake_bt_connected = false;
-    grip_run(10'000);
     CHECK(!grip_running());
     g_fake_bt_connected = true;
 }

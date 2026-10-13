@@ -108,16 +108,16 @@ uint32_t audio_mic_frames() { return 10; }
 uint32_t audio_mic_plc_frames() { return 11; }
 uint8_t audio_peak_speaker() { return 12; }
 uint8_t audio_peak_haptic() { return 13; }
+GripWave g_fake_grip;
+void audio_grip_test_start(bool left, bool right, uint32_t samples) { g_fake_grip.start(left, right, samples); }
+void audio_grip_test_stop() { g_fake_grip.stop(); }
+bool audio_grip_test_running() { return g_fake_grip.active(); }
+bool audio_grip_test_sending() { return false; }
 
 // --- main.cpp / state_mgr / oled / voice ----------------------------------
 #include "state_mgr.h"
 #include "oled.h"
 #include "voice.h"
-std::vector<std::vector<uint8_t>> g_fake_out02;  // host_out02_forward reports, in order
-bool host_out02_forward(const uint8_t *buffer, uint16_t bufsize) {
-    g_fake_out02.emplace_back(buffer, buffer + bufsize);
-    return true;
-}
 void state_get_led(uint8_t *r, uint8_t *g, uint8_t *b) { *r = 1; *g = 2; *b = 3; }
 uint8_t state_get_player_leds() { return 0x04; }
 void oled_send_trigger_preset(int) {}

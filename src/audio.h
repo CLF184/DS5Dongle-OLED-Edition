@@ -53,4 +53,14 @@ void audio_on_bt_connected();
 // send one report carrying only her frames.
 bool audio_host_streaming();
 void audio_send_voice_report();
+
+// The haptic feedback test (0xF6 0x0E, src/grip_wave.h): a steady wave on the
+// left and/or right grip for `samples` 3 kHz haptic samples, in the 0x39
+// haptic stream. Start replaces a running test; stop ends it at once.
+void audio_grip_test_start(bool left, bool right, uint32_t samples);
+void audio_grip_test_stop();
+bool audio_grip_test_running();
+// The test is sending its own 0x39 reports (no host audio): the narrator's
+// frames ride in them, so voice_task sends none of its own.
+bool audio_grip_test_sending();
 #endif //DS5_BRIDGE_AUDIO_H
