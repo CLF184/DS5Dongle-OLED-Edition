@@ -572,6 +572,8 @@ int main() {
         const uint32_t t1 = perf_now();
         perf_record(PERF_CYW43, t1 - t0);
         tud_task();
+        // Refresh the shared signal reading independently of display polling.
+        if (tud_mounted() && bt_is_connected()) bt_rssi_request();
         const uint32_t t2 = perf_now();
         perf_record(PERF_TUD, t2 - t1);
         cmd_task();

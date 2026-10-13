@@ -878,7 +878,6 @@ __attribute__((noinline)) void render_screen_rssi() {
     draw_text(kContentX, 0, "BT Signal");
     if (bt_is_connected()) {
         int8_t rssi = 0;
-        bt_rssi_request();
         bt_get_signal_strength(&rssi);
         char buf[24];
         snprintf(buf, sizeof(buf), "RSSI: %d dBm", (int)rssi);

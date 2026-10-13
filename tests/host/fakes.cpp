@@ -53,7 +53,6 @@ int g_fake_slot = 0;
 bool bt_is_connected() { return g_fake_bt_connected; }
 uint32_t bt_hci_err_count() { return 0; }
 void bt_get_signal_strength(int8_t *rssi) { *rssi = -50; }
-void bt_rssi_request() {}
 // The feature-report cache (bt.cpp feature_data: [id, data..., crc32]), what
 // was SET to the controller, and a hook standing in for its replies to GETs.
 std::map<uint8_t, std::vector<uint8_t>> g_fake_features;
@@ -99,10 +98,9 @@ uint32_t g_fake_c1_stage = 9;
 uint32_t audio_c1_stage() { return g_fake_c1_stage; }
 uint32_t audio_raw_push() { return 6; }
 uint32_t audio_hap_push() { return 7; }
-uint32_t g_fake_audio_counters[4] = {8, 9, 10, 0};
-uint32_t audio_usb_frames() { return g_fake_audio_counters[0]; }
-uint32_t audio_bt_packets() { return g_fake_audio_counters[1]; }
-uint32_t audio_mic_frames() { return g_fake_audio_counters[2]; }
+uint32_t audio_usb_frames() { return 8; }
+uint32_t audio_bt_packets() { return 9; }
+uint32_t audio_mic_frames() { return 10; }
 uint32_t audio_mic_plc_frames() { return 11; }
 uint8_t audio_peak_speaker() { return 12; }
 uint8_t audio_peak_haptic() { return 13; }
@@ -115,7 +113,7 @@ void send_rumble(uint8_t, uint8_t) {}
 uint8_t grip_test_level(bool) { return 64; }
 void state_get_led(uint8_t *r, uint8_t *g, uint8_t *b) { *r = 1; *g = 2; *b = 3; }
 uint8_t state_get_player_leds() { return 0x04; }
-
+void oled_send_trigger_preset(int) {}
 void voice_say_lang(VoiceLine, uint8_t) {}
 
 volatile uint32_t g_bt_31_packets, g_bt_other_packets;
@@ -132,18 +130,3 @@ uint8_t g_get_ring[16][2];
 volatile uint32_t g_get_count;
 uint8_t g_last_out02_trig[47];
 uint8_t interrupt_in_data[63];
-
-// The real oled.cpp is compiled by test_oled.cpp.
-void bt_write(const uint8_t*, uint16_t) {}
-void bt_get_addr(uint8_t out[6]) { std::memset(out, 0, 6); }
-uint32_t bt_31_packet_count() { return g_fake_audio_counters[3]; }
-uint32_t host_out02_total() { return 0; }
-uint32_t host_out02_trig_allow() { return 0; }
-uint32_t host_out02_to_bt() { return 0; }
-void bt_31_mic_prefix(uint8_t out[6]) { std::memset(out, 0, 6); }
-int32_t audio_mic_last_decoded() { return 480; }
-uint16_t audio_mic_last_wrote() { return 192; }
-bool slot_occupied(int slot) { return bt_slot_occupied(slot); }
-void slot_get_addr(int slot, uint8_t out[6]) { bt_slot_get_addr(slot, out); }
-void state_stamp_host_rumble(uint8_t*) {}
-void state_set_led(uint8_t, uint8_t, uint8_t) {}

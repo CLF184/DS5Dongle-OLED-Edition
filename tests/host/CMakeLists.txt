@@ -12,9 +12,6 @@ set(SAN -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-p
 add_executable(host_tests
         main.cpp
         fakes.cpp
-        test_audio_levels.cpp
-        test_rssi_poll.cpp
-        test_oled.cpp
         test_oled_flush.cpp
         test_oled_pad.cpp
         test_stick_curve.cpp

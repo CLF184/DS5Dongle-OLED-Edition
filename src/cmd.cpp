@@ -479,7 +479,6 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         // [-128,0]
         if (reqlen == 0) return 0;
         int8_t rssi = 0;
-        bt_rssi_request();
         bt_get_signal_strength(&rssi);
         buffer[0] = rssi;
 #if ENABLE_VERBOSE
