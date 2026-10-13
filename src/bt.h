@@ -21,7 +21,8 @@ void bt_send_packet(uint8_t *data, uint16_t len);
 void bt_send_control(uint8_t *data, uint16_t len);
 void bt_send_state();
 void bt_write(const uint8_t *data, uint16_t len);
-void bt_get_signal_strength(int8_t *rssi);
+void bt_get_signal_strength(int8_t *rssi); // cached, read-only
+void bt_rssi_request(); // shared 10 Hz cap, at most one request in flight
 std::vector<uint8_t> get_feature_data(uint8_t reportId,uint16_t len);
 // Side-effect-free read of an already-cached feature report (empty vector if it
 // hasn't arrived yet). Unlike get_feature_data(), never issues an L2CAP request,

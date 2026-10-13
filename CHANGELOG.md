@@ -8,6 +8,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+### Fixed
+
+- Audio Auto Haptics fallback now detects native haptics from each USB audio chunk, independently of the VU peak hold. A native burst could otherwise keep fallback off until the OLED VU page or host diagnostics had read and decayed the meter often enough.
+- Speaker and haptic VU peaks decay with elapsed time, even while the page is closed; reading them no longer changes their value or release speed. A full-scale negative sample saturates the display instead of wrapping to zero. OLED and host RSSI requests share a 10 Hz limit and one outstanding request; the cached RSSI getter is read-only.
+- Diagnostics traffic rates use fixed windows and restart on page entry or after a long gap. Rows leave room for the scroll markers. Settings save failures keep the unsaved marker, and save/reset feedback fits in a temporary footer instead of running past the title.
+
+### Changed
+
+- OLED settings use one descriptor table for labels, ranges, adjustment, formatting and action hints, preserving the existing 17 settings and linked grip adjustment. Rectangle drawing operates on byte spans, and Diagnostics redraws only changed rows, invalidating its cache after another page or the dim pulse clears the framebuffer.
+
 ## [0.9.5-dev.7-oled-edition] - 2026-10-13
 
 ### Changed

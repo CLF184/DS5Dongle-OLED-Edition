@@ -5,6 +5,7 @@
 #include <malloc.h>
 #include <unistd.h>
 #include "audio.h"
+#include "audio_levels.h"
 #include "bt.h"
 #include "resample.h"
 #include "tusb.h"
@@ -168,21 +169,11 @@ static volatile uint32_t g_bt_packets = 0;
 uint32_t audio_usb_frames() { return g_usb_frames; }
 uint32_t audio_bt_packets() { return g_bt_packets; }
 
-// Rolling-peak meters for the OLED VU screen. Updated during audio_loop's
-// per-sample iteration, decayed 12.5 % on each read (so the bar falls back
-// over a few frames if the signal goes quiet).
-static volatile uint16_t g_peak_spk = 0;
-static volatile uint16_t g_peak_hap = 0;
-uint8_t audio_peak_speaker() {
-    const uint16_t v = g_peak_spk;
-    g_peak_spk = (uint16_t)((v * 7) / 8);
-    return (uint8_t)(v >> 7);
-}
-uint8_t audio_peak_haptic() {
-    const uint16_t v = g_peak_hap;
-    g_peak_hap = (uint16_t)((v * 7) / 8);
-    return (uint8_t)(v >> 7);
-}
+// Elapsed-time peak release, shared by the OLED and host telemetry. Both
+// readers are on core0; reads are const and never advance the release.
+static AudioPeak g_peak_spk, g_peak_hap;
+uint8_t audio_peak_speaker() { return g_peak_spk.read(time_us_64()); }
+uint8_t audio_peak_haptic() { return g_peak_hap.read(time_us_64()); }
 
 // Most-recent Opus TOC byte (first byte of the packet). Used by the OLED
 // Diagnostics screen to decode the frame's bandwidth + duration config
@@ -402,8 +393,8 @@ void audio_loop() {
     const float audio_gain = mute[0] ? 0.0f : powf(10.0f, get_config().speaker_volume / 20.0f);
     const float haptics_gain = get_config().haptics_gain;             // left grip
     const float haptics_gain_r = get_config().haptics_gain_right;     // right grip
-    uint16_t spk_max = g_peak_spk;
-    uint16_t hap_max = g_peak_hap;
+    // Fresh chunk peaks: a held VU peak must never decide native silence.
+    uint16_t spk_max = 0, native_max = 0;
 
     // ---- Audio Auto Haptics (borrowed from loteran/DS5Dongle 5d6bc2f) ----
     // Derives a haptic-feedback waveform from the speaker audio so games that
@@ -418,10 +409,8 @@ void audio_loop() {
     static float env_l = 0.0f, env_r = 0.0f;
     constexpr float ENV_ATK = 0.40f;
     constexpr float ENV_REL = 0.025f;
-    constexpr int     NATIVE_SILENT_TIMEOUT = 100;
-    constexpr uint16_t NATIVE_THRESHOLD     = 256;
-    static int native_silent_count = NATIVE_SILENT_TIMEOUT * 2;
-    const bool fallback_active = (auto_mode == 1) && (native_silent_count >= NATIVE_SILENT_TIMEOUT);
+    static NativeHapticsPresence native_haptics;
+    const bool fallback_active = (auto_mode == 1) && native_haptics.silent();
 
     for (int i = 0; i < nframes; i++) {
         // VU peak tracking
@@ -436,8 +425,8 @@ void audio_loop() {
             if (b > spk_max) spk_max = b;
             a = (uint16_t)(hl < 0 ? -hl : hl);
             b = (uint16_t)(hr < 0 ? -hr : hr);
-            if (a > hap_max) hap_max = a;
-            if (b > hap_max) hap_max = b;
+            if (a > native_max) native_max = a;
+            if (b > native_max) native_max = b;
         }
  #if !DISABLE_SPEAKER_PROC
         // speaker_volume can boost up to +12 dB: clip at full scale rather than
@@ -491,13 +480,10 @@ void audio_loop() {
         in_buf[i * 2]     = static_cast<WDL_ResampleSample>(clamp(h_l, -1.0f, 1.0f));
         in_buf[i * 2 + 1] = static_cast<WDL_ResampleSample>(clamp(h_r, -1.0f, 1.0f));
     }
-    g_peak_spk = spk_max;
-    g_peak_hap = hap_max;
-    if (hap_max > NATIVE_THRESHOLD) {
-        native_silent_count = 0;
-    } else if (native_silent_count < NATIVE_SILENT_TIMEOUT * 2) {
-        native_silent_count++;
-    }
+    const uint64_t peak_now = time_us_64();
+    g_peak_spk.record(spk_max, peak_now);
+    g_peak_hap.record(native_max, peak_now);
+    native_haptics.record(native_max);
 
     // 3. 48kHz -> 3kHz 重采样
     static WDL_ResampleSample out_buf[SAMPLE_SIZE]; // 64 floats = 32帧 × 2ch

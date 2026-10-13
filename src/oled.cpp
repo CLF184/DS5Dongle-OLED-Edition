@@ -10,6 +10,7 @@
 #include "config.h"
 #include "state_mgr.h"
 
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include "hardware/spi.h"
@@ -133,24 +134,62 @@ int current_screen = 0;
 constexpr int kLbModeHost = 8;
 constexpr int kNumLbModes = 9;
 
-// Settings screen state
-constexpr int kNumSettingsItems = 17; // 8 fields + 3 auto-haptic + 2 screen-timeout + BT mic + Ctrl-wake + Reset + Wipe
-constexpr int kSettingsAutoHapEnaIdx  = 8;
-constexpr int kSettingsAutoHapGainIdx = 9;
-constexpr int kSettingsAutoHapLpIdx   = 10;
-constexpr int kSettingsScrDimIdx      = 11;
-constexpr int kSettingsScrOffIdx      = 12;
-constexpr int kSettingsBtMicIdx       = 13;
-constexpr int kSettingsCtrlWakeIdx    = 14;
-constexpr int kSettingsResetIdx       = 15;
-constexpr int kSettingsWipeSlotsIdx   = 16;
+// Settings descriptors: keep display and adjustment metadata together.
+enum SetKind : uint8_t { SK_NUM, SK_BOOL, SK_ACTION };
+enum SetFormat : uint8_t { SF_PLAIN, SF_OFF0 };
+enum : uint8_t { SIF_WRAP = 1, SIF_FLOAT = 2, SIF_FLOAT10 = 4, SIF_GRID = 8, SIF_LINK_GRIPS = 16 };
+enum : uint8_t { ACT_NONE, ACT_RESET, ACT_WIPE };
+struct SetItem {
+    const char *label, *unit, *hint;
+    const char* const* names;
+    SetKind kind;
+    SetFormat fmt;
+    uint8_t flags, act, off;
+    int16_t lo, hi, step;
+};
+static const char* const kOnOff[] = {"off", "on"};
+static const char* const kDisabled[] = {"on", "off"};
+static const char* const kPoll[] = {"250Hz", "500Hz", "RT"};
+static const char* const kCtrl[] = {"DS5", "DSE", "Auto"};
+static const char* const kAutoHap[] = {"Off", "Fallback", "Mix", "Replace"};
+static const char* const kAHLp[] = {"80Hz", "160Hz", "250Hz", "400Hz"};
+#define CFG_OFF(field) static_cast<uint8_t>(offsetof(Config_body, field))
+static const SetItem kSetItems[] = {
+    {"Hap Gain", nullptr, nullptr, nullptr, SK_NUM, SF_PLAIN, SIF_FLOAT10 | SIF_LINK_GRIPS, ACT_NONE, CFG_OFF(haptics_gain), 10, 60, 5},
+    {"Spk Vol", "dB", nullptr, nullptr, SK_NUM, SF_PLAIN, SIF_FLOAT | SIF_GRID, ACT_NONE, CFG_OFF(speaker_volume), -100, 12, 5},
+    {"Inact", "min", nullptr, nullptr, SK_NUM, SF_PLAIN, 0, ACT_NONE, CFG_OFF(inactive_time), 10, 60, 5},
+    {"InactDC", nullptr, nullptr, kDisabled, SK_BOOL, SF_PLAIN, 0, ACT_NONE, CFG_OFF(disable_inactive_disconnect), 0, 1, 1},
+    {"Pico LED", nullptr, nullptr, kDisabled, SK_BOOL, SF_PLAIN, 0, ACT_NONE, CFG_OFF(disable_pico_led), 0, 1, 1},
+    {"Poll", nullptr, nullptr, kPoll, SK_NUM, SF_PLAIN, SIF_WRAP, ACT_NONE, CFG_OFF(polling_rate_mode), 0, 2, 1},
+    {"AudBuf", nullptr, nullptr, nullptr, SK_NUM, SF_PLAIN, 0, ACT_NONE, CFG_OFF(audio_buffer_length), 16, 128, 4},
+    {"Ctrl", nullptr, nullptr, kCtrl, SK_NUM, SF_PLAIN, SIF_WRAP, ACT_NONE, CFG_OFF(controller_mode), 0, 2, 1},
+    {"AutoHap", nullptr, nullptr, kAutoHap, SK_NUM, SF_PLAIN, SIF_WRAP, ACT_NONE, CFG_OFF(auto_haptics_enable), 0, 3, 1},
+    {"AH Gain", "%", nullptr, nullptr, SK_NUM, SF_PLAIN, 0, ACT_NONE, CFG_OFF(auto_haptics_gain), 0, 200, 10},
+    {"AH LP", nullptr, nullptr, kAHLp, SK_NUM, SF_PLAIN, SIF_WRAP, ACT_NONE, CFG_OFF(auto_haptics_lowpass), 0, 3, 1},
+    {"ScrDim", "min", nullptr, nullptr, SK_NUM, SF_OFF0, 0, ACT_NONE, CFG_OFF(screen_dim_timeout), 0, 250, 1},
+    {"ScrOff", "min", nullptr, nullptr, SK_NUM, SF_OFF0, 0, ACT_NONE, CFG_OFF(screen_off_timeout), 0, 250, 1},
+    {"BT Mic", nullptr, nullptr, nullptr, SK_BOOL, SF_PLAIN, 0, ACT_NONE, CFG_OFF(bt_mic_enable), 0, 1, 1},
+    {"CtrlWake", nullptr, nullptr, nullptr, SK_BOOL, SF_PLAIN, 0, ACT_NONE, CFG_OFF(controller_wakes_display), 0, 1, 1},
+    {"Reset to defaults", nullptr, "Hold Tri 2s = RESET", nullptr, SK_ACTION, SF_PLAIN, 0, ACT_RESET, 0, 0, 0, 1},
+    {"Wipe all slots", nullptr, "Hold Tri 2s = WIPE", nullptr, SK_ACTION, SF_PLAIN, 0, ACT_WIPE, 0, 0, 0, 1},
+};
+#undef CFG_OFF
+constexpr int kNumSettingsItems = sizeof(kSetItems) / sizeof(kSetItems[0]);
+constexpr int kSettingsResetIdx = kNumSettingsItems - 2;
+constexpr int kSettingsWipeSlotsIdx = kNumSettingsItems - 1;
+
 Config_body settings_local{};
 int settings_sel = 0;
 bool settings_dirty = false;
 bool settings_init_done = false;
 uint8_t settings_last_dpad = 8;  // 8 = released
 uint8_t settings_last_face = 0;
-const char* settings_save_status = "";  // shown briefly after Triangle press
+const char* settings_save_status = ""; // footer feedback, not over the title
+uint64_t settings_status_until_us = 0;
+void settings_show_status(const char *text) {
+    settings_save_status = text;
+    settings_status_until_us = time_us_64() + 2000000u;
+}
 
 // Factory-reset hold-Triangle-2s state. Borrowed from zurce/DS5Dongle-OLED's
 // "hold to wipe" UX pattern (https://github.com/zurce/DS5Dongle-OLED).
@@ -278,7 +317,8 @@ void flush_fb() {
     flush_fb_raw();
 }
 
-void fb_clear() { memset(fb, 0, sizeof(fb)); }
+uint32_t fb_generation = 0; // clearing for another page invalidates cached rows
+void fb_clear() { memset(fb, 0, sizeof(fb)); ++fb_generation; }
 
 void px(int x, int y, bool on) {
     if (x < 0 || x >= kW || y < 0 || y >= kH) return;
@@ -287,25 +327,45 @@ void px(int x, int y, bool on) {
     if (on) *p |= m; else *p &= ~m;
 }
 
+// Byte spans, as in the local port: only the two edge bytes need masks.
+enum SpanOp : uint8_t { SPAN_SET, SPAN_CLEAR, SPAN_XOR };
+inline void span_apply(SpanOp op, uint8_t *p, uint8_t mask) {
+    if (op == SPAN_SET) *p |= mask;
+    else if (op == SPAN_CLEAR) *p &= static_cast<uint8_t>(~mask);
+    else *p ^= mask;
+}
+inline void span(int x, int y, int w, SpanOp op) {
+    if (y < 0 || y >= kH || w <= 0) return;
+    int end = x + w;
+    if (x < 0) x = 0;
+    if (end > kW) end = kW;
+    if (x >= end) return;
+    const int first = x / 8, last = (end - 1) / 8;
+    uint8_t *row = fb + y * kRowBytes;
+    const uint8_t head = 0xFFu >> (x & 7);
+    const uint8_t tail = 0xFFu << (7 - ((end - 1) & 7));
+    if (first == last) { span_apply(op, row + first, head & tail); return; }
+    span_apply(op, row + first, head);
+    for (int i = first + 1; i < last; ++i) span_apply(op, row + i, 0xFF);
+    span_apply(op, row + last, tail);
+}
 void rect_outline(int x, int y, int w, int h) {
-    for (int i = 0; i < w; i++) { px(x + i, y, true); px(x + i, y + h - 1, true); }
-    for (int i = 0; i < h; i++) { px(x, y + i, true); px(x + w - 1, y + i, true); }
+    if (w <= 0 || h <= 0) return;
+    span(x, y, w, SPAN_SET);
+    if (h > 1) span(x, y + h - 1, w, SPAN_SET);
+    for (int j = 1; j < h - 1; ++j) {
+        px(x, y + j, true);
+        px(x + w - 1, y + j, true);
+    }
 }
-
 void rect_filled(int x, int y, int w, int h) {
-    for (int j = 0; j < h; j++)
-        for (int i = 0; i < w; i++)
-            px(x + i, y + j, true);
+    for (int j = 0; j < h; ++j) span(x, y + j, w, SPAN_SET);
 }
-
-// XOR-invert every pixel in a region (used to flash a control "pressed").
+void rect_clear(int x, int y, int w, int h) {
+    for (int j = 0; j < h; ++j) span(x, y + j, w, SPAN_CLEAR);
+}
 void rect_invert(int x, int y, int w, int h) {
-    for (int j = 0; j < h; j++)
-        for (int i = 0; i < w; i++) {
-            const int xx = x + i, yy = y + j;
-            if (xx < 0 || xx >= kW || yy < 0 || yy >= kH) continue;
-            fb[yy * kRowBytes + (xx / 8)] ^= 1 << (7 - (xx % 8));
-        }
+    for (int j = 0; j < h; ++j) span(x, y + j, w, SPAN_XOR);
 }
 
 void draw_char(int x, int y, char c) {
@@ -818,6 +878,7 @@ __attribute__((noinline)) void render_screen_rssi() {
     draw_text(kContentX, 0, "BT Signal");
     if (bt_is_connected()) {
         int8_t rssi = 0;
+        bt_rssi_request();
         bt_get_signal_strength(&rssi);
         char buf[24];
         snprintf(buf, sizeof(buf), "RSSI: %d dBm", (int)rssi);
@@ -850,8 +911,7 @@ __attribute__((noinline)) void render_screen_rssi() {
 int   diag_scroll = 0;
 uint8_t diag_last_dpad = 8; // edge-trigger N/E/S/W like settings_handle_input
 
-// Per-second rates sampled once per render, shared across format_diag_row's
-// rate-based rows so they stay in sync.
+// Per-second rates use a fixed window; formatting rows only reads them.
 struct DiagRates {
     uint32_t usb_rate;
     uint32_t bt_rate;
@@ -860,28 +920,60 @@ struct DiagRates {
 };
 DiagRates g_diag_rates{};
 
-void sample_diag_rates() {
-    static uint32_t prev_us_frames = 0, prev_bt_packets = 0, prev_mic_frames = 0, prev_bt31 = 0;
-    static uint32_t prev_sample_us = 0;
+constexpr uint32_t kRateWindowUs = 1000000u; // 1 s window length
+constexpr uint32_t kRateStaleUs  = 2000000u; // a long gap starts a new window
+constexpr uint32_t kRatePrimeUs  =  200000u; // first window after entering the page:
+                                             // emit an early short-window value so the
+                                             // rows don't sit at 0 for a full second
+
+void sample_diag_rates(bool entered) {
+    static uint32_t base_us_frames = 0, base_bt_packets = 0, base_mic_frames = 0, base_bt31 = 0;
+    static uint32_t win_start_us = 0;
+    static bool     have_value   = false;
+    static bool     initialized  = false;
     const uint32_t now_us = time_us_32();
+
+    if (entered || !initialized) {
+        initialized = true;
+        win_start_us = now_us;
+        base_us_frames  = audio_usb_frames();
+        base_bt_packets = audio_bt_packets();
+        base_mic_frames = audio_mic_frames();
+        base_bt31       = bt_31_packet_count();
+        have_value = false;
+        g_diag_rates = {};
+        return;
+    }
+
+    const uint32_t dt_us  = now_us - win_start_us;   // uint32 math is wrap-safe
+    const bool     stale  = dt_us > kRateStaleUs;
+    if (!stale && dt_us < kRateWindowUs && (have_value || dt_us < kRatePrimeUs)) {
+        return;                              // window not finished — keep showing the last values
+    }
+
     const uint32_t cur_us_frames  = audio_usb_frames();
     const uint32_t cur_bt_packets = audio_bt_packets();
     const uint32_t cur_mic_frames = audio_mic_frames();
     const uint32_t cur_bt31       = bt_31_packet_count();
-    if (prev_sample_us != 0 && now_us > prev_sample_us) {
-        const uint32_t dt_us = now_us - prev_sample_us;
-        if (dt_us > 0) {
-            g_diag_rates.usb_rate  = (uint32_t)(((uint64_t)(cur_us_frames  - prev_us_frames)  * 1000000u) / dt_us);
-            g_diag_rates.bt_rate   = (uint32_t)(((uint64_t)(cur_bt_packets - prev_bt_packets) * 1000000u) / dt_us);
-            g_diag_rates.mic_rate  = (uint32_t)(((uint64_t)(cur_mic_frames - prev_mic_frames) * 1000000u) / dt_us);
-            g_diag_rates.bt31_rate = (uint32_t)(((uint64_t)(cur_bt31       - prev_bt31)       * 1000000u) / dt_us);
-        }
+
+    if (stale) {
+        // After sleep, don't present old traffic as a current measurement.
+        have_value = false;
+        g_diag_rates = {};
+    } else {
+        g_diag_rates.usb_rate  = (uint32_t)(((uint64_t)(cur_us_frames  - base_us_frames)  * 1000000u) / dt_us);
+        g_diag_rates.bt_rate   = (uint32_t)(((uint64_t)(cur_bt_packets - base_bt_packets) * 1000000u) / dt_us);
+        g_diag_rates.mic_rate  = (uint32_t)(((uint64_t)(cur_mic_frames - base_mic_frames) * 1000000u) / dt_us);
+        g_diag_rates.bt31_rate = (uint32_t)(((uint64_t)(cur_bt31       - base_bt31)       * 1000000u) / dt_us);
+        have_value = true;
     }
-    prev_us_frames  = cur_us_frames;
-    prev_bt_packets = cur_bt_packets;
-    prev_mic_frames = cur_mic_frames;
-    prev_bt31       = cur_bt31;
-    prev_sample_us  = now_us;
+
+    // Baseline and window start move together — they always describe one window.
+    base_us_frames  = cur_us_frames;
+    base_bt_packets = cur_bt_packets;
+    base_mic_frames = cur_mic_frames;
+    base_bt31       = cur_bt31;
+    win_start_us    = now_us;
 }
 
 // Row list ordered by relevance: always-useful at top, parked-mic-investigation
@@ -968,25 +1060,40 @@ void diag_handle_input(int visible) {
     if (diag_scroll > max_top) diag_scroll = max_top;
 }
 
-__attribute__((noinline)) void render_screen_diag() {
-    fb_clear();
-    draw_text(kContentX, 0, "Diagnostics");
-
-    sample_diag_rates();
+__attribute__((noinline)) void render_screen_diag(bool entered) {
     constexpr int kVisible = 5;
-    diag_handle_input(kVisible);
-
-    char line[28];
-    for (int i = 0; i < kVisible && diag_scroll + i < kNumDiagRows; i++) {
-        format_diag_row(diag_scroll + i, line, sizeof(line));
-        draw_text(kContentX, 9 + i * 9, line);
+    static uint32_t seen_generation = 0;
+    static char last_row[kVisible][20]{};
+    static bool valid[kVisible]{};
+    static uint8_t last_markers = 0xFF;
+    const bool force = entered || seen_generation != fb_generation;
+    if (force) {
+        fb_clear();
+        draw_text(kContentX, 0, "Diagnostics");
+        memset(valid, 0, sizeof(valid));
+        last_markers = 0xFF;
     }
-
-    // Scroll indicators along the right edge, adjacent to the visible content
-    // rather than in a footer — keeps the bottom row available for content.
-    if (diag_scroll > 0)                       draw_text(120, 9,  "^");
-    if (diag_scroll + kVisible < kNumDiagRows) draw_text(120, 45, "v");
-
+    seen_generation = fb_generation;
+    sample_diag_rates(entered);
+    diag_handle_input(kVisible);
+    char line[20]; // 113 px: leave x=120..127 for scroll markers
+    for (int i = 0; i < kVisible; ++i) {
+        const int row = diag_scroll + i;
+        if (row < kNumDiagRows) format_diag_row(row, line, sizeof(line));
+        else line[0] = '\0';
+        if (valid[i] && strcmp(last_row[i], line) == 0) continue;
+        rect_clear(kContentX, 9 + i * 9, 113, 9);
+        draw_text(kContentX, 9 + i * 9, line);
+        snprintf(last_row[i], sizeof(last_row[i]), "%s", line);
+        valid[i] = true;
+    }
+    const uint8_t markers = (diag_scroll > 0 ? 1 : 0) | (diag_scroll + kVisible < kNumDiagRows ? 2 : 0);
+    if (markers != last_markers) {
+        rect_clear(120, 9, 8, 45);
+        if (markers & 1) draw_text(120, 9, "^");
+        if (markers & 2) draw_text(120, 45, "v");
+        last_markers = markers;
+    }
     flush_fb();
 }
 
@@ -1506,88 +1613,36 @@ __attribute__((noinline)) void render_screen_vu() {
 }
 
 void settings_adjust(int delta) {
-    Config_body &c = settings_local;
+    const SetItem &it = kSetItems[settings_sel];
+    if (it.kind == SK_ACTION) return;
     settings_dirty = true;
-    switch (settings_sel) {
-        case 0: { // haptics_gain  [1.0, 6.0] step 0.5; both grips move together
-            auto step = [delta](float g) {
-                int v = (int)(g * 10.0f + 0.5f) + delta * 5;
-                if (v < 10) v = 10; if (v > 60) v = 60;
-                return v / 10.0f;
-            };
-            c.haptics_gain = step(c.haptics_gain);
-            c.haptics_gain_right = step(c.haptics_gain_right);
-            break;
+    uint8_t *p = reinterpret_cast<uint8_t*>(&settings_local) + it.off;
+    if (it.kind == SK_BOOL) { *p ^= 1; return; }
+    const bool is_float = it.flags & (SIF_FLOAT | SIF_FLOAT10);
+    auto adjust = [&](float current) {
+        int v = (it.flags & SIF_FLOAT10) ? static_cast<int>(current * 10.0f + 0.5f) : static_cast<int>(current);
+        if (it.flags & SIF_GRID) {
+            auto floor_grid = [&](int x) { return x >= 0 ? x / it.step * it.step : -((-x + it.step - 1) / it.step * it.step); };
+            auto ceil_grid = [&](int x) { return -floor_grid(-x); };
+            for (int i = 0; i < (delta < 0 ? -delta : delta); ++i)
+                v = delta > 0 ? floor_grid(v) + it.step : ceil_grid(v) - it.step;
+        } else v += delta * it.step;
+        if (it.flags & SIF_WRAP) {
+            if (v < it.lo) v = it.hi;
+            if (v > it.hi) v = it.lo;
+        } else {
+            if (v < it.lo) v = it.lo;
+            if (v > it.hi) v = it.hi;
         }
-        case 1: { // speaker_volume  [-100, +12] step 5 on multiples of 5 (ends at +12)
-            // On the 5 dB grid, so stepping down from +12 reaches 10, 5, 0.
-            const auto floor5 = [](int x) { return x >= 0 ? x / 5 * 5 : -((-x + 4) / 5 * 5); };
-            const auto ceil5 = [](int x) { return x >= 0 ? (x + 4) / 5 * 5 : -((-x) / 5 * 5); };
-            int v = (int)c.speaker_volume;
-            for (int i = 0; i < (delta < 0 ? -delta : delta); i++) v = delta > 0 ? floor5(v) + 5 : ceil5(v) - 5;
-            if (v < -100) v = -100; if (v > 12) v = 12;
-            c.speaker_volume = (float)v;
-            break;
-        }
-        case 2: { // inactive_time  [10, 60] step 5
-            int v = (int)c.inactive_time + delta * 5;
-            if (v < 10) v = 10; if (v > 60) v = 60;
-            c.inactive_time = (uint8_t)v;
-            break;
-        }
-        case 3: c.disable_inactive_disconnect ^= 1; break;
-        case 4: c.disable_pico_led ^= 1; break;
-        case 5: { // polling_rate_mode  0..2
-            int v = (int)c.polling_rate_mode + delta;
-            if (v < 0) v = 2; if (v > 2) v = 0;
-            c.polling_rate_mode = (uint8_t)v;
-            break;
-        }
-        case 6: { // audio_buffer_length  [16, 128] step 4
-            int v = (int)c.audio_buffer_length + delta * 4;
-            if (v < 16) v = 16; if (v > 128) v = 128;
-            c.audio_buffer_length = (uint8_t)v;
-            break;
-        }
-        case 7: { // controller_mode  0..2
-            int v = (int)c.controller_mode + delta;
-            if (v < 0) v = 2; if (v > 2) v = 0;
-            c.controller_mode = (uint8_t)v;
-            break;
-        }
-        case 8: { // auto_haptics_enable  0..3
-            int v = (int)c.auto_haptics_enable + delta;
-            if (v < 0) v = 3; if (v > 3) v = 0;
-            c.auto_haptics_enable = (uint8_t)v;
-            break;
-        }
-        case 9: { // auto_haptics_gain  [0, 200] step 10
-            int v = (int)c.auto_haptics_gain + delta * 10;
-            if (v < 0) v = 0; if (v > 200) v = 200;
-            c.auto_haptics_gain = (uint8_t)v;
-            break;
-        }
-        case 10: { // auto_haptics_lowpass  0..3
-            int v = (int)c.auto_haptics_lowpass + delta;
-            if (v < 0) v = 3; if (v > 3) v = 0;
-            c.auto_haptics_lowpass = (uint8_t)v;
-            break;
-        }
-        case 11: { // screen_dim_timeout  [0,250] min, 0 = disabled
-            int v = (int)c.screen_dim_timeout + delta;
-            if (v < 0) v = 0; if (v > 250) v = 250;
-            c.screen_dim_timeout = (uint8_t)v;
-            break;
-        }
-        case 12: { // screen_off_timeout  [0,250] min, 0 = disabled
-            int v = (int)c.screen_off_timeout + delta;
-            if (v < 0) v = 0; if (v > 250) v = 250;
-            c.screen_off_timeout = (uint8_t)v;
-            break;
-        }
-        case 13: c.bt_mic_enable ^= 1; break; // BT mic on/off
-        case 14: c.controller_wakes_display ^= 1; break; // controller activity wakes OLED on/off
-    }
+        return (it.flags & SIF_FLOAT10) ? v / 10.0f : static_cast<float>(v);
+    };
+    if (is_float) {
+        float value;
+        memcpy(&value, p, sizeof(value));  // packed float may be unaligned
+        value = adjust(value);
+        memcpy(p, &value, sizeof(value));
+        if (it.flags & SIF_LINK_GRIPS) settings_local.haptics_gain_right = adjust(settings_local.haptics_gain_right);
+    } else *p = static_cast<uint8_t>(adjust(*p));
 }
 
 void settings_handle_input() {
@@ -1623,20 +1678,21 @@ void settings_handle_input() {
                 settings_local = get_config();
                 lightbar_load_config(); // refresh RAM lightbar state (no reboot here)
                 settings_dirty = false;
-                settings_save_status = "Reset!";
+                settings_show_status("Reset!");
             } else {
-                settings_save_status = "Reset FAIL";
+                settings_show_status("Reset FAIL");
             }
         } else {
             bt_wipe_all_slots();
-            settings_save_status = "Slots wiped!";
+            settings_show_status("Slots wiped!");
         }
     }
     if (!tri_now && tri_prev) {
         if (!is_hold_item && !settings_reset_triggered) {
             set_config(settings_local);
-            settings_save_status = config_save() ? "Saved!" : "Save FAIL";
-            if (settings_save_status[0] == 'S' && settings_save_status[1] == 'a') {
+            const bool saved = config_save();
+            settings_show_status(saved ? "Saved!" : "Save FAIL");
+            if (saved) {
                 settings_dirty = false;
             }
         }
@@ -1646,55 +1702,29 @@ void settings_handle_input() {
 }
 
 __attribute__((noinline)) void format_settings_item(int idx, char* line, size_t n) {
-    const Config_body &c = settings_local;
-    const char *cur = (idx == settings_sel) ? ">" : " ";
-    switch (idx) {
-        case 0: {
-            int g = (int)(c.haptics_gain * 10.0f + 0.5f);
-            int r = (int)(c.haptics_gain_right * 10.0f + 0.5f);
-            if (g == r) snprintf(line, n, "%s Hap Gain %d.%dx", cur, g / 10, g % 10);
-            else snprintf(line, n, "%s Hap L%d.%d R%d.%d", cur, g / 10, g % 10, r / 10, r % 10);
-            break;
+    const SetItem &it = kSetItems[idx];
+    const char *cur = idx == settings_sel ? ">" : " ";
+    if (it.kind == SK_ACTION) { snprintf(line, n, "%s %s", cur, it.label); return; }
+    const uint8_t *p = reinterpret_cast<const uint8_t*>(&settings_local) + it.off;
+    char value[16];
+    if (it.flags & SIF_FLOAT10) {
+        float f; memcpy(&f, p, sizeof(f));
+        const int g = static_cast<int>(f * 10.0f + 0.5f);
+        const int r = static_cast<int>(settings_local.haptics_gain_right * 10.0f + 0.5f);
+        if ((it.flags & SIF_LINK_GRIPS) && g != r) {
+            snprintf(line, n, "%s Hap L%d.%d R%d.%d", cur, g / 10, g % 10, r / 10, r % 10);
+            return;
         }
-        case 1: snprintf(line, n, "%s Spk Vol %+ddB", cur, (int)c.speaker_volume); break;
-        case 2: snprintf(line, n, "%s Inact %umin", cur, c.inactive_time); break;
-        case 3: snprintf(line, n, "%s InactDC %s", cur, c.disable_inactive_disconnect ? "off" : "on"); break;
-        case 4: snprintf(line, n, "%s Pico LED %s", cur, c.disable_pico_led ? "off" : "on"); break;
-        case 5: {
-            const char* names[3] = {"250Hz", "500Hz", "RT"};
-            snprintf(line, n, "%s Poll %s", cur, names[c.polling_rate_mode % 3]);
-            break;
-        }
-        case 6: snprintf(line, n, "%s AudBuf %u", cur, c.audio_buffer_length); break;
-        case 7: {
-            const char* names[3] = {"DS5", "DSE", "Auto"};
-            snprintf(line, n, "%s Ctrl %s", cur, names[c.controller_mode % 3]);
-            break;
-        }
-        case 8: {
-            const char* names[4] = {"Off", "Fallback", "Mix", "Replace"};
-            snprintf(line, n, "%s AutoHap %s", cur, names[c.auto_haptics_enable & 3]);
-            break;
-        }
-        case 9: snprintf(line, n, "%s AH Gain %u%%", cur, c.auto_haptics_gain); break;
-        case 10: {
-            const char* names[4] = {"80Hz", "160Hz", "250Hz", "400Hz"};
-            snprintf(line, n, "%s AH LP %s", cur, names[c.auto_haptics_lowpass & 3]);
-            break;
-        }
-        case 11:
-            if (c.screen_dim_timeout == 0) snprintf(line, n, "%s ScrDim off", cur);
-            else snprintf(line, n, "%s ScrDim %umin", cur, c.screen_dim_timeout);
-            break;
-        case 12:
-            if (c.screen_off_timeout == 0) snprintf(line, n, "%s ScrOff off", cur);
-            else snprintf(line, n, "%s ScrOff %umin", cur, c.screen_off_timeout);
-            break;
-        case 13: snprintf(line, n, "%s BT Mic %s", cur, c.bt_mic_enable ? "on" : "off"); break;
-        case 14: snprintf(line, n, "%s CtrlWake %s", cur, c.controller_wakes_display ? "on" : "off"); break;
-        case 15: snprintf(line, n, "%s Reset to defaults", cur); break;
-        case 16: snprintf(line, n, "%s Wipe all slots", cur); break;
-    }
+        snprintf(value, sizeof(value), "%d.%dx", g / 10, g % 10);
+    } else if (it.flags & SIF_FLOAT) {
+        float f; memcpy(&f, p, sizeof(f));
+        snprintf(value, sizeof(value), "%+d%s", static_cast<int>(f), it.unit ? it.unit : "");
+    } else if (it.names || it.kind == SK_BOOL) {
+        const char* const* names = it.names ? it.names : kOnOff;
+        snprintf(value, sizeof(value), "%s", names[*p <= it.hi ? *p : it.hi]);
+    } else if (it.fmt == SF_OFF0 && *p == 0) snprintf(value, sizeof(value), "off");
+    else snprintf(value, sizeof(value), "%u%s", *p, it.unit ? it.unit : "");
+    snprintf(line, n, "%s %s %s", cur, it.label, value);
 }
 
 __attribute__((noinline)) void render_screen_settings() {
@@ -1708,9 +1738,6 @@ __attribute__((noinline)) void render_screen_settings() {
     char buf[24];
     snprintf(buf, sizeof(buf), "Settings %s", settings_dirty ? "(*)" : "   ");
     draw_text(kContentX, 0, buf);
-    if (settings_save_status[0]) {
-        draw_text(86, 0, settings_save_status);
-    }
 
     constexpr int kVisible = 5;
     int top = 0;
@@ -1721,13 +1748,9 @@ __attribute__((noinline)) void render_screen_settings() {
         draw_text(kContentX, 9 + i * 9, line);
     }
 
-    if (settings_sel == kSettingsResetIdx) {
-        draw_text(kContentX, 56, "Hold Tri 2s = RESET");
-    } else if (settings_sel == kSettingsWipeSlotsIdx) {
-        draw_text(kContentX, 56, "Hold Tri 2s = WIPE");
-    } else {
-        draw_text(kContentX, 56, "DP nav/adj  Tri=save");
-    }
+    if (time_us_64() >= settings_status_until_us) settings_save_status = "";
+    const char *footer = settings_save_status[0] ? settings_save_status : kSetItems[settings_sel].hint;
+    draw_text(kContentX, 56, footer ? footer : "DP nav/adj  Tri=save");
     flush_fb();
 }
 
@@ -2041,7 +2064,7 @@ void oled_loop() {
         case kScreenTriggers: render_screen_triggers();  break;
         case kScreenGyro:     render_screen_gyro();      break;
         case kScreenTouchpad: render_screen_touchpad();  break;
-        case kScreenDiag:     render_screen_diag();      break;
+        case kScreenDiag:     render_screen_diag(screen_entered);      break;
         case kScreenCpu:      render_screen_cpu(screen_entered); break;
         case kScreenRssi:     render_screen_rssi();      break;
         case kScreenVU:       render_screen_vu();        break;

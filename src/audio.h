@@ -23,8 +23,8 @@ uint32_t audio_c1_free_heap();  // bytes free when core1 started
 uint32_t audio_c1_stage();      // core1 start-up stage 0..9 (9 = in its loop), see audio.cpp
 uint32_t audio_raw_push();
 uint32_t audio_hap_push();
-uint8_t  audio_peak_speaker();   // 0..255, decays on read
-uint8_t  audio_peak_haptic();    // 0..255, decays on read
+uint8_t  audio_peak_speaker();   // 0..255, elapsed-time decay, read-only
+uint8_t  audio_peak_haptic();    // 0..255, elapsed-time decay, read-only
 
 // Byte-flow counters for the Diagnostics screen + web emulator.
 uint32_t audio_usb_frames();

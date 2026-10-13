@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include "bt.h"
+#include "rssi_poll.h"
 #include "voice.h"
 #include "audio.h"
 #include <queue>
@@ -240,16 +241,16 @@ void bt_connection_watchdog_tick() {
     }
 }
 
+// Cached observation only. OLED/host requests share one rate-limited poll.
 void bt_get_signal_strength(int8_t *rssi) {
-    // gap_read_rssi() completes asynchronously, so this function can only
-    // return the last cached RSSI value. Trigger a refresh afterwards so a
-    // subsequent call can observe the updated value once the RSSI event arrives.
-    if (rssi != nullptr) {
-        *rssi = bt_rssi;
-    }
-    if (acl_handle != HCI_CON_HANDLE_INVALID) {
-        gap_read_rssi(acl_handle);
-    }
+    if (rssi != nullptr) *rssi = bt_rssi;
+}
+
+static RssiPoll rssi_poll;
+void bt_rssi_request() {
+    if (acl_handle == HCI_CON_HANDLE_INVALID) return;
+    const uint64_t now = time_us_64();
+    if (rssi_poll.ready(now) && gap_read_rssi(acl_handle) == 0) rssi_poll.sent(now);
 }
 
 void bt_l2cap_init() {
@@ -535,6 +536,7 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
             new_pair = false;
             connect_attempt_started = 0; // disarm — every teardown clears here
             acl_handle = HCI_CON_HANDLE_INVALID;
+            rssi_poll.reset();
             bt_rssi = 0;
             hid_control_cid = 0;
             hid_interrupt_cid = 0;
@@ -560,6 +562,7 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
         case GAP_EVENT_RSSI_MEASUREMENT: {
             const hci_con_handle_t handle = gap_event_rssi_measurement_get_con_handle(packet);
             if (handle == acl_handle) {
+                rssi_poll.replied();
                 bt_rssi = static_cast<int8_t>(gap_event_rssi_measurement_get_rssi(packet));
             }
             break;
