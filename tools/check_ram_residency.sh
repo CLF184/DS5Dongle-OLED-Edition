@@ -15,6 +15,8 @@
 #      is checked here. "file.c:sym" picks a file-local symbol by its source
 #      file (btstack has several static packet_handler functions). RP2350
 #      builds only: the Pico W (RP2040) keeps core0 in flash (src/core0_ram.h).
+#      Inline per-frame helpers (src/haptics_decimate.h) are checked only if
+#      the compiler kept an out-of-line copy.
 #   Run by .github/workflows/build.yml and release.yml after each build.
 #   tools/check_ram_residency.sh path/to/ds5-bridge.elf
 set -euo pipefail
@@ -75,6 +77,10 @@ CORE0=""
   btstack_linked_list_iterator_has_next btstack_linked_list_iterator_next
   crc32_lookup_table _Z10audio_loopv audio.cpp:_ZL13audio_bt_taskv _Z13mic_add_queuePKh
 "
+# Inline helpers audio_loop calls per frame (src/haptics_decimate.h): normally
+# folded into audio_loop, but an out-of-line copy must be in RAM too.
+CORE0_OPTIONAL=""
+[ -n "$CORE0" ] && CORE0_OPTIONAL="_ZN15HapticDecimator4takeEv _Z12haptic_to_s8ff"
 # FUNC/OBJECT symbols as "file:name addr" (locals, grouped after their FILE
 # entry) and "name addr" (globals and weak), one per line.
 TABLE="$("$READELF" -sW "$ELF" | awk '
@@ -87,6 +93,13 @@ for sym in $CORE0; do
     echo "check_ram_residency: core0 $sym not found" >&2
     bad=1
   elif ! in_ram "$addr"; then
+    echo "check_ram_residency: core0 $sym is at 0x$addr, not in RAM" >&2
+    bad=1
+  fi
+done
+for sym in $CORE0_OPTIONAL; do
+  addr="$(awk -v s="$sym" '$1 == s {print $2; exit}' <<<"$TABLE")"
+  if [ -n "$addr" ] && ! in_ram "$addr"; then
     echo "check_ram_residency: core0 $sym is at 0x$addr, not in RAM" >&2
     bad=1
   fi

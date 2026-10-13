@@ -768,7 +768,8 @@ void CORE0_RAM_FUNC(bt_write)(const uint8_t *data, const uint16_t len) {
         return;
     }
     static send_element packet{};
-    memset(packet.data, 0, sizeof(packet.data));
+    // No memset (upstream 4929996): l2cap_send sends only packet.len bytes,
+    // so whatever an earlier, longer report left past them never goes out.
     packet.len = len + 1;
     packet.data[0] = 0xA2;
     memcpy(packet.data + 1, data, len);
