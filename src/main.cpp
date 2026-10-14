@@ -73,6 +73,7 @@ uint8_t  bt_31_b2_or_mask()  { return g_31_b2_or; }
 uint16_t bt_31_len_min()     { return g_31_len_min == 0xFFFF ? 0 : g_31_len_min; }
 uint16_t bt_31_len_max()     { return g_31_len_max; }
 void bt_31_mic_prefix(uint8_t out[6]) {
+    // loop: HOT-PATH-OK — 6 bytes, for the OLED diagnostics screen
     for (int i = 0; i < 6; i++) out[i] = g_mic_prefix[i];
 }
 
@@ -196,6 +197,7 @@ void CORE0_RAM_FUNC(on_bt_data)(CHANNEL_TYPE channel, uint8_t *data, uint16_t le
             g_bt_other_packets++;
             g_last_other_id = data[1];
             g_other_id_or = (uint8_t)(g_other_id_or | data[1]);
+            // loop: HOT-PATH-OK — ≤ 8 bytes per non-0x31 BT frame (debug counters)
             for (uint16_t i = 0; i < 8 && i < len; i++) {
                 g_last_other_prefix[i] = data[i];
             }
@@ -206,6 +208,7 @@ void CORE0_RAM_FUNC(on_bt_data)(CHANNEL_TYPE channel, uint8_t *data, uint16_t le
         }
         if (len < g_31_len_min) g_31_len_min = len;
         if (len > g_31_len_max) g_31_len_max = len;
+        // loop: HOT-PATH-OK — ≤ 16 bytes per BT frame (debug counters)
         for (uint16_t i = 0; i < 16 && i < len; i++) {
             g_last_any_prefix[i] = data[i];
         }
@@ -216,6 +219,7 @@ void CORE0_RAM_FUNC(on_bt_data)(CHANNEL_TYPE channel, uint8_t *data, uint16_t le
         // at the trailing bytes directly via 0xFD diagnostic.
         if (data[1] == 0x31 && len > g_longest_len) {
             g_longest_len = len;
+            // loop: NOT-WORTH — ≤ 61 bytes, only when a new longest 0x31 frame appears
             for (uint16_t i = 0; i < MIC_DEBUG_FRAME_BYTES && i < len; i++) {
                 g_longest_frame[i] = data[i];
             }
@@ -546,6 +550,7 @@ int main() {
     // Debug builds: wait for a serial terminal so the boot log isn't lost
     // (upstream 356b69c), but not for ever: a debug build with nothing
     // attached still starts after 5 s.
+    // loop: SERIAL-REQUIRED — debug build: wait for a terminal until a 5 s deadline
     for (const uint64_t until = time_us_64() + 5000 * 1000; !stdio_usb_connected() && time_us_64() < until;) {
         tud_task();
     }
@@ -570,6 +575,7 @@ int main() {
     if (watchdog_caused_reboot()) {
         printf("Rebooted by Watchdog!\n");
         // 当崩溃重启以后，闪三下灯
+        // loop: NOT-WORTH — 6 LED blinks after a watchdog reboot, boot-only
         for (int i = 0; i < 6; i++) {
             if (i % 2 == 0) {
                 cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
@@ -607,6 +613,7 @@ int main() {
     // Per-stage timing for 0xFC (perf.h): a few cycle-counter reads a pass.
     perf_core_init();
     uint32_t loop_start = perf_now();
+    // loop: SERIAL-REQUIRED — core0 main loop: stage order is the design, each stage perf-timed
     while (1) {
         const uint32_t t0 = perf_now();
         perf_record(PERF_LOOP, t0 - loop_start);

@@ -54,6 +54,7 @@ uint16_t cpu_temp_raw_smoothed() {
     // frame. Average a big block to kill that...
     constexpr int kSamples = 256;
     uint32_t acc = 0;
+    // loop: FIX-HOT-PATH — 256 blocking adc_read() calls (~0.5 ms) in one core0 main-loop pass
     for (int i = 0; i < kSamples; i++) acc += adc_read();
     const float mean = (float)acc / (float)kSamples;
 
@@ -533,11 +534,13 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
             printf("[HID] 0xfa reqlen=%u too small for slots payload (%u)\n", reqlen, want);
             return 0;
         }
+        // loop: NOT-WORTH — 4 slot addresses, per 0xFA host GET
         for (int i = 0; i < 4; i++) {
             uint8_t addr[6];
             bt_slot_get_addr(i, addr);
             memcpy(buffer + i * 6, addr, 6);
         }
+        // loop: NOT-WORTH — 4 occupied flags, per 0xFA host GET
         for (int i = 0; i < 4; i++) {
             buffer[24 + i] = bt_slot_occupied(i) ? 1 : 0;
         }
@@ -684,6 +687,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         //   [36..39] uint32  ...of those, with Allow*TriggerFFB set
         //   [40..43] uint32  ...forwarded as BT 0x31 sub-0x10
         constexpr uint16_t want = 44;
+        // loop: NOT-WORTH — ≤ 44 bytes zeroed, per 0xFD diagnostic GET
         for (uint16_t i = 0; i < want && i < reqlen; i++) buffer[i] = 0;
 
         const uint32_t bt31    = g_bt_31_packets;
@@ -699,7 +703,9 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         buffer[11] = g_last_31_b2;
         memcpy(buffer + 12, &lmin, 2);
         memcpy(buffer + 14, &lmax, 2);
+        // loop: NOT-WORTH — 8 bytes, per 0xFD diagnostic GET
         for (int i = 0; i < 8 && (16 + i) < reqlen; i++) buffer[16 + i] = g_last_other_prefix[i];
+        // loop: NOT-WORTH — 8 bytes, per 0xFD diagnostic GET
         for (int i = 0; i < 8 && (24 + i) < reqlen; i++) buffer[24 + i] = g_last_any_prefix[i];
 
         const uint32_t out02   = g_host_out02_total;
@@ -715,12 +721,14 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         // (uint16 LE), bytes 2..62 = its first 61 bytes (the 63-byte cap).
         constexpr uint16_t want = 2 + MIC_DEBUG_FRAME_BYTES;
         const uint16_t lim = (reqlen < want) ? reqlen : want;
+        // loop: NOT-WORTH — ≤ 63 bytes zeroed, per 0xFE diagnostic GET
         for (uint16_t i = 0; i < lim; i++) buffer[i] = 0;
         const uint16_t llen = g_longest_len;
         if (lim >= 2) {
             buffer[0] = (uint8_t)(llen & 0xFF);
             buffer[1] = (uint8_t)((llen >> 8) & 0xFF);
         }
+        // loop: NOT-WORTH — ≤ 61 bytes, per 0xFE diagnostic GET
         for (uint16_t i = 0; i < MIC_DEBUG_FRAME_BYTES && (i + 2) < lim; i++) {
             buffer[2 + i] = g_longest_frame[i];
         }

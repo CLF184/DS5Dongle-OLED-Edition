@@ -261,6 +261,7 @@ static void mic_drain() {
         started = false; // session over — re-buffer when the mic comes back
     }
 
+    // loop: HOT-PATH-OK — bounded by free USB mic FIFO space; one 48-frame slice each
     while (tu_fifo_remaining(ff) >= MIC_SLICE_BYTES) {
         static int16_t slice[MIC_SLICE_FRAMES * 2];
         if (!have) {
@@ -273,6 +274,7 @@ static void mic_drain() {
                 break;
             }
         }
+        // loop: HOT-PATH-OK — N = 48 frames per slice, mono to L/R copy
         for (uint32_t i = 0; i < MIC_SLICE_FRAMES; i++) {
             const int16_t s = frame.mono[offset + i];
             slice[i * 2]     = s; // mono duplicated to L/R — our UAC1 mic is 2-ch like a real DS5
@@ -494,6 +496,7 @@ void CORE0_RAM_FUNC(audio_loop)() {
     bool spk_dup = false;
     if (spk_ready) {
         bool l = false, r = false;
+        // loop: HOT-PATH-OK — N = frames of one USB audio read (raw buffer); speaker mono detect
         for (int i = 0; i < frames; i++) {
             l |= raw[i * INPUT_CHANNELS] != 0;
             r |= raw[i * INPUT_CHANNELS + 1] != 0;
@@ -502,6 +505,7 @@ void CORE0_RAM_FUNC(audio_loop)() {
     }
 #endif
 
+    // loop: HOT-PATH-OK — N = frames of one USB audio read; peaks + split, the audio path itself
     for (int i = 0; i < frames; i++) {
         // VU peak tracking
         {
@@ -626,6 +630,7 @@ static void __not_in_flash_func(speaker_proc)() {
     // 将 512 frames 重采样成 480 frames 以解决噪音问题。感谢 @Junhoo
     WDL_ResampleSample *in_buf;
     int nframes = resampler_audio.ResamplePrepare(512, 2, &in_buf);
+    // loop: HOT-PATH-OK — N = 512 stereo samples into the resampler, core1 RAM code, no flash
     for (int i = 0; i < nframes * 2; i++) {
         in_buf[i] = audio_element.data[i];
     }
@@ -742,6 +747,7 @@ void __not_in_flash_func(core1_entry)() {
         g_c1_flags |= 0x04;
     }
 
+    // loop: HOT-PATH-OK — core1 service loop: bounded work per item, sleep_us(10) when idle
     while (true) {
         g_c1_stage = 9;  // running: stage 9 and c1_loops moving
         g_c1_loops++;

@@ -305,19 +305,25 @@ void px(int x, int y, bool on) {
 }
 
 void rect_outline(int x, int y, int w, int h) {
+    // loop: HOT-PATH-OK — w ≤ 128 px, OLED render at 10 Hz (kFrameUs 100 ms)
     for (int i = 0; i < w; i++) { px(x + i, y, true); px(x + i, y + h - 1, true); }
+    // loop: HOT-PATH-OK — h ≤ 64 px, OLED render at 10 Hz
     for (int i = 0; i < h; i++) { px(x, y + i, true); px(x + w - 1, y + i, true); }
 }
 
 void rect_filled(int x, int y, int w, int h) {
+    // loop: HOT-PATH-OK — h ≤ 64 rows, OLED render at 10 Hz
     for (int j = 0; j < h; j++)
+        // loop: HOT-PATH-OK — w x h ≤ 8192 px but used for small boxes, OLED render at 10 Hz
         for (int i = 0; i < w; i++)
             px(x + i, y + j, true);
 }
 
 // XOR-invert every pixel in a region (used to flash a control "pressed").
 void rect_invert(int x, int y, int w, int h) {
+    // loop: HOT-PATH-OK — h rows of a pressed-control region, OLED render at 10 Hz
     for (int j = 0; j < h; j++)
+        // loop: HOT-PATH-OK — w px of a pressed-control region, OLED render at 10 Hz
         for (int i = 0; i < w; i++) {
             const int xx = x + i, yy = y + j;
             if (xx < 0 || xx >= kW || yy < 0 || yy >= kH) continue;
@@ -328,8 +334,10 @@ void rect_invert(int x, int y, int w, int h) {
 void draw_char(int x, int y, char c) {
     if (c < 0x20 || c > 0x7E) return;
     const uint8_t *g = kFont5x7[c - 0x20];
+    // loop: HOT-PATH-OK — 5 font columns per char, OLED render at 10 Hz
     for (int col = 0; col < kFontW; col++) {
         uint8_t bits = g[col];
+        // loop: HOT-PATH-OK — 7 font rows per column, OLED render at 10 Hz
         for (int row = 0; row < kFontH; row++) {
             if (bits & (1 << row)) px(x + col, y + row, true);
         }
@@ -337,6 +345,7 @@ void draw_char(int x, int y, char c) {
 }
 
 void draw_text(int x, int y, const char *s) {
+    // loop: HOT-PATH-OK — ≤ ~21 chars per line, OLED render at 10 Hz
     while (*s) {
         draw_char(x, y, *s++);
         x += 6;
@@ -345,15 +354,18 @@ void draw_text(int x, int y, const char *s) {
 
 // draw_text, but only pixels with x in [x_min, x_max) are drawn.
 void draw_text_clipped(int x, int y, const char *s, int x_min, int x_max) {
+    // loop: HOT-PATH-OK — ≤ title length chars, scrolling title at 10 Hz
     for (; *s; s++, x += 6) {
         if (x + kFontW <= x_min) continue;
         if (x >= x_max) break;
         const char c = *s;
         if (c < 0x20 || c > 0x7E) continue;
         const uint8_t *g = kFont5x7[c - 0x20];
+        // loop: HOT-PATH-OK — 5 font columns, scrolling title at 10 Hz
         for (int col = 0; col < kFontW; col++) {
             const int xx = x + col;
             if (xx < x_min || xx >= x_max) continue;
+            // loop: HOT-PATH-OK — 7 font rows, scrolling title at 10 Hz
             for (int row = 0; row < kFontH; row++) {
                 if (g[col] & (1 << row)) px(xx, y + row, true);
             }
@@ -399,7 +411,9 @@ void draw_button_chrome() {
 // Bitmap layout: row-major, MSB = leftmost pixel, ceil(w/8) bytes per row.
 void draw_icon(int x, int y, const uint8_t *bitmap, int w, int h) {
     const int row_bytes = (w + 7) / 8;
+    // loop: HOT-PATH-OK — icon rows (≤ 16), OLED render at 10 Hz
     for (int row = 0; row < h; row++) {
+        // loop: HOT-PATH-OK — icon columns (≤ 16), OLED render at 10 Hz
         for (int col = 0; col < w; col++) {
             const uint8_t byte = bitmap[row * row_bytes + (col / 8)];
             const uint8_t mask = (uint8_t)(1u << (7 - (col % 8)));
@@ -468,6 +482,7 @@ void send_trigger_effect(int preset) {
             mode = 0x21;
             const uint16_t active = 0x03FF;
             uint32_t strength = 0;
+            // loop: NOT-WORTH — 10 trigger zones, on a KEY press / leaving the screen
             for (int i = 0; i < 10; i++) strength |= (uint32_t)(7u << (3 * i));
             p[0] = active & 0xFF;
             p[1] = (active >> 8) & 0xFF;
@@ -489,6 +504,7 @@ void send_trigger_effect(int preset) {
             mode = 0x26;
             const uint16_t active = 0x03FF;
             uint32_t strength = 0;
+            // loop: NOT-WORTH — 10 trigger zones, on a KEY press
             for (int i = 0; i < 10; i++) strength |= (uint32_t)(7u << (3 * i));
             p[0] = active & 0xFF;
             p[1] = (active >> 8) & 0xFF;
@@ -532,8 +548,10 @@ void send_trigger_effect(int preset) {
     }
 
     pkt[13] = mode;
+    // loop: NOT-WORTH — 9 effect bytes (left), on a KEY press
     for (int i = 0; i < 9; i++) pkt[14 + i] = p[i];
     pkt[24] = mode;
+    // loop: NOT-WORTH — 9 effect bytes (right), on a KEY press
     for (int i = 0; i < 9; i++) pkt[25 + i] = p[i];
 
     state_stamp_host_rumble(pkt + 3);
@@ -725,10 +743,13 @@ void sample_charge_eta() {
             // in a way the old mean wasn't (one 47-min under-load step used to
             // drag the whole projection up). kRing is tiny, so insertion-sort.
             float tmp[kRing];
+            // loop: HOT-PATH-OK — N ≤ kRing = 5 copies, at 10 Hz while charging
             for (int i = 0; i < ring_count; i++) tmp[i] = ring[i];
+            // loop: HOT-PATH-OK — insertion sort of ≤ 5 items, at 10 Hz while charging
             for (int i = 1; i < ring_count; i++) {
                 const float v = tmp[i];
                 int j = i - 1;
+                // loop: HOT-PATH-OK — inner shift of the ≤ 5-item insertion sort
                 while (j >= 0 && tmp[j] > v) { tmp[j + 1] = tmp[j]; j--; }
                 tmp[j + 1] = v;
             }
@@ -737,6 +758,7 @@ void sample_charge_eta() {
             bulk = kDefaultStepUs;
         }
         float rem_us = 0.0f;
+        // loop: HOT-PATH-OK — ≤ 10 charge steps summed, at 10 Hz while charging
         for (int L = cur_step + 1; L <= 10; L++) rem_us += bulk * charge_step_weight(L);
         int mins = (int)(rem_us / 60000000.0f + 0.5f);
         if (mins < 0)   mins = 0;
@@ -994,6 +1016,7 @@ __attribute__((noinline)) void render_screen_diag() {
     constexpr int kVisible = kDiagVisible;
 
     char line[28];
+    // loop: HOT-PATH-OK — kVisible = 5 diagnostic rows, diag screen at 10 Hz
     for (int i = 0; i < kVisible && diag_scroll + i < kNumDiagRows; i++) {
         format_diag_row(diag_scroll + i, line, sizeof(line));
         draw_text(kContentX, 9 + i * 9, line);
@@ -1153,6 +1176,7 @@ void imu_cal_parse(const std::vector<uint8_t>& d) {
 
     // Sanity gate (same as SDL): a wild bias or a gain off by >50% means a bad
     // factory cal or a short/garbled read — fall back to raw rather than amplify it.
+    // loop: NOT-WORTH — 6 IMU axes, once per connection when 0x05 lands
     for (int i = 0; i < 6; i++) {
         const float divisor = (i < 3) ? 64.0f : 1.0f;
         const int   ab      = g_imu_cal[i].bias < 0 ? -g_imu_cal[i].bias : g_imu_cal[i].bias;
@@ -1200,7 +1224,9 @@ __attribute__((noinline)) void render_screen_gyro() {
 
         const int bx = 44, by = 22, bw = 40, bh = 40;
         rect_outline(bx, by, bw, bh);
+        // loop: HOT-PATH-OK — 38 px crosshair line, gyro screen at 10 Hz
         for (int x = bx + 1; x < bx + bw - 1; x++) px(x, by + bh / 2, true);
+        // loop: HOT-PATH-OK — 38 px crosshair line, gyro screen at 10 Hz
         for (int y = by + 1; y < by + bh - 1; y++) px(bx + bw / 2, y, true);
         // Plot the two axes that read ~0 when the controller lies flat: X (roll,
         // left/right) and Z (pitch, fwd/back). Gravity rests on Y when flat, so
@@ -1230,6 +1256,7 @@ __attribute__((noinline)) void render_screen_touchpad() {
     if (bt_is_connected()) {
         rect_outline(kContentX + 2, 12, 116, 30);
         int active = 0;
+        // loop: HOT-PATH-OK — 2 fingers, touchpad screen at 10 Hz
         for (int finger = 0; finger < 2; finger++) {
             const int off = 32 + finger * 4;
             const uint32_t f = (uint32_t)interrupt_in_data[off] |
@@ -1473,6 +1500,7 @@ void lightbar_load_config() {
     const Config_body& c = get_config();
     lb_mode = c.lightbar_mode;
     if (lb_mode < 0 || lb_mode >= kNumLbModes) lb_mode = kLbModeHost;
+    // loop: NOT-WORTH — 4 favorites, at boot and when the host changes config
     for (int i = 0; i < 4; i++) {
         lb_fav_r[i] = c.lb_fav_r[i];
         lb_fav_g[i] = c.lb_fav_g[i];
@@ -1484,6 +1512,7 @@ void lightbar_load_config() {
 void lightbar_save_config() {
     Config_body b = get_config();
     b.lightbar_mode = (uint8_t)lb_mode;
+    // loop: NOT-WORTH — 4 favorites, leaving the Lightbar screen with changes (one flash save)
     for (int i = 0; i < 4; i++) {
         b.lb_fav_r[i] = lb_fav_r[i];
         b.lb_fav_g[i] = lb_fav_g[i];
@@ -1539,6 +1568,7 @@ void settings_adjust(int delta) {
             const auto floor5 = [](int x) { return x >= 0 ? x / 5 * 5 : -((-x + 4) / 5 * 5); };
             const auto ceil5 = [](int x) { return x >= 0 ? (x + 4) / 5 * 5 : -((-x) / 5 * 5); };
             int v = (int)c.speaker_volume;
+            // loop: NOT-WORTH — abs(delta) steps (1), on a D-pad press in Settings
             for (int i = 0; i < (delta < 0 ? -delta : delta); i++) v = delta > 0 ? floor5(v) + 5 : ceil5(v) - 5;
             if (v < -100) v = -100; if (v > 12) v = 12;
             c.speaker_volume = (float)v;
@@ -1787,6 +1817,7 @@ __attribute__((noinline)) void render_screen_settings() {
     int top = 0;
     if (settings_sel >= kVisible) top = settings_sel - kVisible + 1;
     char line[28];
+    // loop: HOT-PATH-OK — kVisible = 5 settings rows, settings screen at 10 Hz
     for (int i = 0; i < kVisible && top + i < kNumSettingsItems; i++) {
         format_settings_item(top + i, line, sizeof(line));
         draw_text(kContentX, 9 + i * 9, line);
@@ -1878,6 +1909,7 @@ __attribute__((noinline)) void render_screen_slots() {
     snprintf(hdr, sizeof(hdr), "Slots        [s%d %s]", active, conn ? "ON" : "--");
     draw_text(kContentX, 0, hdr);
 
+    // loop: HOT-PATH-OK — kNumSlots = 4 rows, slots screen at 10 Hz
     for (int i = 0; i < kNumSlots; i++) {
         char line[28];
         const char *cursor_mark = (i == slots_cursor) ? ">" : " ";
@@ -1902,6 +1934,7 @@ __attribute__((noinline)) void render_screen_slots() {
 void boot_splash() {
     fb_clear();
     auto cx_for = [](const char* s) {
+        // loop: NOT-WORTH — strlen of 3 splash lines, boot-only
         int n = 0; while (s[n]) n++;
         return (128 - (n * 6 - 1)) / 2;
     };
@@ -2051,6 +2084,7 @@ void oled_loop() {
     // Without this the dot/dim tier never engages while a controller is
     // connected, because a stick flicker resets the idle timer every few frames.
     uint32_t hash = 0;
+    // loop: HOT-PATH-OK — 10 input bytes hashed for the idle timer, at 10 Hz
     for (int i = 0; i < 10; i++) {
         if (i == 6) continue;
         uint8_t b = interrupt_in_data[i];

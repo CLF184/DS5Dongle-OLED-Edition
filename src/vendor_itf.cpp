@@ -81,6 +81,7 @@ uint16_t const *ms_os_string_descriptor() {
     static uint16_t desc[9];
     static const char sig[] = "MSFT100";
     desc[0] = (uint16_t) ((TUSB_DESC_STRING << 8) | sizeof(desc));
+    // loop: NOT-WORTH — 7 signature chars, USB enumeration only
     for (int i = 0; i < 7; ++i) desc[1 + i] = (uint16_t) sig[i];
     desc[8] = MS_OS_VENDOR_CODE; // bMS_VendorCode, bPad = 0
     return desc;
@@ -110,6 +111,7 @@ static constexpr uint32_t kExtPropBytes = 10 + kSectionBytes;
 static uint8_t kExtProps[kExtPropBytes];
 
 static void put32(uint8_t *&p, uint32_t v) {
+    // loop: NOT-WORTH — 4 bytes, building MS OS descriptors once
     for (int i = 0; i < 4; ++i) *p++ = (uint8_t) (v >> (8 * i));
 }
 
@@ -129,8 +131,10 @@ static void build_ext_props() {
     put32(p, kSectionBytes); // dwSize
     put32(p, 7);             // dwPropertyDataType: REG_MULTI_SZ
     put16(p, kNameBytes);    // wPropertyNameLength
+    // loop: NOT-WORTH — property-name chars, built once (static flag)
     for (char16_t c : kPropName) put16(p, c);
     put32(p, kDataBytes);    // dwPropertyDataLength
+    // loop: NOT-WORTH — property-data chars, built once (static flag)
     for (char16_t c : kPropData) put16(p, c);
     built = true;
 }

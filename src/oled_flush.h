@@ -17,6 +17,7 @@ constexpr int kFbBytes = kRowBytes * kH;
 struct BitReverseTable {
     uint8_t v[256];
     constexpr BitReverseTable() : v{} {
+        // loop: NOT-WORTH — constexpr: the 256-entry bit-reverse table is built at compile time
         for (int i = 0; i < 256; i++) {
             uint8_t b = static_cast<uint8_t>(i);
             b = static_cast<uint8_t>(((b & 0x55) << 1) | ((b & 0xAA) >> 1));
@@ -36,12 +37,14 @@ template <class Sink>
 void stream_frame(const uint8_t *fb, Sink &sink) {
     const uint8_t page = 0xB0;
     sink.cmd(&page, 1);
+    // loop: HOT-PATH-OK — 64 rows, only when the frame changed (memcmp skip), 129 SPI frames
     for (int j = 0; j < kH; j++) {
         const uint8_t col = static_cast<uint8_t>(kH - 1 - j);
         const uint8_t addr[2] = {static_cast<uint8_t>(0x00 + (col & 0x0F)),
                                  static_cast<uint8_t>(0x10 + (col >> 4))};
         sink.cmd(addr, 2);
         uint8_t row[kRowBytes];
+        // loop: HOT-PATH-OK — 16 bytes bit-reversed per row, only when the frame changed
         for (int i = 0; i < kRowBytes; i++) row[i] = kBitReverse.v[fb[j * kRowBytes + i]];
         sink.data(row, kRowBytes);
     }

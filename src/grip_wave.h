@@ -62,6 +62,7 @@ struct GripWave {
     }
     // `pairs` interleaved L/R pairs, e.g. one 0x39 report's haptic block.
     __attribute__((always_inline)) inline void fill(int8_t *out, int pairs, float gain_l, float gain_r) {
+        // loop: HOT-PATH-OK — N = SAMPLE_SIZE pairs per test report, only during the haptic test
         for (int i = 0; i < pairs; i++) next(out + i * 2, gain_l, gain_r);
     }
 };

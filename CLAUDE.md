@@ -153,6 +153,21 @@ There is **no other place** to edit the version. If you find a hardcoded version
 
 The single list of open work for the app **and this firmware** is the app repo's `docs/BACKLOG.md` (`../DS5Dongle-OLED-Config-Web/docs/BACKLOG.md`). Update its row in the same commit as the work; session notes and handoffs point to it and never keep a second list.
 
+## Loop pass
+
+A standing rule, shared with the app (its CLAUDE.md "Loop pass" has the full text). Never sample hot paths by eye.
+
+1. **Every loop in `src/` carries a verdict comment**, added in the same commit as the loop: `// loop: VERDICT — reason`, on the loop's line or the line above. `python3 tools/list_loops.py --check` fails without one; it runs in `build.yml` and `release.yml`.
+2. **`tools/list_loops.py` lists every `for`/`while`/`do` loop** (standard library only, a brace-aware scanner; `lib/` is excluded). For each loop it gives the function, where it runs (core1, core0's main loop, a TinyUSB/BTstack/flash callback, an ISR, boot; worked out from a call graph over `src/`), whether it spins or polls a timeout, its nesting, and whether it touches flash.
+3. **Verdicts:**
+   - **HOT-PATH-OK**: runs per pass, frame or callback, but N is small and bounded. State N.
+   - **FIX-HOT-PATH**: unbounded or blocking work on core1, flash access on core1, a busy-wait without a timeout, or heavy per-pass work on core0's loop.
+   - **BATCH**: one SPI/USB/BT transaction instead of N.
+   - **SERIAL-REQUIRED**: give the reason (protocol order, a data dependency, a deadline).
+   - **NOT-WORTH**: boot-only, rare, compile-time or host-test-only, or tiny N.
+   - **PARALLELIZE**: rare here (one core per job).
+4. **Re-run the full pass when a release touches a hot path** (core0's loop, core1, the BT/USB callbacks). Run the lister, re-check every verdict, and update the firmware tables in the one doc, which lives in the app repo: `../DS5Dongle-OLED-Config-Web/docs/LOOP_PASS_2026-10.md` (or its newer `LOOP_PASS_<date>.md`). Don't keep a copy here.
+
 ## Git / branch model
 
 - **`master` (origin)** = `MarcelineVPQ/DS5Dongle-OLED-Edition` (this fork's primary branding, what users download).

@@ -179,10 +179,12 @@ void bt_wipe_all_slots() {
         bd_addr_t addr;
         link_key_t key;
         link_key_type_t type;
+        // loop: NOT-WORTH — link-key snapshot, N ≤ 16; on a user wipe only
         while (n < 16 && gap_link_key_iterator_get_next(&it, addr, key, &type)) {
             bd_addr_copy(snapshot[n++], addr);
         }
         gap_link_key_iterator_done(&it);
+        // loop: NOT-WORTH — drop each snapshotted key, N ≤ 16; on a user wipe only
         for (int i = 0; i < n; i++) {
             gap_drop_link_key_for_bd_addr(snapshot[i]);
         }
@@ -452,6 +454,7 @@ static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t cha
             link_key_type_t link_key_type;
             bool link = gap_get_link_key_for_bd_addr(addr, link_key, &link_key_type);
             printf("[HCI] Link key: ");
+            // loop: NOT-WORTH — printf of the 16-byte key, on a link key request only
             for (int i = 0; i < sizeof(link_key_t); i++) {
                 printf("%02X", link_key[i]);
             }
@@ -554,6 +557,7 @@ static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t cha
             // Packets still queued for the old link would leave every output
             // dead after a reconnect (bt_write only asks to send when the
             // queue goes from empty to one). Upstream a1492fd/697ade0.
+            // loop: NOT-WORTH — drains send_fifo (≤ 10 entries) on disconnect
             while (queue_try_remove(&send_fifo, nullptr)) {}
             page_scan_fast(true);
             // The controller's last input mustn't linger (a held button or

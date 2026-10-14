@@ -132,6 +132,9 @@ jobs:
       - name: lib/* stay submodule gitlinks
         run: tools/check_gitlinks.sh
 
+      - name: Every loop has a verdict (CLAUDE.md "Loop pass")
+        run: python3 tools/list_loops.py --check
+
       - name: Host unit tests (ASan + UBSan)
         run: tests/host/run.sh build/host-tests
 
