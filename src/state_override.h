@@ -57,6 +57,9 @@ constexpr int kAudioControl2 = 37;
 // AudioControl [7] bit 2: the controller's own echo cancellation for its
 // microphone (EchoCancelEnable; Apple's DualSense driver: echoCancelEnable).
 constexpr uint8_t kAudioEchoCancel = 0x04;
+// AudioControl [7] bit 3: NoiseCancelEnable. Without it the speaker plays at
+// about half level (upstream awalol b821623, #263).
+constexpr uint8_t kAudioNoiseCancel = 0x08;
 }  // namespace state_bits
 
 // Remember the sections a game report sets (ss = its SetStateData bytes).
@@ -94,6 +97,14 @@ inline void stamp_overrides(uint8_t *ss, const StateOverrides &o, const HostAudi
     // only) on each headset plug or unplug and would turn it off. The
     // controller keeps the byte between reports, so others need nothing.
     if (o.echo_cancel && (ss[0] & kF0AllowAudioControl)) ss[kAudioControl] |= kAudioEchoCancel;
+    // NoiseCancelEnable stays on in every report that sets AudioControl, with
+    // no setting: Linux's plug/unplug report (0 / 0x30) would clear it and
+    // halve the speaker until the controller reconnects. A game's explicit
+    // off can't be told from the driver's zero, and no known game sends one:
+    // SDL's DualSense driver never sets AllowAudioControl, and upstream
+    // b821623 forces the bit wherever the board sets AudioControl, a game's
+    // report with a mic choice included. Off has no use a player would want.
+    if (ss[0] & kF0AllowAudioControl) ss[kAudioControl] |= kAudioNoiseCancel;
     // A fixed mic level replaces the level in any report that sets one (a
     // game's, or the connect-time state); the controller keeps it otherwise.
     if (o.mic_level && (ss[0] & kF0AllowMicVolume)) ss[kVolumeMic] = o.mic_level;
@@ -107,7 +118,8 @@ inline void stamp_overrides(uint8_t *ss, const StateOverrides &o, const HostAudi
 // instead of at the next game report. A setting back at 0 ("the game's own")
 // puts back what the game last set (or the controller's default).
 // mic: the mic choice or the echo cancellation (1.17) changed; both live in
-// AudioControl, so either sends the whole byte with both applied.
+// AudioControl, so either sends the whole byte with both applied (and
+// NoiseCancelEnable, which the game's last byte may lack).
 // level: the mic level changed (1.16); back at 0 the controller gets pc_mic,
 // the PC's mic volume as VolumeMic (state_set_mic_volume), again.
 inline void build_override_push(uint8_t *ss, const StateOverrides &o, const HostAudioBytes &h, bool trigger, bool gain, bool mic,
@@ -125,6 +137,7 @@ inline void build_override_push(uint8_t *ss, const StateOverrides &o, const Host
         ss[0] |= kF0AllowAudioControl;
         ss[kAudioControl] = o.mic_select ? (uint8_t) ((h.audio_control & ~0x03) | (o.mic_select & 0x03)) : h.audio_control;
         if (o.echo_cancel) ss[kAudioControl] |= kAudioEchoCancel;
+        ss[kAudioControl] |= kAudioNoiseCancel;  // as in stamp_overrides
     }
     if (level) {
         ss[0] |= kF0AllowMicVolume;

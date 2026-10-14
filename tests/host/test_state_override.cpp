@@ -150,7 +150,8 @@ TEST(override_push_mic_level_and_back_to_the_pc) {
 
 // Protocol 1.17: echo cancellation on sets EchoCancelEnable in any report that
 // sets AudioControl, keeping the rest of the byte; a report without the
-// section is untouched; off leaves the game's own bit.
+// section is untouched; off leaves the game's own bit. (NoiseCancelEnable,
+// 0x08, is set in every such report whatever the setting.)
 TEST(override_echo_cancel_on_sets_only_the_bit_in_reports_with_audio_control) {
     constexpr StateOverrides kAec{0, 0, 0, 0, 0, 1};
     // Linux hid-playstation on a headset unplug: AudioControl 0x30 (speaker path).
@@ -158,7 +159,7 @@ TEST(override_echo_cancel_on_sets_only_the_bit_in_reports_with_audio_control) {
     ss[0] = kF0AllowAudioControl;
     ss[kAudioControl] = 0x30;
     stamp_overrides(ss, kAec, kHostAudioDefaults, true);
-    CHECK_EQ(ss[kAudioControl], 0x34);
+    CHECK_EQ(ss[kAudioControl], 0x3C);  // NoiseCancelEnable too (always)
     CHECK_EQ(ss[0], kF0AllowAudioControl);
     // A game report without AudioControl: byte for byte the same.
     uint8_t before[47];
@@ -194,11 +195,73 @@ TEST(override_push_echo_cancel_on_and_back_to_the_game) {
     uint8_t ss[47]{};
     build_override_push(ss, {0, 0, 0, 0, 0, 1}, h, false, false, true);
     CHECK_EQ(ss[0], kF0AllowAudioControl);
-    CHECK_EQ(ss[kAudioControl], 0x35);
+    CHECK_EQ(ss[kAudioControl], 0x3D);  // NoiseCancelEnable put back
     std::memset(ss, 0, sizeof(ss));
     build_override_push(ss, {0, 0, 0, 2, 0, 1}, h, false, false, true);  // with a mic choice
-    CHECK_EQ(ss[kAudioControl], 0x36);
+    CHECK_EQ(ss[kAudioControl], 0x3E);
     std::memset(ss, 0, sizeof(ss));
-    build_override_push(ss, kNone, h, false, false, true);  // off: the game's byte
-    CHECK_EQ(ss[kAudioControl], 0x31);
+    build_override_push(ss, kNone, h, false, false, true);  // off: the game's byte, NoiseCancel on
+    CHECK_EQ(ss[kAudioControl], 0x39);
+}
+
+// NoiseCancelEnable (0x08) stays on in every report that sets AudioControl:
+// without it the speaker plays at about half level (upstream b821623, #263).
+// Linux hid-playstation sends AudioControl 0 on a headset plug and 0x30 on an
+// unplug; neither may clear it. A game report that carries it passes as it is,
+// one without AudioControl is untouched, and the board's own reports keep it.
+TEST(override_noise_cancel_kept_through_headset_plug_and_unplug) {
+    constexpr StateOverrides kAec{0, 0, 0, 0, 0, 1};
+    for (const StateOverrides &o : {kNone, kAec}) {
+        const uint8_t aec = o.echo_cancel ? kAudioEchoCancel : 0;
+        // Plug: hid-playstation's 0x00 (headphone path).
+        uint8_t ss[47]{};
+        ss[0] = kF0AllowAudioControl;
+        ss[kAudioControl] = 0x00;
+        stamp_overrides(ss, o, kHostAudioDefaults, true);
+        CHECK_EQ(ss[kAudioControl], 0x08 | aec);
+        CHECK_EQ(ss[0], kF0AllowAudioControl);
+        // Unplug: 0x30 (speaker path), with its speaker volume and pre-gain.
+        std::memset(ss, 0, sizeof(ss));
+        ss[0] = kF0AllowAudioControl | kF0AllowSpeakerVolume;
+        ss[1] = kF1AllowAudioControl2;
+        ss[5] = 0x64;
+        ss[kAudioControl] = 0x30;
+        ss[kAudioControl2] = 0x20;
+        stamp_overrides(ss, o, kHostAudioDefaults, true);
+        CHECK_EQ(ss[kAudioControl], 0x38 | aec);
+        CHECK_EQ(ss[5], 0x64);
+        CHECK_EQ(ss[kAudioControl2], 0x20);
+        CHECK_EQ(ss[0], kF0AllowAudioControl | kF0AllowSpeakerVolume);
+        CHECK_EQ(ss[1], kF1AllowAudioControl2);
+        // A game report with NoiseCancel on: byte for byte the same (AEC off).
+        uint8_t before[47];
+        std::memset(ss, 0, sizeof(ss));
+        ss[0] = kF0AllowAudioControl;
+        ss[kAudioControl] = 0x39;
+        std::memcpy(before, ss, sizeof(ss));
+        stamp_overrides(ss, o, kHostAudioDefaults, true);
+        if (!o.echo_cancel) CHECK(std::memcmp(ss, before, sizeof(ss)) == 0);
+        CHECK_EQ(ss[kAudioControl], 0x39 | aec);
+        // A game report without AudioControl: untouched, no section added.
+        game_report(ss);
+        ss[0] = 0x0C;
+        std::memcpy(before, ss, sizeof(ss));
+        stamp_overrides(ss, o, kHostAudioDefaults, true);
+        CHECK(std::memcmp(ss, before, sizeof(ss)) == 0);
+        // The connect-time state (0x09 in state_init_data): as before.
+        std::memset(ss, 0, sizeof(ss));
+        ss[0] = 0xFD;
+        ss[kAudioControl] = 0x09;
+        stamp_overrides(ss, o, kHostAudioDefaults, false);
+        CHECK_EQ(ss[kAudioControl], 0x08 | aec);
+    }
+    // The board's pushes: one without the mic section adds no AudioControl;
+    // the mic push after an unplug (the last byte 0x30) keeps NoiseCancel.
+    uint8_t ss[47]{};
+    build_override_push(ss, {0, 3, 0, 0}, {0x30, 0, 0}, false, true, false);
+    CHECK_EQ(ss[0], 0);
+    CHECK_EQ(ss[kAudioControl], 0);
+    std::memset(ss, 0, sizeof(ss));
+    build_override_push(ss, {0, 0, 0, 1}, {0x30, 0, 0}, false, false, true);
+    CHECK_EQ(ss[kAudioControl], 0x39);
 }
