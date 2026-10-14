@@ -13,6 +13,7 @@
 #include "state_override.h"
 
 #include <cstdio>
+#include <cstddef>
 #include <cstring>
 #include "hardware/spi.h"
 #include "hardware/gpio.h"
@@ -135,26 +136,58 @@ int current_screen = 0;
 constexpr int kLbModeHost = 8;
 constexpr int kNumLbModes = 9;
 
-// Settings screen state
-constexpr int kNumSettingsItems = 26; // 8 fields + 3 auto-haptic + 2 screen-timeout + BT mic + Ctrl-wake + 5 audio/trigger (1.13) + mic level (1.16) + mic echo cancellation (1.17) + 2 PC sleep (1.14) + Reset + Wipe
-constexpr int kSettingsAutoHapEnaIdx  = 8;
-constexpr int kSettingsAutoHapGainIdx = 9;
-constexpr int kSettingsAutoHapLpIdx   = 10;
-constexpr int kSettingsScrDimIdx      = 11;
-constexpr int kSettingsScrOffIdx      = 12;
-constexpr int kSettingsBtMicIdx       = 13;
-constexpr int kSettingsCtrlWakeIdx    = 14;
-constexpr int kSettingsTrigRedIdx     = 15; // protocol 1.13 (upstream batch 3)
-constexpr int kSettingsSpkBoostIdx    = 16;
-constexpr int kSettingsVolLockIdx     = 17;
-constexpr int kSettingsSpkOutIdx      = 18;
-constexpr int kSettingsMicInIdx       = 19;
-constexpr int kSettingsMicLvlIdx      = 20; // protocol 1.16
-constexpr int kSettingsMicAecIdx      = 21; // protocol 1.17
-constexpr int kSettingsSleepOffIdx    = 22; // protocol 1.14 (Config::power_flags)
-constexpr int kSettingsPsWakeIdx      = 23;
-constexpr int kSettingsResetIdx       = 24;
-constexpr int kSettingsWipeSlotsIdx   = 25;
+// Each setting defines its display, storage and adjustment in one place.
+enum SetKind : uint8_t { SK_NUM, SK_BOOL, SK_POWER, SK_ACTION };
+enum SetFormat : uint8_t { SF_PLAIN, SF_OFF0, SF_GAME0, SF_PC0, SF_REDUCE };
+enum : uint8_t { SIF_WRAP = 1, SIF_FLOAT = 2, SIF_FLOAT10 = 4, SIF_GRID = 8, SIF_LINK_GRIPS = 16 };
+enum : uint8_t { ACT_NONE, ACT_RESET, ACT_WIPE };
+struct SetItem {
+    const char *label, *unit, *hint;
+    const char* const* names;
+    SetKind kind;
+    SetFormat fmt;
+    uint8_t flags, act, off; // Config_body offset, or the mask for SK_POWER
+    int16_t lo, hi, step;
+};
+static const char* const kOnOff[] = {"off", "on"};
+static const char* const kDisabled[] = {"on", "off"};
+static const char* const kPoll[] = {"250Hz", "500Hz", "RT"};
+static const char* const kCtrl[] = {"DS5", "DSE", "Auto"};
+static const char* const kAutoHap[] = {"Off", "Fallback", "Mix", "Replace"};
+static const char* const kAHLp[] = {"80Hz", "160Hz", "250Hz", "400Hz"};
+static const char* const kSpkOut[] = {"Auto", "SPK", "Hset", "off"};
+static const char* const kMicIn[] = {"Auto", "Int", "Hset"};
+#define CFG_OFF(field) static_cast<uint8_t>(offsetof(Config_body, field))
+static const SetItem kSetItems[] = {
+    {"Hap Gain", nullptr, nullptr, nullptr, SK_NUM, SF_PLAIN, SIF_FLOAT10 | SIF_LINK_GRIPS, ACT_NONE, CFG_OFF(haptics_gain), 10, 60, 5},
+    {"Spk Vol", "dB", nullptr, nullptr, SK_NUM, SF_PLAIN, SIF_FLOAT | SIF_GRID, ACT_NONE, CFG_OFF(speaker_volume), -100, 12, 5},
+    {"Inact", "min", nullptr, nullptr, SK_NUM, SF_PLAIN, 0, ACT_NONE, CFG_OFF(inactive_time), 10, 60, 5},
+    {"InactDC", nullptr, nullptr, kDisabled, SK_BOOL, SF_PLAIN, 0, ACT_NONE, CFG_OFF(disable_inactive_disconnect), 0, 1, 1},
+    {"Pico LED", nullptr, nullptr, kDisabled, SK_BOOL, SF_PLAIN, 0, ACT_NONE, CFG_OFF(disable_pico_led), 0, 1, 1},
+    {"Poll", nullptr, nullptr, kPoll, SK_NUM, SF_PLAIN, SIF_WRAP, ACT_NONE, CFG_OFF(polling_rate_mode), 0, 2, 1},
+    {"AudBuf", nullptr, nullptr, nullptr, SK_NUM, SF_PLAIN, 0, ACT_NONE, CFG_OFF(audio_buffer_length), 16, 128, 4},
+    {"Ctrl", nullptr, nullptr, kCtrl, SK_NUM, SF_PLAIN, SIF_WRAP, ACT_NONE, CFG_OFF(controller_mode), 0, 2, 1},
+    {"AutoHap", nullptr, nullptr, kAutoHap, SK_NUM, SF_PLAIN, SIF_WRAP, ACT_NONE, CFG_OFF(auto_haptics_enable), 0, 3, 1},
+    {"AH Gain", "%", nullptr, nullptr, SK_NUM, SF_PLAIN, 0, ACT_NONE, CFG_OFF(auto_haptics_gain), 0, 200, 10},
+    {"AH LP", nullptr, nullptr, kAHLp, SK_NUM, SF_PLAIN, SIF_WRAP, ACT_NONE, CFG_OFF(auto_haptics_lowpass), 0, 3, 1},
+    {"ScrDim", "min", nullptr, nullptr, SK_NUM, SF_OFF0, 0, ACT_NONE, CFG_OFF(screen_dim_timeout), 0, 250, 1},
+    {"ScrOff", "min", nullptr, nullptr, SK_NUM, SF_OFF0, 0, ACT_NONE, CFG_OFF(screen_off_timeout), 0, 250, 1},
+    {"BT Mic", nullptr, nullptr, nullptr, SK_BOOL, SF_PLAIN, 0, ACT_NONE, CFG_OFF(bt_mic_enable), 0, 1, 1},
+    {"CtrlWake", nullptr, nullptr, nullptr, SK_BOOL, SF_PLAIN, 0, ACT_NONE, CFG_OFF(controller_wakes_display), 0, 1, 1},
+    {"TrigEff", nullptr, nullptr, nullptr, SK_NUM, SF_REDUCE, 0, ACT_NONE, CFG_OFF(trigger_reduce), 0, 10, 1},
+    {"SpkBoost", nullptr, nullptr, nullptr, SK_NUM, SF_GAME0, 0, ACT_NONE, CFG_OFF(speaker_gain), 0, 7, 1},
+    {"VolLock", nullptr, nullptr, nullptr, SK_BOOL, SF_PLAIN, 0, ACT_NONE, CFG_OFF(lock_volume), 0, 1, 1},
+    {"SPK Out", nullptr, nullptr, kSpkOut, SK_NUM, SF_PLAIN, SIF_WRAP, ACT_NONE, CFG_OFF(speaker_select), 0, 3, 1},
+    {"Mic In", nullptr, nullptr, kMicIn, SK_NUM, SF_PLAIN, SIF_WRAP, ACT_NONE, CFG_OFF(mic_select), 0, 2, 1},
+    {"Mic Lvl", nullptr, nullptr, nullptr, SK_NUM, SF_PC0, 0, ACT_NONE, CFG_OFF(mic_level), 0, kMicLevelMax, 4},
+    {"Echo Cancel", nullptr, nullptr, nullptr, SK_BOOL, SF_PLAIN, 0, ACT_NONE, CFG_OFF(mic_echo_cancel), 0, 1, 1},
+    {"Sleep CtrlOff", nullptr, nullptr, nullptr, SK_POWER, SF_PLAIN, 0, ACT_NONE, POWER_SLEEP_CONTROLLER_OFF, 0, 1, 1},
+    {"PS Wakes PC", nullptr, nullptr, nullptr, SK_POWER, SF_PLAIN, 0, ACT_NONE, POWER_PS_WAKES_PC, 0, 1, 1},
+    {"Reset to defaults", nullptr, "Hold Tri 2s = RESET", nullptr, SK_ACTION, SF_PLAIN, 0, ACT_RESET, 0, 0, 0, 1},
+    {"Wipe all slots", nullptr, "Hold Tri 2s = WIPE", nullptr, SK_ACTION, SF_PLAIN, 0, ACT_WIPE, 0, 0, 0, 1},
+};
+#undef CFG_OFF
+constexpr int kNumSettingsItems = sizeof(kSetItems) / sizeof(kSetItems[0]);
 Config_body settings_local{};
 uint8_t settings_power = POWER_FLAGS_DEFAULT;  // PC sleep options (Config::power_flags, not in the body)
 int settings_sel = 0;
@@ -296,7 +329,28 @@ void flush_fb() {
     flush_fb_raw();
 }
 
-void fb_clear() { memset(fb, 0, sizeof(fb)); }
+uint32_t fb_generation = 0;
+void fb_clear() {
+    memset(fb, 0, sizeof(fb));
+    ++fb_generation; // invalidate partial redraws after another screen clears the buffer
+}
+
+// Clear a row band without changing neighbouring pixels or scroll markers.
+void rect_clear(int x, int y, int w, int h) {
+    const int x0 = x < 0 ? 0 : x, y0 = y < 0 ? 0 : y;
+    const int x1 = x + w > kW ? kW : x + w;
+    const int y1 = y + h > kH ? kH : y + h;
+    if (x0 >= x1 || y0 >= y1) return;
+    const int first = x0 / 8, last = (x1 - 1) / 8;
+    for (int row = y0; row < y1; ++row) {
+        for (int col = first; col <= last; ++col) {
+            uint8_t mask = 0xff;
+            if (col == first) mask &= 0xffu >> (x0 & 7);
+            if (col == last) mask &= 0xffu << (7 - ((x1 - 1) & 7));
+            fb[row * kRowBytes + col] &= static_cast<uint8_t>(~mask);
+        }
+    }
+}
 
 void px(int x, int y, bool on) {
     if (x < 0 || x >= kW || y < 0 || y >= kH) return;
@@ -1012,23 +1066,37 @@ void diag_handle_input(int visible) {
 }
 
 __attribute__((noinline)) void render_screen_diag() {
-    fb_clear();
-    draw_text(kContentX, 0, "Diagnostics");
-
-    sample_diag_rates();
-    constexpr int kVisible = kDiagVisible;
-
-    char line[28];
-    // loop: HOT-PATH-OK — kVisible = 5 diagnostic rows, diag screen at 10 Hz
-    for (int i = 0; i < kVisible && diag_scroll + i < kNumDiagRows; i++) {
-        format_diag_row(diag_scroll + i, line, sizeof(line));
-        draw_text(kContentX, 9 + i * 9, line);
+    static uint32_t seen_generation = ~0u;
+    static char last_row[kDiagVisible][20]{};
+    static uint8_t last_markers = 0xff;
+    const bool force = seen_generation != fb_generation;
+    if (force) {
+        fb_clear();
+        draw_text(kContentX, 0, "Diagnostics");
+        seen_generation = fb_generation;
     }
 
-    // Scroll indicators along the right edge, adjacent to the visible content
-    // rather than in a footer — keeps the bottom row available for content.
-    if (diag_scroll > 0)                       draw_text(120, 9,  "^");
-    if (diag_scroll + kVisible < kNumDiagRows) draw_text(120, 45, "v");
+    sample_diag_rates();
+
+    char line[20]; // 19 glyphs fit before the scroll markers at x=120
+    for (int i = 0; i < kDiagVisible; i++) {
+        if (diag_scroll + i < kNumDiagRows) format_diag_row(diag_scroll + i, line, sizeof(line));
+        else line[0] = '\0';
+        if (!force && strcmp(last_row[i], line) == 0) continue;
+        const int y = 9 + i * 9;
+        rect_clear(kContentX, y, 113, 9);
+        draw_text(kContentX, y, line);
+        strcpy(last_row[i], line);
+    }
+
+    const uint8_t markers = (diag_scroll > 0 ? 1 : 0)
+        | (diag_scroll + kDiagVisible < kNumDiagRows ? 2 : 0);
+    if (force || markers != last_markers) {
+        rect_clear(120, 9, 8, 45);
+        if (markers & 1) draw_text(120, 9, "^");
+        if (markers & 2) draw_text(120, 45, "v");
+        last_markers = markers;
+    }
 
     flush_fb();
 }
@@ -1555,122 +1623,40 @@ __attribute__((noinline)) void render_screen_vu() {
 }
 
 void settings_adjust(int delta) {
-    Config_body &c = settings_local;
+    const SetItem &it = kSetItems[settings_sel];
     settings_dirty = true;
-    switch (settings_sel) {
-        case 0: { // haptics_gain  [1.0, 6.0] step 0.5; both grips move together
-            auto step = [delta](float g) {
-                int v = (int)(g * 10.0f + 0.5f) + delta * 5;
-                if (v < 10) v = 10; if (v > 60) v = 60;
-                return v / 10.0f;
-            };
-            c.haptics_gain = step(c.haptics_gain);
-            c.haptics_gain_right = step(c.haptics_gain_right);
-            break;
+    if (it.kind == SK_ACTION) return;
+    uint8_t *p = it.kind == SK_POWER ? &settings_power
+        : reinterpret_cast<uint8_t*>(&settings_local) + it.off;
+    if (it.kind == SK_BOOL || it.kind == SK_POWER) {
+        *p ^= it.kind == SK_POWER ? it.off : 1;
+        return;
+    }
+    auto adjust = [&](float current) {
+        int v = it.flags & SIF_FLOAT10 ? static_cast<int>(current * 10.0f + 0.5f) : static_cast<int>(current);
+        if (it.flags & SIF_GRID) {
+            const auto floor_grid = [&](int x) { return x >= 0 ? x / it.step * it.step : -((-x + it.step - 1) / it.step * it.step); };
+            const auto ceil_grid = [&](int x) { return -floor_grid(-x); };
+            for (int i = 0; i < (delta < 0 ? -delta : delta); ++i)
+                v = delta > 0 ? floor_grid(v) + it.step : ceil_grid(v) - it.step;
+        } else v += delta * it.step;
+        if (it.flags & SIF_WRAP) {
+            if (v < it.lo) v = it.hi;
+            if (v > it.hi) v = it.lo;
+        } else {
+            if (v < it.lo) v = it.lo;
+            if (v > it.hi) v = it.hi;
         }
-        case 1: { // speaker_volume  [-100, +12] step 5 on multiples of 5 (ends at +12)
-            // On the 5 dB grid, so stepping down from +12 reaches 10, 5, 0.
-            const auto floor5 = [](int x) { return x >= 0 ? x / 5 * 5 : -((-x + 4) / 5 * 5); };
-            const auto ceil5 = [](int x) { return x >= 0 ? (x + 4) / 5 * 5 : -((-x) / 5 * 5); };
-            int v = (int)c.speaker_volume;
-            // loop: NOT-WORTH — abs(delta) steps (1), on a D-pad press in Settings
-            for (int i = 0; i < (delta < 0 ? -delta : delta); i++) v = delta > 0 ? floor5(v) + 5 : ceil5(v) - 5;
-            if (v < -100) v = -100; if (v > 12) v = 12;
-            c.speaker_volume = (float)v;
-            break;
-        }
-        case 2: { // inactive_time  [10, 60] step 5
-            int v = (int)c.inactive_time + delta * 5;
-            if (v < 10) v = 10; if (v > 60) v = 60;
-            c.inactive_time = (uint8_t)v;
-            break;
-        }
-        case 3: c.disable_inactive_disconnect ^= 1; break;
-        case 4: c.disable_pico_led ^= 1; break;
-        case 5: { // polling_rate_mode  0..2
-            int v = (int)c.polling_rate_mode + delta;
-            if (v < 0) v = 2; if (v > 2) v = 0;
-            c.polling_rate_mode = (uint8_t)v;
-            break;
-        }
-        case 6: { // audio_buffer_length  [16, 128] step 4
-            int v = (int)c.audio_buffer_length + delta * 4;
-            if (v < 16) v = 16; if (v > 128) v = 128;
-            c.audio_buffer_length = (uint8_t)v;
-            break;
-        }
-        case 7: { // controller_mode  0..2
-            int v = (int)c.controller_mode + delta;
-            if (v < 0) v = 2; if (v > 2) v = 0;
-            c.controller_mode = (uint8_t)v;
-            break;
-        }
-        case 8: { // auto_haptics_enable  0..3
-            int v = (int)c.auto_haptics_enable + delta;
-            if (v < 0) v = 3; if (v > 3) v = 0;
-            c.auto_haptics_enable = (uint8_t)v;
-            break;
-        }
-        case 9: { // auto_haptics_gain  [0, 200] step 10
-            int v = (int)c.auto_haptics_gain + delta * 10;
-            if (v < 0) v = 0; if (v > 200) v = 200;
-            c.auto_haptics_gain = (uint8_t)v;
-            break;
-        }
-        case 10: { // auto_haptics_lowpass  0..3
-            int v = (int)c.auto_haptics_lowpass + delta;
-            if (v < 0) v = 3; if (v > 3) v = 0;
-            c.auto_haptics_lowpass = (uint8_t)v;
-            break;
-        }
-        case 11: { // screen_dim_timeout  [0,250] min, 0 = disabled
-            int v = (int)c.screen_dim_timeout + delta;
-            if (v < 0) v = 0; if (v > 250) v = 250;
-            c.screen_dim_timeout = (uint8_t)v;
-            break;
-        }
-        case 12: { // screen_off_timeout  [0,250] min, 0 = disabled
-            int v = (int)c.screen_off_timeout + delta;
-            if (v < 0) v = 0; if (v > 250) v = 250;
-            c.screen_off_timeout = (uint8_t)v;
-            break;
-        }
-        case 13: c.bt_mic_enable ^= 1; break; // BT mic on/off
-        case 14: c.controller_wakes_display ^= 1; break; // controller activity wakes OLED on/off
-        case kSettingsTrigRedIdx: { // trigger_reduce  0 (game) .. 10
-            int v = (int)c.trigger_reduce + delta;
-            if (v < 0) v = 0; if (v > 10) v = 10;
-            c.trigger_reduce = (uint8_t)v;
-            break;
-        }
-        case kSettingsSpkBoostIdx: { // speaker_gain  0 (game) .. 7
-            int v = (int)c.speaker_gain + delta;
-            if (v < 0) v = 0; if (v > 7) v = 7;
-            c.speaker_gain = (uint8_t)v;
-            break;
-        }
-        case kSettingsVolLockIdx: c.lock_volume ^= 1; break;
-        case kSettingsSpkOutIdx: { // speaker_select  0..3, wraps
-            int v = (int)c.speaker_select + delta;
-            if (v < 0) v = 3; if (v > 3) v = 0;
-            c.speaker_select = (uint8_t)v;
-            break;
-        }
-        case kSettingsMicInIdx: { // mic_select  0..2, wraps
-            int v = (int)c.mic_select + delta;
-            if (v < 0) v = 2; if (v > 2) v = 0;
-            c.mic_select = (uint8_t)v;
-            break;
-        }
-        case kSettingsMicLvlIdx: { // mic_level  0 (the PC's) .. 64, in steps of 4
-            int v = (int)c.mic_level + delta * 4;
-            if (v < 0) v = 0; if (v > kMicLevelMax) v = kMicLevelMax;
-            c.mic_level = (uint8_t)v;
-            break;
-        }
-        case kSettingsMicAecIdx: c.mic_echo_cancel ^= 1; break;
-        case kSettingsSleepOffIdx: settings_power ^= POWER_SLEEP_CONTROLLER_OFF; break;
-        case kSettingsPsWakeIdx: settings_power ^= POWER_PS_WAKES_PC; break;
+        return it.flags & SIF_FLOAT10 ? v / 10.0f : static_cast<float>(v);
+    };
+    if (it.flags & (SIF_FLOAT | SIF_FLOAT10)) {
+        float value;
+        memcpy(&value, p, sizeof(value)); // packed floats need not be aligned
+        value = adjust(value);
+        memcpy(p, &value, sizeof(value));
+        if (it.flags & SIF_LINK_GRIPS) settings_local.haptics_gain_right = adjust(settings_local.haptics_gain_right);
+    } else {
+        *p = static_cast<uint8_t>(adjust(*p));
     }
 }
 
@@ -1693,8 +1679,8 @@ void settings_handle_input() {
     // every other item saves edits on a normal short press.
     const bool tri_now = (face & 0x80) != 0;
     const bool tri_prev = (settings_last_face & 0x80) != 0;
-    const bool is_hold_item = (settings_sel == kSettingsResetIdx
-                               || settings_sel == kSettingsWipeSlotsIdx);
+    const uint8_t action = kSetItems[settings_sel].act;
+    const bool is_hold_item = action != ACT_NONE;
     if (tri_now && !tri_prev) {
         settings_tri_press_us = (uint32_t)time_us_32();
         settings_reset_triggered = false;
@@ -1702,7 +1688,7 @@ void settings_handle_input() {
     if (is_hold_item && tri_now && !settings_reset_triggered
         && ((uint32_t)time_us_32() - settings_tri_press_us) >= kResetHoldUs) {
         settings_reset_triggered = true;
-        if (settings_sel == kSettingsResetIdx) {
+        if (action == ACT_RESET) {
             config_default();
             // error: SHOWN — OLED footer "Reset FAIL" / "Save FAIL"
             if (config_save()) {
@@ -1734,85 +1720,36 @@ void settings_handle_input() {
 }
 
 __attribute__((noinline)) void format_settings_item(int idx, char* line, size_t n) {
-    const Config_body &c = settings_local;
-    const char *cur = (idx == settings_sel) ? ">" : " ";
-    switch (idx) {
-        case 0: {
-            int g = (int)(c.haptics_gain * 10.0f + 0.5f);
-            int r = (int)(c.haptics_gain_right * 10.0f + 0.5f);
-            if (g == r) snprintf(line, n, "%s Hap Gain %d.%dx", cur, g / 10, g % 10);
-            else snprintf(line, n, "%s Hap L%d.%d R%d.%d", cur, g / 10, g % 10, r / 10, r % 10);
-            break;
+    const SetItem &it = kSetItems[idx];
+    const char *cur = idx == settings_sel ? ">" : " ";
+    if (it.kind == SK_ACTION) { snprintf(line, n, "%s %s", cur, it.label); return; }
+    const uint8_t *p = reinterpret_cast<const uint8_t*>(&settings_local) + it.off;
+    char value[16];
+    if (it.flags & SIF_FLOAT10) {
+        float f; memcpy(&f, p, sizeof(f));
+        const int g = static_cast<int>(f * 10.0f + 0.5f);
+        const int r = static_cast<int>(settings_local.haptics_gain_right * 10.0f + 0.5f);
+        if ((it.flags & SIF_LINK_GRIPS) && g != r) {
+            snprintf(line, n, "%s Hap L%d.%d R%d.%d", cur, g / 10, g % 10, r / 10, r % 10);
+            return;
         }
-        case 1: snprintf(line, n, "%s Spk Vol %+ddB", cur, (int)c.speaker_volume); break;
-        case 2: snprintf(line, n, "%s Inact %umin", cur, c.inactive_time); break;
-        case 3: snprintf(line, n, "%s InactDC %s", cur, c.disable_inactive_disconnect ? "off" : "on"); break;
-        case 4: snprintf(line, n, "%s Pico LED %s", cur, c.disable_pico_led ? "off" : "on"); break;
-        case 5: {
-            const char* names[3] = {"250Hz", "500Hz", "RT"};
-            snprintf(line, n, "%s Poll %s", cur, names[c.polling_rate_mode % 3]);
-            break;
+        snprintf(value, sizeof(value), "%d.%dx", g / 10, g % 10);
+    } else if (it.flags & SIF_FLOAT) {
+        float f; memcpy(&f, p, sizeof(f));
+        snprintf(value, sizeof(value), "%+d%s", static_cast<int>(f), it.unit ? it.unit : "");
+    } else {
+        const uint8_t v = it.kind == SK_POWER ? (settings_power & it.off) != 0 : *p;
+        if (it.names || it.kind == SK_BOOL || it.kind == SK_POWER) {
+            const char* const* names = it.names ? it.names : kOnOff;
+            const unsigned index = it.kind == SK_BOOL || it.kind == SK_POWER ? v != 0 : v % (it.hi + 1);
+            snprintf(value, sizeof(value), "%s", names[index]);
+        } else if (v == 0 && it.fmt != SF_PLAIN) {
+            snprintf(value, sizeof(value), "%s", it.fmt == SF_OFF0 ? "off" : it.fmt == SF_PC0 ? "PC" : "game");
+        } else {
+            snprintf(value, sizeof(value), "%s%u%s", it.fmt == SF_REDUCE ? "-" : "", v, it.unit ? it.unit : "");
         }
-        case 6: snprintf(line, n, "%s AudBuf %u", cur, c.audio_buffer_length); break;
-        case 7: {
-            const char* names[3] = {"DS5", "DSE", "Auto"};
-            snprintf(line, n, "%s Ctrl %s", cur, names[c.controller_mode % 3]);
-            break;
-        }
-        case 8: {
-            const char* names[4] = {"Off", "Fallback", "Mix", "Replace"};
-            snprintf(line, n, "%s AutoHap %s", cur, names[c.auto_haptics_enable & 3]);
-            break;
-        }
-        case 9: snprintf(line, n, "%s AH Gain %u%%", cur, c.auto_haptics_gain); break;
-        case 10: {
-            const char* names[4] = {"80Hz", "160Hz", "250Hz", "400Hz"};
-            snprintf(line, n, "%s AH LP %s", cur, names[c.auto_haptics_lowpass & 3]);
-            break;
-        }
-        case 11:
-            if (c.screen_dim_timeout == 0) snprintf(line, n, "%s ScrDim off", cur);
-            else snprintf(line, n, "%s ScrDim %umin", cur, c.screen_dim_timeout);
-            break;
-        case 12:
-            if (c.screen_off_timeout == 0) snprintf(line, n, "%s ScrOff off", cur);
-            else snprintf(line, n, "%s ScrOff %umin", cur, c.screen_off_timeout);
-            break;
-        case 13: snprintf(line, n, "%s BT Mic %s", cur, c.bt_mic_enable ? "on" : "off"); break;
-        case 14: snprintf(line, n, "%s CtrlWake %s", cur, c.controller_wakes_display ? "on" : "off"); break;
-        case kSettingsTrigRedIdx:
-            if (c.trigger_reduce == 0) snprintf(line, n, "%s TrigEff game", cur);
-            else snprintf(line, n, "%s TrigEff -%u", cur, c.trigger_reduce);
-            break;
-        case kSettingsSpkBoostIdx:
-            if (c.speaker_gain == 0) snprintf(line, n, "%s SpkBoost game", cur);
-            else snprintf(line, n, "%s SpkBoost %u", cur, c.speaker_gain);
-            break;
-        case kSettingsVolLockIdx: snprintf(line, n, "%s VolLock %s", cur, c.lock_volume ? "on" : "off"); break;
-        case kSettingsSpkOutIdx: {
-            const char* names[4] = {"Auto", "SPK", "Hset", "off"};
-            snprintf(line, n, "%s SPK Out %s", cur, names[c.speaker_select & 3]);
-            break;
-        }
-        case kSettingsMicInIdx: {
-            const char* names[3] = {"Auto", "Int", "Hset"};
-            snprintf(line, n, "%s Mic In %s", cur, names[c.mic_select % 3]);
-            break;
-        }
-        case kSettingsMicLvlIdx:
-            if (c.mic_level == 0) snprintf(line, n, "%s Mic Lvl PC", cur);
-            else snprintf(line, n, "%s Mic Lvl %u", cur, c.mic_level);
-            break;
-        case kSettingsMicAecIdx: snprintf(line, n, "%s Echo Cancel %s", cur, c.mic_echo_cancel ? "on" : "off"); break;
-        case kSettingsSleepOffIdx:
-            snprintf(line, n, "%s Sleep CtrlOff %s", cur, (settings_power & POWER_SLEEP_CONTROLLER_OFF) ? "on" : "off");
-            break;
-        case kSettingsPsWakeIdx:
-            snprintf(line, n, "%s PS Wakes PC %s", cur, (settings_power & POWER_PS_WAKES_PC) ? "on" : "off");
-            break;
-        case kSettingsResetIdx: snprintf(line, n, "%s Reset to defaults", cur); break;
-        case kSettingsWipeSlotsIdx: snprintf(line, n, "%s Wipe all slots", cur); break;
     }
+    snprintf(line, n, "%s %s %s", cur, it.label, value);
 }
 
 __attribute__((noinline)) void render_screen_settings() {
@@ -1835,10 +1772,8 @@ __attribute__((noinline)) void render_screen_settings() {
         && (int32_t)(time_us_32() - settings_status_until_us) < 0;
     if (status_live) {
         draw_text(kContentX, 56, settings_save_status);
-    } else if (settings_sel == kSettingsResetIdx) {
-        draw_text(kContentX, 56, "Hold Tri 2s = RESET");
-    } else if (settings_sel == kSettingsWipeSlotsIdx) {
-        draw_text(kContentX, 56, "Hold Tri 2s = WIPE");
+    } else if (kSetItems[settings_sel].hint) {
+        draw_text(kContentX, 56, kSetItems[settings_sel].hint);
     } else {
         draw_text(kContentX, 56, "DP nav/adj  Tri=save");
     }
