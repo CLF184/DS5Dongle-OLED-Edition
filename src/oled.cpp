@@ -342,7 +342,9 @@ void rect_clear(int x, int y, int w, int h) {
     const int y1 = y + h > kH ? kH : y + h;
     if (x0 >= x1 || y0 >= y1) return;
     const int first = x0 / 8, last = (x1 - 1) / 8;
+    // loop: HOT-PATH-OK — at most 64 rows, only when a diagnostic band changes
     for (int row = y0; row < y1; ++row) {
+        // loop: HOT-PATH-OK — at most 16 framebuffer bytes per row
         for (int col = first; col <= last; ++col) {
             uint8_t mask = 0xff;
             if (col == first) mask &= 0xffu >> (x0 & 7);
@@ -1079,6 +1081,7 @@ __attribute__((noinline)) void render_screen_diag() {
     sample_diag_rates();
 
     char line[20]; // 19 glyphs fit before the scroll markers at x=120
+    // loop: HOT-PATH-OK — five visible rows at 10 Hz, unchanged strings skip drawing
     for (int i = 0; i < kDiagVisible; i++) {
         if (diag_scroll + i < kNumDiagRows) format_diag_row(diag_scroll + i, line, sizeof(line));
         else line[0] = '\0';
@@ -1625,6 +1628,7 @@ __attribute__((noinline)) void render_screen_vu() {
 void settings_adjust(int delta) {
     const SetItem &it = kSetItems[settings_sel];
     settings_dirty = true;
+    // error: NOT-WORTH — Reset/Wipe have no editable value; Triangle runs the action
     if (it.kind == SK_ACTION) return;
     uint8_t *p = it.kind == SK_POWER ? &settings_power
         : reinterpret_cast<uint8_t*>(&settings_local) + it.off;
@@ -1637,6 +1641,7 @@ void settings_adjust(int delta) {
         if (it.flags & SIF_GRID) {
             const auto floor_grid = [&](int x) { return x >= 0 ? x / it.step * it.step : -((-x + it.step - 1) / it.step * it.step); };
             const auto ceil_grid = [&](int x) { return -floor_grid(-x); };
+            // loop: NOT-WORTH — abs(delta) steps, one on each D-pad adjustment
             for (int i = 0; i < (delta < 0 ? -delta : delta); ++i)
                 v = delta > 0 ? floor_grid(v) + it.step : ceil_grid(v) - it.step;
         } else v += delta * it.step;
