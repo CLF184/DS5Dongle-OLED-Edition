@@ -11,6 +11,7 @@
 #include "grip_wave.h"
 #include "haptics_decimate.h"
 #include "resample.h"
+#include "speaker_mono.h"
 #include "tusb.h"
 #include <algorithm>
 #include <cmath>
@@ -124,10 +125,12 @@ void set_headset(bool state) {
 // Protocol 1.13 speaker_select (upstream ea93fad): 0 auto (the headset when one
 // is plugged in), 1 speaker, 2 headset, 3 off. The 0x39 speaker block's tag
 // picks the output: 0x13 speaker, 0x16 headset.
-static inline __attribute__((always_inline)) uint8_t speaker_block_tag() {
+static inline __attribute__((always_inline)) bool speaker_to_headset() {
     const uint8_t sel = get_config().speaker_select;
-    const bool headset = sel == 2 || (sel == 0 && plug_headset);
-    return (headset ? 0x16 : 0x13) | 1 << 6 | 1 << 7;
+    return sel == 2 || (sel == 0 && plug_headset);
+}
+static inline __attribute__((always_inline)) uint8_t speaker_block_tag() {
+    return (speaker_to_headset() ? 0x16 : 0x13) | 1 << 6 | 1 << 7;
 }
 // Off: the PC's audio isn't converted, encoded or sent (the narrator still
 // speaks, as with no encoder).
@@ -485,6 +488,18 @@ void CORE0_RAM_FUNC(audio_loop)() {
     // nothing would take the PCM, so don't convert and queue it only to drop
     // it (upstream 4929996 skips this work when the speaker is off).
     const bool spk_ready = g_spk_ready && speaker_output_on();
+    // Linux's mono Speaker device fills ch2 only: on the headset, play it in
+    // both ears (src/speaker_mono.h). Stereo (any non-zero ch1) is untouched.
+    static SpeakerMonoDetect speaker_mono;
+    bool spk_dup = false;
+    if (spk_ready) {
+        bool l = false, r = false;
+        for (int i = 0; i < frames; i++) {
+            l |= raw[i * INPUT_CHANNELS] != 0;
+            r |= raw[i * INPUT_CHANNELS + 1] != 0;
+        }
+        spk_dup = speaker_mono.update(l, r, (uint32_t) frames) && speaker_to_headset();
+    }
 #endif
 
     for (int i = 0; i < frames; i++) {
@@ -507,7 +522,7 @@ void CORE0_RAM_FUNC(audio_loop)() {
         // speaker_volume can boost up to +12 dB: clip at full scale rather than
         // hand the encoder samples past +-1.
         if (spk_ready) {
-            audio_buf[audio_buf_pos++] = std::clamp(raw[i * INPUT_CHANNELS] / 32768.0f * audio_gain, -1.0f, 1.0f);
+            audio_buf[audio_buf_pos++] = std::clamp(raw[i * INPUT_CHANNELS + (spk_dup ? 1 : 0)] / 32768.0f * audio_gain, -1.0f, 1.0f);
             audio_buf[audio_buf_pos++] = std::clamp(raw[i * INPUT_CHANNELS + 1] / 32768.0f * audio_gain, -1.0f, 1.0f);
             if (audio_buf_pos == 512 * 2) {
                 static audio_raw_element element{};

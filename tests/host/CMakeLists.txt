@@ -30,6 +30,7 @@ add_executable(host_tests
         test_usb_power.cpp
         test_state_override.cpp
         test_audio_levels.cpp
+        test_speaker_mono.cpp
         test_rssi_poll.cpp
         # The firmware sources under test, unmodified.
         ${FW}/src/calib.cpp

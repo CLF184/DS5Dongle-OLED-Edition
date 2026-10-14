@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+### Fixed
+- **Mono speaker audio played in the right ear only on a headset** (Linux): the DualSense's "Speaker" output (the PipeWire/PulseAudio profile "HiFi (Mic, Speaker)", alsa-ucm-conf) writes its mono signal to USB channel 2 only and leaves channel 1 silent, and the dongle sends channels 1/2 as the speaker stream's left/right. With Audio output on Auto and a headset plugged in (or on Headset), the app's speaker test, the narrator's host-side lines and anything else on that output came out of the right ear only. Now, while the speaker stream goes to the headset and channel 2 has carried sound for 100 ms with channel 1 exactly silent, channel 2 is played in both ears; the first non-zero sample on channel 1 ends it at once, so stereo from the "Headphones" output or a game stays stereo. The speaker itself is unchanged. `src/speaker_mono.h`, host-tested.
+
 ## [0.9.5-dev.9-oled-edition] - 2026-10-13
 
 ### Added
