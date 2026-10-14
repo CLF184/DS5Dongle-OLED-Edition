@@ -45,6 +45,7 @@ void start_fetch(bool readies, uint64_t now) {
     s_fetch_readies = readies;
     s_next = kFirstProfile;
     s_last_get_us = now;
+    // lifetime: NOT-WORTH — a discarded copy per Edge profile fetch step (a few per connect / save)
     (void) get_feature_data(s_next++, 64);  // the reply lands in the feature cache
 }
 
@@ -106,6 +107,7 @@ void dse_task(bool may_use_test_slot) {
         case Phase::Unlock: {
             if (!may_use_test_slot) return;
             // SET 0x65: the firmware report's body as is, like a native host.
+            // lifetime: NOT-WORTH — once per Edge unlock
             const std::vector<uint8_t> fw = bt_peek_feature(0x20);  // [0x20, data..., crc32]
             if (fw.size() >= 62) {
                 uint8_t handshake[63];
@@ -134,6 +136,7 @@ void dse_task(bool may_use_test_slot) {
             return;
         case Phase::SavePoll:
             if (now - s_t0_us >= kSavePollFirstUs + kSavePollGapUs * s_polls) {
+                // lifetime: NOT-WORTH — a discarded copy per save status poll (a few per save)
                 (void) get_feature_data(0x81, 64);  // status poll, as the app does
                 if (++s_polls >= kSavePolls) s_phase = Phase::SaveWait;
             }
@@ -145,6 +148,7 @@ void dse_task(bool may_use_test_slot) {
             if (now - s_last_get_us < kFetchGapUs) return;
             s_last_get_us = now;
             if (s_next <= kLastProfile) {
+                // lifetime: NOT-WORTH — a discarded copy per Edge profile fetch step (a few per connect / save)
                 (void) get_feature_data(s_next++, 64);
                 return;
             }

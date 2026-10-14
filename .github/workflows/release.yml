@@ -135,6 +135,9 @@ jobs:
       - name: Every loop has a verdict (CLAUDE.md "Loop pass")
         run: python3 tools/list_loops.py --check
 
+      - name: Every acquisition has a verdict (CLAUDE.md "Lifetime pass")
+        run: python3 tools/list_lifetimes.py --check
+
       - name: Host unit tests (ASan + UBSan)
         run: tests/host/run.sh build/host-tests
 

@@ -320,6 +320,7 @@ static uint16_t get_report_impl(uint8_t itf, uint8_t report_id, hid_report_type_
     // kernel still binds at that moment.
     if (report_id == 0x09 || report_id == 0x20 || report_id == 0x05) {
         if (reqlen == 0) return 0;
+        // lifetime: NOT-WORTH — per host GET feature report (the PC asks a few times per connect)
         std::vector<uint8_t> real = get_feature_data(report_id, reqlen);
         if (report_id == 0x20 && real.size() > 1) {
             // An Edge presented as a DualSense gets a DualSense firmware report
@@ -360,10 +361,12 @@ static uint16_t get_report_impl(uint8_t itf, uint8_t report_id, hid_report_type_
     // Accessories retries rather than keeping an empty snapshot. The GET still
     // goes to the controller, as upstream 8a2f576 does.
     if (dse_is_profile_report(report_id) && !dse_profiles_ready()) {
+        // lifetime: NOT-WORTH — a discarded copy per host GET of an Edge profile before they're ready
         (void) get_feature_data(report_id, reqlen);
         return 0;
     }
 
+    // lifetime: NOT-WORTH — per host GET feature report (the PC asks a few times per connect)
     std::vector<uint8_t> feature_data = get_feature_data(report_id, reqlen);
     if (!feature_data.empty()) {
         memcpy(buffer, feature_data.data() + 1, feature_data.size() - 1);

@@ -167,6 +167,7 @@ void calib_service() {
         return;
     }
     if (g_bias_known) return;
+    // lifetime: OK — no heap until 0x05 arrives (empty vector), then one copy per connection (g_bias_known)
     const auto d = bt_peek_feature(0x05);
     if (d.size() < 35) return; // not arrived yet
     bool plausible = true;

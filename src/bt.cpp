@@ -74,6 +74,7 @@ static const uint8_t kNeutralInput[66] = {
 };
 static bool check_dse = false;
 static int8_t bt_rssi = 0;
+// lifetime: OK — cleared on disconnect (feature_data.clear()); ≤ ~10 report ids × ≤ 64 B meanwhile
 unordered_map<uint8_t, vector<uint8_t> > feature_data;
 queue_t send_fifo;
 
@@ -268,13 +269,16 @@ void bt_l2cap_init() {
     l2cap_add_event_handler(&l2cap_event_callback_registration);
     // 修复重连后自动断开的关键点
     sdp_init();
+    // lifetime: NOT-WORTH — boot; BTstack keeps the service for the firmware's life
     l2cap_register_service(l2cap_packet_handler, PSM_HID_CONTROL, MTU_CONTROL, LEVEL_2);
+    // lifetime: NOT-WORTH — boot; BTstack keeps the service for the firmware's life
     l2cap_register_service(l2cap_packet_handler, PSM_HID_INTERRUPT, MTU_INTERRUPT, LEVEL_2);
 
     l2cap_init();
 }
 
 int bt_init() {
+    // lifetime: NOT-WORTH — boot, once per firmware run; the queue lives until reset
     queue_init(&send_fifo, sizeof(send_element), 10);
 
     // Load persistent slot table BEFORE HCI comes up so the inquiry filter
@@ -296,6 +300,7 @@ int bt_init() {
     update_discoverable();
 
     hci_event_callback_registration.callback = &hci_packet_handler;
+    // lifetime: NOT-WORTH — boot; one registration for the firmware's life
     hci_add_event_handler(&hci_event_callback_registration);
 
     hci_power_control(HCI_POWER_ON);
@@ -616,6 +621,7 @@ static void CORE0_RAM_FUNC(l2cap_packet_handler)(uint8_t packet_type, uint16_t c
         } else if (channel == hid_control_cid) {
             if (packet[0] == 0xA3) {
                 uint8_t report_id = packet[1];
+                // lifetime: OK — reuses the id's buffer (same size each reply); new ids only until disconnect clears
                 feature_data[report_id].assign(packet + 1, packet + size);
 #if ENABLE_VERBOSE
                 printf("[L2CAP] Stored Feature Report 0x%02X, len=%u\n", report_id, size - 1);
@@ -802,6 +808,7 @@ void CORE0_RAM_FUNC(bt_write)(const uint8_t *data, const uint16_t len) {
     }
 }
 
+// lifetime: NOT-WORTH — a ≤ 64 B copy per request (≤ 25/s, a few s per connect); fire-and-forget callers could skip it
 vector<uint8_t> get_feature_data(uint8_t reportId, uint16_t len) {
     // 若为0x81则会请求新内容，其他若有旧数据则不进行请求
     auto ret = vector<uint8_t>{};
@@ -834,6 +841,7 @@ void bt_drop_feature(uint8_t reportId) {
     feature_data.erase(reportId);
 }
 
+// lifetime: NOT-WORTH — copies on every call; empty (no heap) until the report arrives; hot callers have rows
 std::vector<uint8_t> bt_peek_feature(uint8_t reportId) {
     auto it = feature_data.find(reportId);
     return (it != feature_data.end()) ? it->second : std::vector<uint8_t>{};
@@ -855,11 +863,15 @@ void set_feature_data(uint8_t reportId, uint8_t *data, uint16_t len) {
 }
 
 void init_feature() {
+    // lifetime: NOT-WORTH — once per connection
     get_feature_data(0x09, 20);
+    // lifetime: NOT-WORTH — once per connection
     get_feature_data(0x22, 64);
+    // lifetime: NOT-WORTH — once per connection
     get_feature_data(0x05, 41);
     // Last: its reply tells DualSense from Edge and connects USB, by when the
     // controller (which answers in order) has sent the three above.
     check_dse = true;
+    // lifetime: NOT-WORTH — once per connection
     get_feature_data(0x20, 64);
 }

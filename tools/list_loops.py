@@ -189,6 +189,7 @@ class Parser:
                     name, ram = self.fn_name(self.rev[j])
                     if name and self.tok(self.prev_stmt_end(i) + 1) != "=":
                         fn = Fn((cls + "::" if cls else "") + name, self.t[i][1], ram)
+                        fn.end = self.t[close][1] if close < len(self.t) else self.t[-1][1]
                         self.fns.append(fn)
                         self.body(i + 1, close, fn, 0)
                         i = close + 1
@@ -339,8 +340,9 @@ class Parser:
         fn.loops.append(dict(line=line, nest=nest, wait=wait, flash=flash, head=head, kind=kind))
 
 
-def main():
-    mode = sys.argv[1] if len(sys.argv) > 1 else ""
+def build_graph():
+    """Parse src/ and work out where each function runs (Fn.ctx). Returns
+    (fns, by_file: rel path -> source lines). Shared with list_lifetimes.py."""
     files = sorted(p for p in (ROOT / "src").rglob("*") if p.suffix in (".c", ".cpp", ".h"))
     fns, by_file = [], {}
     for p in files:
@@ -392,7 +394,12 @@ def main():
     for f in fns:
         if not f.ctx:
             f.ctx.add("-")
+    return fns, by_file
 
+
+def main():
+    mode = sys.argv[1] if len(sys.argv) > 1 else ""
+    fns, by_file = build_graph()
     rows = []
     for f in fns:
         lines = by_file[f.file]
