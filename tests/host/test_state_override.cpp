@@ -1,4 +1,4 @@
-// src/state_override.h: the protocol 1.13 settings (and 1.16's mic level) on the controller state.
+// src/state_override.h: the protocol 1.13 settings (and 1.16's mic level, 1.17's echo cancellation) on the controller state.
 // With every setting at "the game's own" a game report passes untouched (the
 // upstream #228 regression was the dongle changing the game's trigger state).
 #include <cstring>
@@ -146,4 +146,59 @@ TEST(override_push_mic_level_and_back_to_the_pc) {
     build_override_push(ss, {0, 0, 0, 0, 48}, kHostAudioDefaults, false, false, false);
     CHECK_EQ(ss[0], 0);
     CHECK_EQ(ss[kVolumeMic], 0);
+}
+
+// Protocol 1.17: echo cancellation on sets EchoCancelEnable in any report that
+// sets AudioControl, keeping the rest of the byte; a report without the
+// section is untouched; off leaves the game's own bit.
+TEST(override_echo_cancel_on_sets_only_the_bit_in_reports_with_audio_control) {
+    constexpr StateOverrides kAec{0, 0, 0, 0, 0, 1};
+    // Linux hid-playstation on a headset unplug: AudioControl 0x30 (speaker path).
+    uint8_t ss[47]{};
+    ss[0] = kF0AllowAudioControl;
+    ss[kAudioControl] = 0x30;
+    stamp_overrides(ss, kAec, kHostAudioDefaults, true);
+    CHECK_EQ(ss[kAudioControl], 0x34);
+    CHECK_EQ(ss[0], kF0AllowAudioControl);
+    // A game report without AudioControl: byte for byte the same.
+    uint8_t before[47];
+    game_report(ss);
+    ss[0] = 0x0C;
+    std::memcpy(before, ss, sizeof(ss));
+    stamp_overrides(ss, kAec, kHostAudioDefaults, true);
+    CHECK(std::memcmp(ss, before, sizeof(ss)) == 0);
+    // The connect-time state: auto mic, NoiseCancel kept, echo cancellation on.
+    std::memset(ss, 0, sizeof(ss));
+    ss[0] = 0xFD;
+    ss[kAudioControl] = 0x09;
+    stamp_overrides(ss, kAec, kHostAudioDefaults, false);
+    CHECK_EQ(ss[kAudioControl], 0x0C);
+    // With a mic choice on a game report that lacks the section.
+    std::memset(ss, 0, sizeof(ss));
+    stamp_overrides(ss, {0, 0, 0, 2, 0, 1}, kHostAudioDefaults, true);
+    CHECK(ss[0] & kF0AllowAudioControl);
+    CHECK_EQ(ss[kAudioControl], 0x0E);
+    // Off: a game that turns it on keeps it; one that doesn't stays off.
+    std::memset(ss, 0, sizeof(ss));
+    ss[0] = kF0AllowAudioControl;
+    ss[kAudioControl] = 0x0C;
+    stamp_overrides(ss, kNone, kHostAudioDefaults, true);
+    CHECK_EQ(ss[kAudioControl], 0x0C);
+    ss[kAudioControl] = 0x08;
+    stamp_overrides(ss, kNone, kHostAudioDefaults, false);
+    CHECK_EQ(ss[kAudioControl], 0x08);
+}
+
+TEST(override_push_echo_cancel_on_and_back_to_the_game) {
+    const HostAudioBytes h = {0x31, 0, 0};  // the game: speaker path, built-in mic, no NoiseCancel
+    uint8_t ss[47]{};
+    build_override_push(ss, {0, 0, 0, 0, 0, 1}, h, false, false, true);
+    CHECK_EQ(ss[0], kF0AllowAudioControl);
+    CHECK_EQ(ss[kAudioControl], 0x35);
+    std::memset(ss, 0, sizeof(ss));
+    build_override_push(ss, {0, 0, 0, 2, 0, 1}, h, false, false, true);  // with a mic choice
+    CHECK_EQ(ss[kAudioControl], 0x36);
+    std::memset(ss, 0, sizeof(ss));
+    build_override_push(ss, kNone, h, false, false, true);  // off: the game's byte
+    CHECK_EQ(ss[kAudioControl], 0x31);
 }

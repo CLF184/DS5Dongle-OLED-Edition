@@ -135,7 +135,7 @@ constexpr int kLbModeHost = 8;
 constexpr int kNumLbModes = 9;
 
 // Settings screen state
-constexpr int kNumSettingsItems = 25; // 8 fields + 3 auto-haptic + 2 screen-timeout + BT mic + Ctrl-wake + 5 audio/trigger (1.13) + mic level (1.16) + 2 PC sleep (1.14) + Reset + Wipe
+constexpr int kNumSettingsItems = 26; // 8 fields + 3 auto-haptic + 2 screen-timeout + BT mic + Ctrl-wake + 5 audio/trigger (1.13) + mic level (1.16) + mic echo cancellation (1.17) + 2 PC sleep (1.14) + Reset + Wipe
 constexpr int kSettingsAutoHapEnaIdx  = 8;
 constexpr int kSettingsAutoHapGainIdx = 9;
 constexpr int kSettingsAutoHapLpIdx   = 10;
@@ -149,10 +149,11 @@ constexpr int kSettingsVolLockIdx     = 17;
 constexpr int kSettingsSpkOutIdx      = 18;
 constexpr int kSettingsMicInIdx       = 19;
 constexpr int kSettingsMicLvlIdx      = 20; // protocol 1.16
-constexpr int kSettingsSleepOffIdx    = 21; // protocol 1.14 (Config::power_flags)
-constexpr int kSettingsPsWakeIdx      = 22;
-constexpr int kSettingsResetIdx       = 23;
-constexpr int kSettingsWipeSlotsIdx   = 24;
+constexpr int kSettingsMicAecIdx      = 21; // protocol 1.17
+constexpr int kSettingsSleepOffIdx    = 22; // protocol 1.14 (Config::power_flags)
+constexpr int kSettingsPsWakeIdx      = 23;
+constexpr int kSettingsResetIdx       = 24;
+constexpr int kSettingsWipeSlotsIdx   = 25;
 Config_body settings_local{};
 uint8_t settings_power = POWER_FLAGS_DEFAULT;  // PC sleep options (Config::power_flags, not in the body)
 int settings_sel = 0;
@@ -1632,6 +1633,7 @@ void settings_adjust(int delta) {
             c.mic_level = (uint8_t)v;
             break;
         }
+        case kSettingsMicAecIdx: c.mic_echo_cancel ^= 1; break;
         case kSettingsSleepOffIdx: settings_power ^= POWER_SLEEP_CONTROLLER_OFF; break;
         case kSettingsPsWakeIdx: settings_power ^= POWER_PS_WAKES_PC; break;
     }
@@ -1763,6 +1765,7 @@ __attribute__((noinline)) void format_settings_item(int idx, char* line, size_t 
             if (c.mic_level == 0) snprintf(line, n, "%s Mic Lvl PC", cur);
             else snprintf(line, n, "%s Mic Lvl %u", cur, c.mic_level);
             break;
+        case kSettingsMicAecIdx: snprintf(line, n, "%s Echo Cancel %s", cur, c.mic_echo_cancel ? "on" : "off"); break;
         case kSettingsSleepOffIdx:
             snprintf(line, n, "%s Sleep CtrlOff %s", cur, (settings_power & POWER_SLEEP_CONTROLLER_OFF) ? "on" : "off");
             break;

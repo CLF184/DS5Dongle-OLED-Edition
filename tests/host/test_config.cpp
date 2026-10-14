@@ -33,6 +33,7 @@ TEST(config_erased_flash_gives_documented_defaults) {
     CHECK_EQ(c.status_gpio_pin, kStatusGpioOff);
     CHECK_EQ(c.status_gpio_mode, 0);
     CHECK_EQ(c.mic_level, 0);  // follow the PC (1.16)
+    CHECK_EQ(c.mic_echo_cancel, 1);  // on (1.17)
     CHECK(config_unsaved());  // nothing valid saved yet
 }
 
@@ -119,6 +120,43 @@ TEST(config_1_13_body_keeps_settings_and_defaults_the_mic_level) {
     CHECK_EQ(get_config().trigger_reduce, 3);
     CHECK_EQ(get_config().status_gpio_mode, 1);
     CHECK_EQ(get_config().mic_level, 0);
+}
+
+// A config saved by 1.16 firmware: a 50-byte body, 0xFF after it. Its mic
+// level stays, the 1.17 echo cancellation is on.
+TEST(config_1_16_body_keeps_the_mic_level_and_turns_echo_cancel_on) {
+    fake_flash_erase_all();
+    g_fake_flash_fail = false;
+    config_load();
+    Config_body b = get_config();
+    b.mic_level = 20;
+    b.mic_echo_cancel = 0;
+    set_config(b);
+    CHECK(config_save());
+    uint8_t *raw = g_fake_flash + CONFIG_FLASH_OFFSET;
+    raw[offsetof(Config, body) + offsetof(Config_body, mic_echo_cancel)] = 0xFF;
+    const uint16_t size = 50;
+    std::memcpy(raw + offsetof(Config, size), &size, sizeof(size));
+    config_default();
+    config_load();
+    CHECK_EQ(get_config().mic_level, 20);
+    CHECK_EQ(get_config().mic_echo_cancel, 1);
+}
+
+TEST(config_clamps_the_echo_cancel) {
+    fake_flash_erase_all();
+    config_load();
+    Config_body b = get_config();
+    for (int v : {0, 1}) {
+        b.mic_echo_cancel = (uint8_t) v;
+        set_config(b);
+        CHECK_EQ(get_config().mic_echo_cancel, v);
+    }
+    for (int v : {2, 0x80, 0xFF}) {
+        b.mic_echo_cancel = (uint8_t) v;
+        set_config(b);
+        CHECK_EQ(get_config().mic_echo_cancel, 1);
+    }
 }
 
 TEST(config_clamps_the_mic_level) {

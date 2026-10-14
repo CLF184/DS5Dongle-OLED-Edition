@@ -1,8 +1,8 @@
 // The settings the dongle puts on the controller state it sends (protocol
 // 1.13, upstream's batch 3): weaker adaptive triggers, the speaker amp's
-// pre-gain, the microphone choice and the volume lock; and (protocol 1.16) the
-// controller's microphone level. Pure, so the host tests check it byte for
-// byte.
+// pre-gain, the microphone choice and the volume lock; (protocol 1.16) the
+// controller's microphone level; and (protocol 1.17) its echo cancellation.
+// Pure, so the host tests check it byte for byte.
 //
 // Upstream's v0.7.2 latched the whole controller state and re-sent it, every
 // allow bit set, on each game report; adaptive triggers came out weak or gone
@@ -22,6 +22,7 @@ struct StateOverrides {
     uint8_t lock_volume;     // bool
     uint8_t mic_select;      // 0 auto, 1 built-in, 2 headset
     uint8_t mic_level;       // 0 = the PC's level, 1..kMicLevelMax (1.16)
+    uint8_t echo_cancel;     // 1 = EchoCancelEnable forced on; 0 = the game's own (1.17)
 };
 
 // The controller's VolumeMic tops out at 0x40 (SetStateData [6]); the PC's
@@ -53,6 +54,9 @@ constexpr int kVolumeMic = 6;
 constexpr int kAudioControl = 7;
 constexpr int kMotorPower = 36;
 constexpr int kAudioControl2 = 37;
+// AudioControl [7] bit 2: the controller's own echo cancellation for its
+// microphone (EchoCancelEnable; Apple's DualSense driver: echoCancelEnable).
+constexpr uint8_t kAudioEchoCancel = 0x04;
 }  // namespace state_bits
 
 // Remember the sections a game report sets (ss = its SetStateData bytes).
@@ -84,6 +88,12 @@ inline void stamp_overrides(uint8_t *ss, const StateOverrides &o, const HostAudi
         ss[0] |= kF0AllowAudioControl;
         ss[kAudioControl] = (uint8_t) ((ss[kAudioControl] & ~0x03) | (o.mic_select & 0x03));
     }
+    // Echo cancellation on (1.17, the default) goes into every report that
+    // sets AudioControl: a game's, the connect-time state, and Linux's
+    // hid-playstation, which sends AudioControl 0 or 0x30 (the output path
+    // only) on each headset plug or unplug and would turn it off. The
+    // controller keeps the byte between reports, so others need nothing.
+    if (o.echo_cancel && (ss[0] & kF0AllowAudioControl)) ss[kAudioControl] |= kAudioEchoCancel;
     // A fixed mic level replaces the level in any report that sets one (a
     // game's, or the connect-time state); the controller keeps it otherwise.
     if (o.mic_level && (ss[0] & kF0AllowMicVolume)) ss[kVolumeMic] = o.mic_level;
@@ -96,6 +106,8 @@ inline void stamp_overrides(uint8_t *ss, const StateOverrides &o, const HostAudi
 // A report of only the sections whose setting changed, to apply it now
 // instead of at the next game report. A setting back at 0 ("the game's own")
 // puts back what the game last set (or the controller's default).
+// mic: the mic choice or the echo cancellation (1.17) changed; both live in
+// AudioControl, so either sends the whole byte with both applied.
 // level: the mic level changed (1.16); back at 0 the controller gets pc_mic,
 // the PC's mic volume as VolumeMic (state_set_mic_volume), again.
 inline void build_override_push(uint8_t *ss, const StateOverrides &o, const HostAudioBytes &h, bool trigger, bool gain, bool mic,
@@ -112,6 +124,7 @@ inline void build_override_push(uint8_t *ss, const StateOverrides &o, const Host
     if (mic) {
         ss[0] |= kF0AllowAudioControl;
         ss[kAudioControl] = o.mic_select ? (uint8_t) ((h.audio_control & ~0x03) | (o.mic_select & 0x03)) : h.audio_control;
+        if (o.echo_cancel) ss[kAudioControl] |= kAudioEchoCancel;
     }
     if (level) {
         ss[0] |= kF0AllowMicVolume;

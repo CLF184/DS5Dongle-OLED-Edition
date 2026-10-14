@@ -118,7 +118,7 @@ void state_set_mic_volume(uint8_t volume) {
 
 static StateOverrides overrides_from_config() {
     const Config_body &c = get_config();
-    return {c.trigger_reduce, c.speaker_gain, c.lock_volume, c.mic_select, c.mic_level};
+    return {c.trigger_reduce, c.speaker_gain, c.lock_volume, c.mic_select, c.mic_level, c.mic_echo_cancel};
 }
 
 void state_stamp_config(uint8_t *ss, bool from_host) {
@@ -144,7 +144,8 @@ void state_config_task() {
     }
     const bool trigger = now.trigger_reduce != s_sent.trigger_reduce;
     const bool gain = now.speaker_gain != s_sent.speaker_gain;
-    const bool mic = now.mic_select != s_sent.mic_select;
+    // The mic choice and the echo cancellation (1.17) share AudioControl.
+    const bool mic = now.mic_select != s_sent.mic_select || now.echo_cancel != s_sent.echo_cancel;
     const bool level = now.mic_level != s_sent.mic_level;
     s_sent = now;
     if (trigger || gain || mic || level) {

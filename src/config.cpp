@@ -140,6 +140,7 @@ void config_valid() {
     if (!status_gpio_pin_valid(body->status_gpio_pin)) body->status_gpio_pin = kStatusGpioOff;
     if (body->status_gpio_mode > 1) body->status_gpio_mode = 0;
     if (body->mic_level > kMicLevelMax) body->mic_level = 0;    // protocol 1.16: follow the PC
+    if (body->mic_echo_cancel > 1) body->mic_echo_cancel = 1;   // protocol 1.17: on
     if (config.power_flags & ~POWER_FLAGS_MASK) config.power_flags = POWER_FLAGS_DEFAULT; // 0xFF erased / older firmware
     if (body->config_version != CONFIG_VERSION) {
         body->config_version = CONFIG_VERSION;

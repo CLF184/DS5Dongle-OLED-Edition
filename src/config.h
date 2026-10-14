@@ -97,6 +97,12 @@ struct __attribute__((packed)) Config_body {
     // still works). Appended like the 1.13 fields: 0xFF from older firmware
     // reads as invalid and takes the default.
     uint8_t mic_level;
+    // Protocol 1.17: the controller's own echo cancellation (SetStateData
+    // AudioControl EchoCancelEnable, [7] bit 2) for its microphone. 1 = on
+    // (default), 0 = off. Forced either way on every report that sets
+    // AudioControl (a game's, the PC driver's, the connect-time state) and
+    // pushed at once on a change. 0xFF from older firmware takes the default.
+    uint8_t mic_echo_cancel;
 };
 
 // The body as protocol 1.6 to 1.12 sent it. A config GET (0xF7) for the
@@ -106,7 +112,8 @@ struct __attribute__((packed)) Config_body {
 constexpr unsigned kConfigBodyV16 = 42;
 static_assert(__builtin_offsetof(Config_body, trigger_reduce) == kConfigBodyV16, "protocol 1.13 fields start after the 1.6 body");
 static_assert(__builtin_offsetof(Config_body, mic_level) == 49, "protocol 1.16's mic level follows the 49-byte 1.13 body");
-static_assert(sizeof(Config_body) == 50, "update cmd.cpp, the app's config.ts and CLAUDE.md with the body");
+static_assert(__builtin_offsetof(Config_body, mic_echo_cancel) == 50, "protocol 1.17's echo cancellation follows the 50-byte 1.16 body");
+static_assert(sizeof(Config_body) == 51, "update cmd.cpp, the app's config.ts and CLAUDE.md with the body");
 
 // What the dongle does when the PC sleeps (protocol 1.14, src/usb_power.h).
 // Kept after the body, not in it: set and saved on its own (0xF6 0x17, like

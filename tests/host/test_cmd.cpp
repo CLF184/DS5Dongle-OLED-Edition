@@ -35,18 +35,19 @@ void settle() {  // let a deferred command run (reboot/BOOTSEL wait 50 ms)
 }
 }  // namespace
 
-TEST(cmd_identity_reports_protocol_1_16) {
+TEST(cmd_identity_reports_protocol_1_17) {
     fresh();
     uint8_t id[47]{};
     CHECK_EQ(pico_cmd_get(PICO_CMD_IDENTITY, id, sizeof(id)), 47);
     CHECK(std::memcmp(id, "DS5O", 4) == 0);
     CHECK_EQ(id[4], 1);
-    CHECK_EQ(id[5], 16);
-    CHECK_EQ(id[6], 50);
+    CHECK_EQ(id[5], 17);
+    CHECK_EQ(id[6], 51);
     CHECK(id[46] & 0x02);  // the 1.13 config fields
     CHECK(id[46] & 0x04);  // the 1.14 PC sleep options
     CHECK(id[46] & 0x08);  // the 1.15 timed grip test
     CHECK(id[46] & 0x10);  // the 1.16 mic level
+    CHECK(id[46] & 0x20);  // the 1.17 mic echo cancellation
     uint8_t id49[49]{};
     CHECK_EQ(pico_cmd_get(PICO_CMD_IDENTITY, id49, sizeof(id49)), 49);
     CHECK_EQ(id49[48], 0x15);  // the PC's mic volume (fakes.cpp)
@@ -102,12 +103,13 @@ TEST(cmd_config_get_layouts) {
     CHECK_EQ(r[42], 6);
     CHECK_EQ(r[47], 4);
     CHECK_EQ(pico_cmd_get(0xF7, r, 62), sizeof(Config_body));
+    CHECK_EQ(pico_cmd_get(0xF7, r, 50), 50);                            // what 1.16 apps ask for: no echo cancellation
     CHECK_EQ(pico_cmd_get(0xF7, r, 49), 49);                            // what 1.13..1.15 apps ask for: no mic level
     CHECK_EQ(pico_cmd_get(0xF7, r, kConfigBodyV16), kConfigBodyV16);  // what apps before 1.13 ask for
     CHECK_EQ(pico_cmd_get(0xF7, r, 38), 38);                            // the narrator read
 }
 
-// The app's config write (0x01) carries the whole 50-byte body.
+// The app's config write (0x01) carries the whole 51-byte body.
 TEST(cmd_config_set_takes_the_whole_body) {
     fresh();
     Config_body b = get_config();
@@ -144,6 +146,31 @@ TEST(cmd_config_set_mic_level_both_ways) {
     CHECK_EQ(last_result(), CMD_RESULT_OK);
     CHECK_EQ(get_config().lock_volume, 1);
     CHECK_EQ(get_config().mic_level, 40);
+}
+
+// Protocol 1.17: a 51-byte write sets the echo cancellation; a 1.16 app's
+// 50-byte write leaves it as it is.
+TEST(cmd_config_set_echo_cancel_both_ways) {
+    fresh();
+    CHECK_EQ(get_config().mic_echo_cancel, 1);  // on by default
+    Config_body b = get_config();
+    b.mic_echo_cancel = 0;
+    uint8_t msg[1 + sizeof(Config_body)];
+    msg[0] = 0x01;
+    std::memcpy(msg + 1, &b, sizeof(b));
+    pico_cmd_set(PICO_CMD_SET, msg, sizeof(msg));
+    CHECK_EQ(last_result(), CMD_RESULT_OK);
+    CHECK_EQ(get_config().mic_echo_cancel, 0);
+    uint8_t r[63]{};
+    CHECK_EQ(pico_cmd_get(0xF7, r, sizeof(Config_body)), sizeof(Config_body));
+    CHECK_EQ(r[50], 0);
+    b.mic_echo_cancel = 1;
+    b.mic_level = 12;
+    std::memcpy(msg + 1, &b, sizeof(b));
+    pico_cmd_set(PICO_CMD_SET, msg, 1 + 50);  // a 1.16 app's body
+    CHECK_EQ(last_result(), CMD_RESULT_OK);
+    CHECK_EQ(get_config().mic_level, 12);
+    CHECK_EQ(get_config().mic_echo_cancel, 0);
 }
 
 TEST(cmd_fc_timings_layout_and_reset) {
