@@ -120,6 +120,7 @@ bool audio_grip_test_sending() { return false; }
 #include "voice.h"
 void state_get_led(uint8_t *r, uint8_t *g, uint8_t *b) { *r = 1; *g = 2; *b = 3; }
 uint8_t state_get_player_leds() { return 0x04; }
+uint8_t state_get_pc_mic_volume() { return 0x15; }
 void oled_send_trigger_preset(int) {}
 void voice_say_lang(VoiceLine, uint8_t) {}
 

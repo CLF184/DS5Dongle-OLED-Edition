@@ -47,6 +47,9 @@ TEST(cmd_identity_reports_protocol_1_16) {
     CHECK(id[46] & 0x04);  // the 1.14 PC sleep options
     CHECK(id[46] & 0x08);  // the 1.15 timed grip test
     CHECK(id[46] & 0x10);  // the 1.16 mic level
+    uint8_t id49[49]{};
+    CHECK_EQ(pico_cmd_get(PICO_CMD_IDENTITY, id49, sizeof(id49)), 49);
+    CHECK_EQ(id49[48], 0x15);  // the PC's mic volume (fakes.cpp)
     CHECK_EQ(id[6], sizeof(Config_body));
     CHECK(id[29] & 0x80);  // timings in 0xFC
     CHECK(std::memcmp(id + 30, "Host", 5) == 0);

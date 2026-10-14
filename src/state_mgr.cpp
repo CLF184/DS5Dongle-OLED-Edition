@@ -188,6 +188,10 @@ void state_get_led(uint8_t *r, uint8_t *g, uint8_t *b) {
     *b = state[offsetof(SetStateData, LedRed) + 2];
 }
 
+uint8_t state_get_pc_mic_volume() {
+    return state[offsetof(SetStateData, VolumeMic)];
+}
+
 uint8_t state_get_player_leds() {
     return state[offsetof(SetStateData, LedRed) - 1] & 0x1F;
 }

@@ -27,6 +27,9 @@ void state_clear_host_rumble();
 // Player indicator (the 5 white LEDs under the touchpad) as last set by the
 // host: bits 0..4, one per LED left to right.
 uint8_t state_get_player_leds();
+// The PC's mic volume as the controller's VolumeMic (0..0x40; 0x40 until the
+// PC sets it), whatever the mic level setting is (protocol 1.16, identity [48]).
+uint8_t state_get_pc_mic_volume();
 // Controller amp volume (0..0x64 speaker, 0..0x7f headphones). Stored in
 // state[] for the BT-connect init and pushed to the controller immediately.
 void state_set_volume(uint8_t headphones, uint8_t speaker);

@@ -341,6 +341,8 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     //   health & info (0xEB, 0xF6 0x16); bit1 (1.13) the config body's
     //   1.13 fields; bit2 (1.14) PC sleep options (0xF6 0x17, [47]);
     //   bit3 (1.15) timed grip test; bit4 (1.16) the mic level (body 50 bytes)
+    //   proto 1.16 (when reqlen >= 49): [48] the PC's mic volume as the
+    //   controller's VolumeMic 0..0x40 (what mic_level 0 follows)
     //   proto 1.14 (when reqlen >= 48): [47] the PC sleep options' current
     //   bits (POWER_*: bit0 controller off when the PC sleeps, bit1 PS wakes
     //   the PC; 0 when [46] bit2 is clear)
@@ -467,7 +469,12 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         buffer[46] = (ENABLE_COMPANION_VENDOR ? 0x01 : 0) | 0x02 | 0x04 | 0x08 | 0x10;
         if (reqlen < 48) return 47;
         buffer[47] = config_power_flags();
-        return 48;
+        if (reqlen < 49) return 48;
+        // proto 1.16: [48] the PC's mic volume as VolumeMic (0..0x40), so the
+        // app can say the mic is silent when it follows a PC level of 0 (Linux
+        // restores the USB capture volume at boot and never changes it).
+        buffer[48] = state_get_pc_mic_volume();
+        return 49;
     }
     if (report_id == 0xf7) {
         // The config body, then (OLED Edition) the button-remap block. Both
