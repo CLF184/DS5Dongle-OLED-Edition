@@ -95,6 +95,12 @@ int slot_owner_of(const uint8_t addr[6]) {
     return -1;
 }
 
+int slot_for_controller(int current, const uint8_t addr[6]) {
+    if (slot_occupied(current) && memcmp(g_slots.addrs[current], addr, 6) == 0) return current;
+    const int owner = slot_owner_of(addr);
+    return owner >= 0 ? owner : current;
+}
+
 bool slot_assign(int slot, const uint8_t addr[6]) {
     // error: NOT-WORTH — false for a slot outside 0..3; every caller passes a checked slot
     if (slot < 0 || slot >= kNumSlots) return false;

@@ -132,17 +132,23 @@ uint32_t bt_hci_err_count() { return 0; }  // stub for OLED Diagnostics
 
 int bt_get_slot() { return g_current_slot; }
 
+// Make `slot` the current one and save it (current_slot in the config);
+// the link is left alone. false = not saved (the dongle boots in the old slot).
+static bool make_slot_current(int slot) {
+    g_current_slot = slot;
+    Config_body cfg = get_config();
+    cfg.current_slot = (uint8_t)slot;
+    set_config(cfg);
+    // error: SHOWN — returned to bt_set_slot / bt_forget_slot (0xF6 CMD_RESULT_FAILED, the OLED's "Save FAIL" / "Wipe FAIL"); the connect path marks its own call
+    return config_save();
+}
+
 bool bt_set_slot(int slot) {
     // error: NOT-WORTH — false to the caller; every caller checks the slot first (0xF6 0x04/0x05 answer INVALID, the OLED cursor stays in 0..3)
     if (slot < 0 || slot >= kNumSlots) return false;
     if (slot == g_current_slot) return true;
-    g_current_slot = slot;
-
-    Config_body cfg = get_config();
-    cfg.current_slot = (uint8_t)slot;
-    set_config(cfg);
-    // error: SHOWN — returned: 0xF6 0x04/0x05/0x06 answer CMD_RESULT_FAILED (the app's command error), the OLED shows "Save FAIL" / "Wipe FAIL" (fixed in this pass: was dropped)
-    const bool saved = config_save();
+    // error: SHOWN — returned: 0xF6 0x04 answers CMD_RESULT_FAILED (the app's command error), the OLED shows "Save FAIL"
+    const bool saved = make_slot_current(slot);
 
     if (bt_is_connected()) {
         // The narrator names the new slot first (if she's on); then the drop.
@@ -167,17 +173,25 @@ void bt_slot_get_addr(int slot, uint8_t out[6]) { slot_get_addr(slot, out); }
 bool bt_forget_slot(int slot) {
     // error: NOT-WORTH — false to the caller; every caller checks the slot first (0xF6 0x04/0x05 answer INVALID, the OLED cursor stays in 0..3)
     if (slot < 0 || slot >= kNumSlots) return false;
-    if (slot_occupied(slot)) {
-        uint8_t addr[6];
-        slot_get_addr(slot, addr);
-        gap_drop_link_key_for_bd_addr(addr);
-    }
+    const bool had = slot_occupied(slot);
+    uint8_t addr[6] = {};
+    if (had) slot_get_addr(slot, addr);
     // error: SHOWN — returned: 0xF6 0x04/0x05/0x06 answer CMD_RESULT_FAILED (the app's command error), the OLED shows "Save FAIL" / "Wipe FAIL" (fixed in this pass: was dropped)
-    const bool saved = slot_forget(slot);
+    bool saved = slot_forget(slot);
+    // BTstack keeps one link key per address. Older firmware could put one
+    // controller in two slots; forgetting one copy must not unpair the other.
+    const int other = had ? slot_owner_of(addr) : -1;
+    if (had && other < 0) gap_drop_link_key_for_bd_addr(addr);
     update_discoverable();
     if (slot == g_current_slot && bt_is_connected()) {
-        // error: NOT-WORTH — nothing; false only when there is no ACL, i.e. already disconnected
-        bt_disconnect();
+        if (other >= 0 && memcmp(addr, current_device_addr, 6) == 0) {
+            // The connected controller is still paired in `other`: go there.
+            // error: SHOWN — returned with the forget: 0xF6 0x05 answers CMD_RESULT_FAILED, the OLED shows "Wipe FAIL"
+            saved = make_slot_current(other) && saved;
+        } else {
+            // error: NOT-WORTH — nothing; false only when there is no ACL, i.e. already disconnected
+            bt_disconnect();
+        }
     }
     return saved;
 }
@@ -710,8 +724,17 @@ static void CORE0_RAM_FUNC(l2cap_packet_handler)(uint8_t packet_type, uint16_t c
                     printf("[L2CAP] HID Control opened cid=0x%04X\n", local_cid);
                     hid_control_cid = local_cid;
 
-                    // First-time pairing: assign this bd_addr to the current slot.
-                    if (!slot_occupied(g_current_slot)) {
+                    // A controller already in another slot (it paged us: an
+                    // incoming connection isn't filtered by slot) takes the
+                    // dongle to its slot, never into a second one. Else a
+                    // first-time pairing: assign it to the current slot.
+                    const int own = slot_for_controller(g_current_slot, current_device_addr);
+                    if (own != g_current_slot) {
+                        printf("[Slots] %s is slot %d's controller, switch %d -> %d\n",
+                               bd_addr_to_str(current_device_addr), own, g_current_slot, own);
+                        // error: SILENT-BUG — nothing; the dongle is on the controller's slot now but a failed save boots it in the old slot (rare: flash lockout timeout) Change: show "Save FAIL" on the OLED (batch: an OLED toast on every screen)
+                        make_slot_current(own);
+                    } else if (!slot_occupied(g_current_slot)) {
                         // error: SILENT-BUG — nothing; a new controller's pairing works now but a failed slot save loses it at power-off (rare: flash lockout timeout) Change: show "Pair not saved" on the OLED (batch: an OLED toast on every screen)
                         slot_assign(g_current_slot, current_device_addr);
                         printf("[Slots] Assigned %s to slot %d\n",

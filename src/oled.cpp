@@ -1860,9 +1860,9 @@ constexpr uint32_t kSlotsWipeHoldUs = 1500000;  // 1.5 s
 void slots_handle_input() {
     if (slots_cursor < 0) slots_cursor = bt_get_slot();
     if (!bt_is_connected()) {
-        // Even without a DS5 connected we still want to navigate / wipe;
-        // we just can't read the controller's D-pad / face inputs. Return
-        // here and require KEY0/KEY1 for screen switching.
+        // No controller = no D-pad / face buttons to read (KEY0/KEY1 still
+        // change screens). Pressing PS on a paired controller connects it
+        // and the dongle switches to its slot (bt.cpp, HID Control open).
         slots_last_dpad = 8;
         slots_last_face = 0;
         return;
@@ -1934,7 +1934,9 @@ __attribute__((noinline)) void render_screen_slots() {
 
     const bool status_live = slots_status[0]
         && (int32_t)(time_us_32() - slots_status_until_us) < 0;
-    draw_text(kContentX, 56, status_live ? slots_status : "Tri=sw Sq hold=wipe");
+    // Tri / Square are the controller's buttons: with none connected, say
+    // what does work (PS on a paired controller switches to its slot).
+    draw_text(kContentX, 56, status_live ? slots_status : conn ? "Tri=sw Sq hold=wipe" : "Press PS to connect");
     flush_fb();
 }
 
