@@ -26,3 +26,29 @@ TEST(slots_changes_report_a_failed_save) {
     slots_load();  // flash still has the last saved table: slot 2 was never saved
     CHECK(!slot_occupied(2));
 }
+
+// One controller, one slot: a controller already paired takes the dongle to
+// its own slot instead of being paired into the current empty one (how one
+// controller ended up in slots 0 and 3), and forgetting one copy of an older
+// duplicate leaves the other slot holding it (bt_forget_slot keeps the
+// shared link key while slot_owner_of still finds it).
+TEST(slots_one_controller_one_slot) {
+    fake_flash_erase_all();
+    g_fake_flash_fail = false;
+    slots_load();
+    const uint8_t a[6] = {1, 2, 3, 4, 5, 6};
+    const uint8_t b[6] = {9, 8, 7, 6, 5, 4};
+    CHECK(slot_assign(0, a));
+    CHECK(slot_for_controller(3, a) == 0);  // slot 3 current + empty: go to slot 0
+    CHECK(slot_for_controller(0, a) == 0);
+    CHECK(slot_for_controller(3, b) == 3);  // new controller: the current slot
+    CHECK(slot_for_controller(0, b) == 0);  // unowned, current taken: stays (as before)
+    // An older firmware's duplicate: the current copy wins, the other is found after a forget.
+    CHECK(slot_assign(3, a));
+    CHECK(slot_for_controller(3, a) == 3);
+    CHECK(slot_forget(3));
+    CHECK(slot_owner_of(a) == 0);
+    CHECK(slot_for_controller(3, a) == 0);
+    CHECK(slot_forget(0));
+    CHECK(slot_owner_of(a) == -1);
+}
