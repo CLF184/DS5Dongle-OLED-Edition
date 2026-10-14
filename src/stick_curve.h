@@ -71,7 +71,9 @@ constexpr uint16_t kPreset[4][kCurveLutSize] = {
 
 inline uint32_t isqrt(uint32_t v) {
     uint32_t r = 0, bit = 1u << 30;
+    // loop: HOT-PATH-OK — ≤ 15 shifts to align, per stick per input report with a curve
     while (bit > v) bit >>= 2;
+    // loop: HOT-PATH-OK — ≤ 16 iterations integer sqrt, per stick per input report with a curve
     while (bit) {
         if (v >= r + bit) {
             v -= r + bit;
@@ -92,6 +94,7 @@ inline uint16_t byte_q(uint8_t b) { return (uint16_t) (((uint32_t) b * kCurveQ +
 inline bool stick_curve_valid(const StickCurve &c) {
     if (c.type >= kCurveTypeCount) return false;
     if (c.type != kCurveCustom) return true;
+    // loop: NOT-WORTH — 3 custom points, validating a host set / load
     for (int i = 1; i < 4; i++) {
         if (c.pt[2 * i] < c.pt[2 * i - 2] || c.pt[2 * i + 1] < c.pt[2 * i - 1]) return false;
     }
@@ -105,6 +108,7 @@ inline void stick_curve_build(const StickCurve &c, StickCurveNodes &out) {
     if (c.type == kCurveCustom) {
         out.x[0] = 0;
         out.y[0] = 0;
+        // loop: NOT-WORTH — 4 custom points, on a curve build (host set / load)
         for (int i = 0; i < 4; i++) {
             out.x[1 + i] = byte_q(c.pt[2 * i]);
             out.y[1 + i] = byte_q(c.pt[2 * i + 1]);
@@ -115,6 +119,7 @@ inline void stick_curve_build(const StickCurve &c, StickCurveNodes &out) {
         return;
     }
     const uint16_t *t = kPreset[c.type - kCurvePrecise];
+    // loop: NOT-WORTH — kCurveLutSize = 33 preset nodes, on a curve build
     for (int i = 0; i < kCurveLutSize; i++) {
         out.x[i] = (uint16_t) (i * (kCurveQ / (kCurveLutSize - 1)));
         out.y[i] = t[i];
@@ -125,6 +130,7 @@ inline void stick_curve_build(const StickCurve &c, StickCurveNodes &out) {
 // The curve at tilt m (Q12, 0..4096): the first segment that reaches m,
 // linear inside it (zero-width segments are steps and are skipped).
 inline uint32_t stick_curve_eval(const StickCurveNodes &c, uint32_t m) {
+    // loop: HOT-PATH-OK — ≤ 32 segments linear scan per stick per input report with a curve
     for (int k = 0; k + 1 < c.n; k++) {
         const uint32_t xa = c.x[k], xb = c.x[k + 1];
         if (m > xb || xb == xa) continue;

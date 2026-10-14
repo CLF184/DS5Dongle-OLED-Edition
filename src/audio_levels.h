@@ -29,6 +29,7 @@ struct AudioPeak {
         const uint64_t age = now_us - at_us;
         if (age >= (uint64_t)kSteps * kStepUs) return 0;
         uint32_t v = peak;
+        // loop: HOT-PATH-OK — N ≤ kSteps = 48 decay steps, usually 0-2
         for (uint32_t n = (uint32_t)age / kStepUs; n && v; n--) v = v * 7 / 8;
         return (uint16_t)v;
     }

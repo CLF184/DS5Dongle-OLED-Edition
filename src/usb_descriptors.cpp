@@ -968,6 +968,7 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
                 // "WAKE-" + the board's id: stable across ports, and never the
                 // serial a stock Pico SDK image on this board shows (also 2E8A:000A).
                 static const char kPrefix[] = "WAKE-";
+                // loop: NOT-WORTH — serial prefix chars, USB enumeration only
                 for (size_t i = 0; i < sizeof(kPrefix) - 1; i++) _desc_str[1 + i] = kPrefix[i];
                 chr_count = sizeof(kPrefix) - 1 + board_usb_get_serial(_desc_str + sizeof(kPrefix), 32);
                 break;
@@ -978,6 +979,7 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
         }
         if (str) {
             chr_count = strlen(str);
+            // loop: NOT-WORTH — string chars, USB enumeration only
             for (size_t i = 0; i < chr_count; i++) _desc_str[1 + i] = str[i];
         }
         _desc_str[0] = (uint16_t) ((TUSB_DESC_STRING << 8) | (2 * chr_count + 2));
@@ -1008,13 +1010,16 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
             uint8_t mac[6] = {0};
             bool have = false;
             bt_get_addr(mac);
+            // loop: NOT-WORTH — 6 MAC bytes, USB enumeration only
             for (int i = 0; i < 6; ++i) if (mac[i]) { have = true; break; }
             if (!have) {
                 slot_get_addr(get_config().current_slot, mac);
+                // loop: NOT-WORTH — 6 MAC bytes, USB enumeration only
                 for (int i = 0; i < 6; ++i) if (mac[i]) { have = true; break; }
             }
             if (have) {
                 static const char hexd[] = "0123456789ABCDEF";
+                // loop: NOT-WORTH — 6 MAC bytes to hex, USB enumeration only
                 for (int i = 0; i < 6; ++i) {
                     _desc_str[1 + i * 2]     = hexd[(mac[i] >> 4) & 0x0F];
                     _desc_str[1 + i * 2 + 1] = hexd[mac[i] & 0x0F];
@@ -1048,6 +1053,7 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
             if (chr_count > max_count) chr_count = max_count;
 
             // Convert ASCII string into UTF-16
+            // loop: NOT-WORTH — string chars, USB enumeration only
             for (size_t i = 0; i < chr_count; i++) {
                 _desc_str[1 + i] = str[i];
             }

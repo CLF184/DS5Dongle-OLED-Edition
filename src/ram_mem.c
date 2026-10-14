@@ -25,11 +25,13 @@ void *__not_in_flash_func(memcpy)(void *restrict dst, const void *restrict src, 
     if ((((uintptr_t) d | (uintptr_t) s) & 3u) == 0u) {
         uint32_t *dw = (uint32_t *) d;
         const uint32_t *sw = (const uint32_t *) s;
+        // loop: HOT-PATH-OK — word copy of n/4, RAM-resident for core1 libopus and core0 SDK
         for (size_t w = n >> 2; w; --w) *dw++ = *sw++;
         d = (uint8_t *) dw;
         s = (const uint8_t *) sw;
         n &= 3u;
     }
+    // loop: HOT-PATH-OK — tail of ≤ 3 bytes (or bytewise when unaligned), RAM-resident
     while (n--) *d++ = *s++;
     return dst;
 }
@@ -40,10 +42,12 @@ void *__not_in_flash_func(memset)(void *dst, int c, size_t n) {
     if (((uintptr_t) d & 3u) == 0u) {
         const uint32_t w = (uint32_t) b * 0x01010101u;
         uint32_t *dw = (uint32_t *) d;
+        // loop: HOT-PATH-OK — word fill of n/4, RAM-resident for core1 and core0
         for (size_t i = n >> 2; i; --i) *dw++ = w;
         d = (uint8_t *) dw;
         n &= 3u;
     }
+    // loop: HOT-PATH-OK — tail of ≤ 3 bytes (or bytewise when unaligned), RAM-resident
     while (n--) *d++ = b;
     return dst;
 }
@@ -56,15 +60,18 @@ void *__not_in_flash_func(memmove)(void *dst, const void *src, size_t n) {
         if ((((uintptr_t) d | (uintptr_t) s) & 3u) == 0u) {
             uint32_t *dw = (uint32_t *) d;
             const uint32_t *sw = (const uint32_t *) s;
+            // loop: HOT-PATH-OK — forward word move of n/4, RAM-resident
             for (size_t w = n >> 2; w; --w) *dw++ = *sw++;
             d = (uint8_t *) dw;
             s = (const uint8_t *) sw;
             n &= 3u;
         }
+        // loop: HOT-PATH-OK — forward tail, ≤ 3 bytes when aligned, RAM-resident
         while (n--) *d++ = *s++;
     } else {
         d += n;
         s += n;
+        // loop: HOT-PATH-OK — backward bytewise move (overlap), RAM-resident; rare in callers
         while (n--) *--d = *--s;
     }
     return dst;

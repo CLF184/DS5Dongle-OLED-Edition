@@ -56,6 +56,7 @@ void slots_load() {
         g_slots.magic = SLOTS_MAGIC;
         save_slots_to_flash();
     }
+    // loop: NOT-WORTH — boot-only print of 4 slots
     for (int i = 0; i < kNumSlots; i++) {
         if (g_slots.occupied[i]) {
             printf("[Slots] %d: %02X:%02X:%02X:%02X:%02X:%02X\n", i,
@@ -81,6 +82,7 @@ void slot_get_addr(int slot, uint8_t out[6]) {
 }
 
 int slot_owner_of(const uint8_t addr[6]) {
+    // loop: NOT-WORTH — 4 slots, per BT inquiry result while pairing
     for (int i = 0; i < kNumSlots; i++) {
         if (g_slots.occupied[i] && memcmp(g_slots.addrs[i], addr, 6) == 0) return i;
     }
@@ -102,6 +104,7 @@ void slot_forget(int slot) {
 }
 
 void slots_wipe_all() {
+    // loop: NOT-WORTH — 4 slots, on a user wipe (then one flash save)
     for (int i = 0; i < kNumSlots; i++) {
         memset(g_slots.addrs[i], 0, 6);
         g_slots.occupied[i] = 0;
@@ -110,6 +113,7 @@ void slots_wipe_all() {
 }
 
 bool slots_any_empty() {
+    // loop: NOT-WORTH — 4 slots, on pairing / connection events
     for (int i = 0; i < kNumSlots; i++) {
         if (!g_slots.occupied[i]) return true;
     }

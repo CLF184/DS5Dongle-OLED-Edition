@@ -111,6 +111,7 @@ void dse_task(bool may_use_test_slot) {
                 uint8_t handshake[63];
                 handshake[0] = 0x53;  // SET_REPORT | feature
                 handshake[1] = 0x65;
+                // loop: NOT-WORTH — 61-byte handshake copy, once per DSE unlock
                 for (int i = 0; i < 61; i++) handshake[2 + i] = fw[1 + i];
                 bt_send_control(handshake, sizeof(handshake));
             }

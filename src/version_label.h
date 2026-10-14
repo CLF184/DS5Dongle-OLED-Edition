@@ -18,9 +18,12 @@ constexpr Label make(const char *prefix, const char *version) {
     constexpr const char kSuffix[] = "-oled-edition";
     constexpr int kSuffixLen = sizeof(kSuffix) - 1;
     Label out{};
+    // loop: NOT-WORTH — constexpr version label, compile time (and host tests)
     for (int i = 0; prefix[i] && out.n < kMax - 1; i++) out.s[out.n++] = prefix[i];
+    // loop: NOT-WORTH — constexpr version label, compile time (and host tests)
     for (int i = 0; version[i] && out.n < kMax - 1;) {
         bool match = true;
+        // loop: NOT-WORTH — constexpr suffix match, compile time (and host tests)
         for (int k = 0; k < kSuffixLen; k++) {
             if (version[i + k] != kSuffix[k]) { match = false; break; }
         }

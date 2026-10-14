@@ -94,6 +94,7 @@ inline const char *opcode_to_str(const uint16_t opcode) {
 }
 
 inline constexpr uint32_t crc32_table_entry(uint32_t index) {
+    // loop: NOT-WORTH — constexpr: 8 bits per CRC table entry, compile time
     for (unsigned bit = 0; bit < 8; ++bit) {
         index = (index >> 1) ^ (0xEDB88320 & -(index & 1));
     }
@@ -102,6 +103,7 @@ inline constexpr uint32_t crc32_table_entry(uint32_t index) {
 
 inline constexpr auto make_crc32_table() {
     std::array<uint32_t, 256> table{};
+    // loop: NOT-WORTH — constexpr: the 256-entry CRC table, compile time
     for (uint32_t i = 0; i < table.size(); ++i) {
         table[i] = crc32_table_entry(i);
     }
@@ -115,6 +117,7 @@ crc32_lookup_table = make_crc32_table();
 inline uint32_t crc32_seeded(const uint8_t *data, size_t size, const uint32_t seed) {
     uint32_t crc = ~seed;
 
+    // loop: HOT-PATH-OK — table CRC over one report (≤ 78 bytes out, 547 for 0x39), RAM table
     while (size--) {
         crc = (crc >> 8) ^ crc32_lookup_table[(crc ^ *data++) & 0xff];
     }
@@ -415,6 +418,7 @@ struct __attribute__((packed)) SetStateData { // 47
 };
 
 inline void print_hex(const uint8_t* data,size_t size) {
+    // loop: NOT-WORTH — debug hex dump, not called in the firmware build
     for (int i = 0; i < size; i++) {
         std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(data[i]) << " ";
     }

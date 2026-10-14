@@ -43,6 +43,7 @@ StickCurveNodes g_tmp_nodes[2]{};
 int g_tmp_slot = -1; // -1: no temporary curves
 
 void build_curves(int slot) {
+    // loop: NOT-WORTH — 2 sticks, on load or when the host sets curves
     for (int i = 0; i < 2; i++) stick_curve_build(g_cal.curve[slot][i], g_nodes[slot][i]);
 }
 
@@ -51,6 +52,7 @@ void set_linear(StickCurve &c) {
     // Default custom points (shown when the app switches to Custom): a gentle
     // slow start, valid on their own.
     static constexpr uint8_t kPts[8] = {51, 31, 102, 77, 153, 133, 204, 194};
+    // loop: NOT-WORTH — 8 default points, rare (invalid curve)
     for (int i = 0; i < 8; i++) c.pt[i] = kPts[i];
 }
 
@@ -64,16 +66,21 @@ const CalibData *flash_cal() { return reinterpret_cast<const CalibData *>(XIP_BA
 constexpr CalibStick kStickId{0, 0, 0, 128};
 
 void set_identity(CalibBody &b) {
+    // loop: NOT-WORTH — 2 sticks, on a reset / invalid load
     for (auto &s : b.stick) s = kStickId;
+    // loop: NOT-WORTH — 2 triggers, on a reset / invalid load
     for (auto &t : b.trigger) t = {0, 255};
+    // loop: NOT-WORTH — 3 gyro axes, on a reset / invalid load
     for (int i = 0; i < 3; i++) b.gyro[i] = 0;
 }
 
 bool valid(const CalibBody &b) {
+    // loop: NOT-WORTH — 2 sticks, validating a host set or a load
     for (const auto &s : b.stick) {
         if (s.deadzone > 64 || s.outer < 64 || s.outer > 128 || s.deadzone >= s.outer) return false;
         if (s.cx < -40 || s.cx > 40 || s.cy < -40 || s.cy > 40) return false;
     }
+    // loop: NOT-WORTH — 2 triggers, validating a host set or a load
     for (const auto &t : b.trigger) {
         if (t.lo >= t.hi || t.hi - t.lo < 64) return false;
     }
@@ -83,6 +90,7 @@ bool valid(const CalibBody &b) {
 void recompute_active(int slot) {
     const CalibBody &b = g_cal.body[slot];
     Active &a = g_active[slot];
+    // loop: NOT-WORTH — 2 sticks, after a host set
     for (int i = 0; i < 2; i++) {
         a.stick[i] = memcmp(&b.stick[i], &kStickId, sizeof(CalibStick)) != 0;
         a.trigger[i] = b.trigger[i].lo != 0 || b.trigger[i].hi != 255;
@@ -131,19 +139,24 @@ int slot_now() {
 void calib_load() {
     memcpy(&g_cal, flash_cal(), sizeof(g_cal));
     bool ok = g_cal.magic == CALIB_MAGIC && g_cal.ver == kCalibProtoVer;
+    // loop: NOT-WORTH — boot-only, kNumSlots = 4
     for (int i = 0; ok && i < kNumSlots; i++) ok = valid(g_cal.body[i]);
     if (!ok) {
         g_cal.magic = CALIB_MAGIC;
         g_cal.ver = kCalibProtoVer;
+        // loop: NOT-WORTH — boot-only, 4 slot bodies
         for (auto &b : g_cal.body) set_identity(b);
     }
     // Curves are checked one by one: erased (older save) or bad = Linear.
+    // loop: NOT-WORTH — boot-only, 4 slots
     for (int i = 0; i < kNumSlots; i++) {
+        // loop: NOT-WORTH — boot-only, 2 curves per slot
         for (auto &c : g_cal.curve[i]) {
             if (!ok || !stick_curve_valid(c)) set_linear(c);
         }
         build_curves(i);
     }
+    // loop: NOT-WORTH — boot-only, 4 slots
     for (int i = 0; i < kNumSlots; i++) recompute_active(i);
     printf("[Calib] loaded (%s)\n", ok ? "saved" : "identity");
 }
@@ -158,12 +171,14 @@ void calib_service() {
     if (d.size() < 35) return; // not arrived yet
     bool plausible = true;
     int16_t b[3];
+    // loop: NOT-WORTH — 3 gyro words, once per connection when 0x05 lands
     for (int i = 0; i < 3; i++) {
         b[i] = (int16_t) ((uint16_t) d[1 + 2 * i] | ((uint16_t) d[2 + 2 * i] << 8));
         if (b[i] > 1024 || b[i] < -1024) plausible = false;
     }
     // Hosts fall back to raw when the factory cal is implausible (SDL), so
     // then the whole rest reading is ours to remove.
+    // loop: NOT-WORTH — 3 gyro words, once per connection
     for (int i = 0; i < 3; i++) g_bias[i] = plausible ? b[i] : 0;
     g_bias_known = true;
 }
@@ -178,12 +193,14 @@ void calib_apply(uint8_t *r) {
     const StickCurveNodes *cn = slot == g_tmp_slot ? g_tmp_nodes : g_nodes[slot];
     stick_curve_apply(r + 0, cn[0]);
     stick_curve_apply(r + 2, cn[1]);
+    // loop: HOT-PATH-OK — 2 triggers per input report; calib_apply is not CORE0_RAM_FUNC
     for (int i = 0; i < 2; i++) {
         if (!a.trigger[i]) continue;
         const auto &t = b.trigger[i];
         r[4 + i] = clamp_u8(((float) r[4 + i] - t.lo) * 255.0f / (float) (t.hi - t.lo));
     }
     if (a.gyro && g_bias_known) {
+        // loop: HOT-PATH-OK — 3 gyro axes per input report, only with gyro calibration on
         for (int i = 0; i < 3; i++) {
             int16_t v;
             memcpy(&v, r + 15 + 2 * i, 2);
@@ -214,6 +231,7 @@ CalibSet curves_set(uint8_t slot, const StickCurve *pair, bool temporary) {
     if (slot >= kNumSlots || !stick_curve_valid(pair[0]) || !stick_curve_valid(pair[1])) return CalibSet::Invalid;
     if (temporary) {
         // RAM only: g_cal (what saves write) keeps the saved pair.
+        // loop: NOT-WORTH — 2 curves, on a host curves set
         for (int i = 0; i < 2; i++) {
             g_tmp_curve[i] = pair[i];
             stick_curve_build(pair[i], g_tmp_nodes[i]);

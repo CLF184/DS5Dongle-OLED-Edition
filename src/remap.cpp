@@ -55,20 +55,24 @@ const RemapData *flash_remap() {
 }
 
 void set_identity() {
+    // loop: NOT-WORTH — 16 table entries, on a reset / invalid load
     for (int i = 0; i < kRemapCount; i++) g_remap.table[i] = (uint8_t) i;
 }
 
 void recompute_active() {
     g_active = false;
+    // loop: NOT-WORTH — 16 entries, after a host remap set
     for (int i = 0; i < kRemapCount; i++) {
         if (g_remap.table[i] != i) { g_active = true; return; }
     }
+    // loop: NOT-WORTH — 4 extra buttons, after a host remap set
     for (int i = 0; i < kRemapExtraCount; i++) {
         if (g_remap.extra[i] != kRemapExtraSelf) { g_active = true; return; }
     }
 }
 
 bool valid_extra(const uint8_t *e) {
+    // loop: NOT-WORTH — 4 extra buttons, validating a host set / load
     for (int i = 0; i < kRemapExtraCount; i++) {
         if (e[i] >= kRemapCount && e[i] != kRemapExtraSelf && e[i] != kRemapExtraOff) return false;
     }
@@ -83,6 +87,7 @@ void flash_extra(uint8_t out[kRemapExtraCount]) {
 }
 
 bool valid_table(const uint8_t *t) {
+    // loop: NOT-WORTH — 16 entries, validating a host set / load
     for (int i = 0; i < kRemapCount; i++) {
         if (t[i] >= kRemapCount && t[i] != 0xFF) return false; // <16 or disabled
     }
@@ -198,6 +203,7 @@ bool remap_set_extra(const uint8_t *extra, bool temporary) {
         alignas(4) uint8_t saved_table[kRemapCount];
         const RemapData *f = flash_remap();
         if (f->magic == REMAP_MAGIC && valid_table(f->table)) memcpy(saved_table, f->table, kRemapCount);
+        // loop: NOT-WORTH — 16 entries, a host extra-button set while temporary
         else for (int i = 0; i < kRemapCount; i++) saved_table[i] = (uint8_t) i;
         return save_with(saved_table, g_remap.extra);
     }
@@ -242,12 +248,14 @@ void remap_apply(uint8_t *report) {
     src[RemapSquare]    = (report[7] & kSquareBit) != 0;
     src[RemapR3]        = (report[8] & kR3Bit) != 0;
 
+    // loop: HOT-PATH-OK — 16 sources per input report, only with a remap on (fast return)
     for (int i = 0; i < kRemapCount; i++) src_analog[i] = src[i] ? 0xFF : 0;
     src_analog[RemapL2] = report[4]; // L2 analog
     src_analog[RemapR2] = report[5]; // R2 analog
 
     bool    tgt[kRemapCount]{};
     uint8_t tgt_analog[kRemapCount]{};
+    // loop: HOT-PATH-OK — 16 table entries per input report, only with a remap on
     for (int s = 0; s < kRemapCount; s++) {
         const uint8_t t = g_remap.table[s];
         if (t >= kRemapCount) continue; // 0xFF = disabled (source produces nothing)
@@ -260,6 +268,7 @@ void remap_apply(uint8_t *report) {
     // button chosen; "itself" leaves the bit alone.
     static constexpr uint8_t kExtraBits[kRemapExtraCount] = {0x10, 0x20, 0x40, 0x80};
     uint8_t b9 = report[9];
+    // loop: HOT-PATH-OK — 4 Edge extra buttons per input report, only with a remap on
     for (int i = 0; i < kRemapExtraCount; i++) {
         const uint8_t t = g_remap.extra[i];
         if (t == kRemapExtraSelf || !(b9 & kExtraBits[i])) continue;

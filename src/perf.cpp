@@ -25,6 +25,7 @@ size_t perf_serialize(uint8_t *out, size_t cap) {
     out[1] = PERF_NUM_STAGES;
     memcpy(out + 2, &window, 2);
     const uint32_t gen = g_perf_gen;
+    // loop: HOT-PATH-OK — PERF_NUM_STAGES rows, per 0xFC telemetry GET
     for (int i = 0; i < PERF_NUM_STAGES; i++) {
         const PerfStat &s = g_perf[i];
         uint32_t sum = 0, count = 0, max = 0, sgen = 0;
@@ -32,6 +33,7 @@ size_t perf_serialize(uint8_t *out, size_t cap) {
         // The writer may be another core: retry while it is mid-update or a
         // sample landed mid-read (an update is a few stores, so this ends
         // fast; bounded so a writer stopped mid-update can't hang core0).
+        // loop: SERIAL-REQUIRED — seqlock retry against the other core's writer, bounded to 1000 tries
         for (int tries = 0; tries < 1000; tries++) {
             const uint32_t seq = s.seq;
             __dmb();
