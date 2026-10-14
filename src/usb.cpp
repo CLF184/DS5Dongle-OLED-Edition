@@ -6,6 +6,7 @@
 #include "bsp/board_api.h"
 #include "config.h"
 #include "state_mgr.h"
+#include "amp_volume.h"
 #include <algorithm>
 
 uint8_t mute[2]; // 0: SPEAKER(0x02) 1: MIC(0x05)
@@ -85,10 +86,11 @@ static bool audio10_set_req_entity(tusb_control_request_t const *p_request, uint
                         // 0 dB -> 100 (0x64, top of the speaker range) down to
                         // -100 dB -> 0, as upstream does (aa5e012). Before, the
                         // amp was pinned at 0x64 whatever the host slider said,
-                        // which overdrove the speaker into crackle.
+                        // which overdrove the speaker into crackle. The headphone
+                        // amp's range is 0..0x7F, so it gets the same position
+                        // scaled to 127 (amp_volume.h).
                         if (entityID == UAC1_ENTITY_SPK_FEATURE_UNIT) {
-                            const float v = std::clamp(100.0f + volume[index], 0.0f, 100.0f);
-                            state_set_volume(static_cast<uint8_t>(v), static_cast<uint8_t>(v));
+                            state_set_volume(headphone_amp_from_db(volume[index]), speaker_amp_from_db(volume[index]));
                         }
                         // The PC's mic volume, 0..48 dB (our range below), as
                         // the controller's VolumeMic 0..0x40 (it tops out at
