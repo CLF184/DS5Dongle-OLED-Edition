@@ -10,7 +10,7 @@
 
 ## 🛠️ Get started: download the app
 
-**[→ Download the DS5 Dongle OLED Edition Configurator](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/latest)** (Linux AppImage and Windows portable exe, both tested; the macOS build is community-tested: [reported working on macOS 27.0.1](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/issues/17))
+**[→ Download the DS5 Dongle OLED Edition Configurator](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/releases/latest)** (Linux AppImage and a Windows installer that needs no admin rights, both tested; the macOS build is community-tested: [reported working on macOS 27.0.1](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition/issues/17))
 
 The app is all you need. Each release includes the matching firmware, so the app installs it on your Pico, keeps it up to date, and configures everything:
 

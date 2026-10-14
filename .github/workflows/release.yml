@@ -230,7 +230,7 @@ jobs:
           name: app-${{ matrix.os }}
           path: |
             release/*.AppImage
-            release/*-win-x64.exe
+            release/*-win-x64*.exe
             release/*-mac-universal.zip
           if-no-files-found: error
 
@@ -263,7 +263,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          files=(dist/*.AppImage dist/*-win-x64.exe dist/*-mac-universal.zip dist/ds5-bridge-oled-*.uf2)
+          files=(dist/*.AppImage dist/*-win-x64*.exe dist/*-mac-universal.zip dist/ds5-bridge-oled-*.uf2)
           [ "${#files[@]}" -eq 4 ] || { echo "expected 4 files, got: ${files[*]}"; exit 1; }
           ( cd dist && sha256sum "${files[@]##*/}" > SHA256SUMS.txt && cat SHA256SUMS.txt )
       # Build provenance, before the release is visible: a signed attestation
@@ -274,7 +274,7 @@ jobs:
         with:
           subject-path: |
             dist/*.AppImage
-            dist/*-win-x64.exe
+            dist/*-win-x64*.exe
             dist/*-mac-universal.zip
             dist/ds5-bridge-oled-*.uf2
             dist/SHA256SUMS.txt
@@ -298,14 +298,14 @@ jobs:
           {
             echo "**Download the app for your system below.** It includes this firmware and installs it on your dongle with one click (new dongles too)."
             echo
-            echo "Tested on Linux (the AppImage) and Windows 11 (the portable exe). **The macOS build is untested**: it comes from the same workflow but hasn't been tried on a Mac yet. Reports welcome. The Games page is on Linux and Windows."
+            echo "Tested on Linux (the AppImage) and Windows 11 (the installer, which needs no admin rights). **The macOS build is untested**: it comes from the same workflow but hasn't been tried on a Mac yet. Reports welcome. The Games page is on Linux and Windows."
             echo
             section CHANGELOG.md "$fw"
             echo
             echo "## Configurator app $app"
             section app/CHANGELOG.md "$app_section"
           } > notes.md
-          files=(dist/*.AppImage dist/*-win-x64.exe dist/*-mac-universal.zip dist/ds5-bridge-oled-*.uf2)
+          files=(dist/*.AppImage dist/*-win-x64*.exe dist/*-mac-universal.zip dist/ds5-bridge-oled-*.uf2)
           {
             echo
             echo "**Verify a download** (optional): \`gh attestation verify FILE -R ${GITHUB_REPOSITORY}\` shows it was built by this repository's release workflow from this tag."

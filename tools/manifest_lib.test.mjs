@@ -67,3 +67,15 @@ test("the dev feed offers the newest of development and stable releases", () => 
   // No development build yet: the dev feed is the stable release.
   assert.equal(selectRelease([stable090], "dev").version, "0.9.0");
 });
+
+test("the Windows entry is the per-user installer (or an older release's portable exe)", () => {
+  const installer = rel("v0.9.6-oled-edition", [
+    "DS5Dongle-OLED-Edition-Configurator-0.9.6-linux-x86_64.AppImage",
+    "DS5Dongle-OLED-Edition-Configurator-0.9.6-win-x64-setup.exe",
+    "ds5-bridge-oled-v0.9.6-oled-edition.uf2",
+  ]);
+  assert.equal(selectRelease([installer]).platforms.windows.name, "DS5Dongle-OLED-Edition-Configurator-0.9.6-win-x64-setup.exe");
+  assert.equal(selectRelease([unified]).platforms.windows.name, "DS5Dongle-OLED-Edition-Configurator-0.8.0-win-x64.exe");
+  const stray = rel("v0.9.7-oled-edition", ["DS5Dongle-OLED-Edition-Configurator-0.9.7-win-x64-setup.exe.blockmap", "ds5-bridge-oled-v0.9.7-oled-edition.uf2"]);
+  assert.equal(selectRelease([stray]), null);
+});

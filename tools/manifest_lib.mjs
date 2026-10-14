@@ -9,7 +9,8 @@ export const DEV_TAG = /^v(\d+\.\d+\.\d+-dev\.\d+)-oled-edition$/;
 const V = String.raw`\d+\.\d+\.\d+(?:-dev\.\d+)?`;
 export const APP_FILES = {
   linux: new RegExp(`^DS5Dongle-OLED-Edition-Configurator-${V}-linux-x86_64\\.AppImage$`),
-  windows: new RegExp(`^DS5Dongle-OLED-Edition-Configurator-${V}-win-x64\\.exe$`),
+  // The per-user installer (app 0.9.5-dev.12 on); older releases shipped a portable exe.
+  windows: new RegExp(`^DS5Dongle-OLED-Edition-Configurator-${V}-win-x64(?:-setup)?\\.exe$`),
   macos: new RegExp(`^DS5Dongle-OLED-Edition-Configurator-${V}-mac-universal\\.zip$`),
 };
 
