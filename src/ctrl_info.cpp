@@ -164,6 +164,7 @@ void ctrl_test_task(bool may_send) {
     const uint64_t now = time_us_64();
     if (s_req.state != CTRL_TEST_RUNNING) {
         if (s_scrub_until_us && now >= s_scrub_until_us) s_scrub_until_us = 0;
+        // lifetime: HOT-ALLOC — copies 0x81 every core0 pass during the scrub window when a reply is cached
         if (s_scrub_until_us && is_ours(bt_peek_feature(0x81))) bt_drop_feature(0x81);
         return;
     }
@@ -178,6 +179,7 @@ void ctrl_test_task(bool may_send) {
         s_req.next_ask_us = now + 2 * kPollGapUs;
         return;
     }
+    // lifetime: HOT-ALLOC — copies 0x81 every core0 pass while a test runs (≤ 3 s) and a reply is cached
     const std::vector<uint8_t> r = bt_peek_feature(0x81);
     if (is_ours(r)) {
         bt_drop_feature(0x81);  // each reply is one page: never read it twice
@@ -195,6 +197,7 @@ void ctrl_test_task(bool may_send) {
     }
     if (s_req.asking && now - s_req.asked_us > kReaskUs) s_req.asking = false;  // that GET got lost
     if (!s_req.asking && now >= s_req.next_ask_us) {
+        // lifetime: NOT-WORTH — a discarded copy per re-ask (every 150 ms, ≤ 3 s per test)
         (void) get_feature_data(0x81, 64);  // the answer lands in the feature cache
         s_req.asking = true;
         s_req.asked_us = now;
@@ -206,7 +209,9 @@ uint16_t ctrl_info_get(uint8_t selector, uint8_t *buffer, uint16_t reqlen) {
         constexpr uint16_t kLen = 14;
         if (reqlen < kLen) return 0;
         memset(buffer, 0, kLen);
+        // lifetime: NOT-WORTH — per app GET 0xEB (the Controller info card, a few per second at most)
         const std::vector<uint8_t> fw = bt_is_connected() ? bt_peek_feature(0x20) : std::vector<uint8_t>{};
+        // lifetime: NOT-WORTH — per app GET 0xEB (the Controller info card, a few per second at most)
         const std::vector<uint8_t> patch = bt_is_connected() ? bt_peek_feature(0x22) : std::vector<uint8_t>{};
         buffer[0] = 'C';
         buffer[1] = 'H';
@@ -225,6 +230,7 @@ uint16_t ctrl_info_get(uint8_t selector, uint8_t *buffer, uint16_t reqlen) {
         constexpr uint16_t kLen = 60;
         if (reqlen < kLen) return 0;
         memset(buffer, 0, kLen);
+        // lifetime: NOT-WORTH — per app GET 0xEB (the Controller info card, a few per second at most)
         const std::vector<uint8_t> fw = bt_is_connected() ? bt_peek_feature(0x20) : std::vector<uint8_t>{};
         if (fw.size() >= kLen && fw[0] == 0x20) {
             buffer[0] = 0x01;

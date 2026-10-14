@@ -137,6 +137,8 @@ jobs:
 
       - name: Every failure path has a verdict (CLAUDE.md "Error pass")
         run: python3 tools/list_errors.py --check
+      - name: Every acquisition has a verdict (CLAUDE.md "Lifetime pass")
+        run: python3 tools/list_lifetimes.py --check
 
       - name: Host unit tests (ASan + UBSan)
         run: tests/host/run.sh build/host-tests

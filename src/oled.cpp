@@ -1194,6 +1194,7 @@ void imu_cal_parse(const std::vector<uint8_t>& d) {
 void imu_cal_service() {
     if (!bt_is_connected()) { g_imu_cal_valid = false; g_imu_cal_tried = false; return; }
     if (g_imu_cal_tried) return;
+    // lifetime: OK — no heap until 0x05 arrives (empty vector), then one copy per connection (g_imu_cal_tried)
     auto d = bt_peek_feature(0x05);
     if (d.size() < 35) return;                 // not arrived yet — retry next frame
     imu_cal_parse(d);

@@ -613,14 +613,19 @@ void CORE0_RAM_FUNC(audio_loop)() {
 }
 
 void audio_init() {
+    // lifetime: NOT-WORTH — boot, once per firmware run; the queue lives until reset
     queue_init(&haptics_fifo, sizeof(haptics_element), 2);
 #if !DISABLE_SPEAKER_PROC
+    // lifetime: NOT-WORTH — boot, once per firmware run; the queue lives until reset
     queue_init(&audio_fifo, sizeof(audio_raw_element), 2);
+    // lifetime: NOT-WORTH — boot, once per firmware run; the queue lives until reset
     queue_init(&audio_spk_fifo, sizeof(audio_spk_element), 2);
 #endif
     // Mic queues: core0 fills mic_fifo from BT, core1 decodes into the jitter
     // buffer, core0 drains it to USB. Mic Opus is mono / 48 kHz / 10 ms frames.
+    // lifetime: NOT-WORTH — boot, once per firmware run; the queue lives until reset
     queue_init(&mic_fifo, sizeof(mic_element), MIC_DECODE_DEPTH);          // deeper: tolerate BT bursts
+    // lifetime: NOT-WORTH — boot, once per firmware run; the queue lives until reset
     queue_init(&mic_decode_fifo, sizeof(mic_decoded_element), MIC_DECODE_DEPTH); // decoded-PCM jitter buffer
     // Core1 now always runs: it owns the mic decoder even in no-speaker builds.
     multicore_launch_core1_with_stack(core1_entry, audio_core1_stack, sizeof(audio_core1_stack));
@@ -734,9 +739,11 @@ void __not_in_flash_func(core1_entry)() {
     g_c1_stage = 4;
 #if OPUS_ENCODER_CELT_ONLY
     // error: SHOWN — g_c1_flags 0x02 (CORE1_SPEAKER_FAILED) in 0xF5, the app's Dongle dashboard says the speaker path failed; printf with free heap
+    // lifetime: NOT-WORTH — once at core1 start; the encoder lives as long as core1 (never restarted)
     encoder = opus_encoder_create(48000, 2, OPUS_APPLICATION_RESTRICTED_CELT, &error);
 #else
     // error: SHOWN — g_c1_flags 0x02 (CORE1_SPEAKER_FAILED) in 0xF5, the app's Dongle dashboard says the speaker path failed; printf with free heap
+    // lifetime: NOT-WORTH — once at core1 start; the encoder lives as long as core1 (never restarted)
     encoder = opus_encoder_create(48000, 2, OPUS_APPLICATION_AUDIO, &error);
 #endif
     g_c1_stage = 5;
@@ -756,6 +763,7 @@ void __not_in_flash_func(core1_entry)() {
         resampler_audio.SetMode(true, 0, false);
         resampler_audio.SetRates(51200, 48000);
         resampler_audio.SetFeedMode(true);
+        // lifetime: OK — once at core1 start, sized for audio_loop's 512-in/480-out frame, so it never grows
         resampler_audio.Prealloc(2, 512, 480);
         g_spk_ready = true;
     }
@@ -763,6 +771,7 @@ void __not_in_flash_func(core1_entry)() {
 #endif
     g_c1_stage = 7;
     // error: SHOWN — g_c1_flags 0x04 (CORE1_MIC_FAILED) in 0xF5, the app's Dongle dashboard says the mic path failed; printf
+    // lifetime: NOT-WORTH — once at core1 start; the decoder lives as long as core1 (never restarted)
     mic_decoder = opus_decoder_create(48000, MIC_CHANNELS, &error);
     g_c1_stage = 8;
     if (error != 0) {

@@ -178,6 +178,15 @@ A standing rule, shared with the app (its CLAUDE.md "Error pass" has the full te
 4. A function that saves to flash returns whether the save worked (`bool` or `...::NotSaved`) and its callers report it: never drop a save's result.
 5. The full table lives once, in the app repo: [`docs/ERROR_PASS_2026-10.md`](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web/blob/master/docs/ERROR_PASS_2026-10.md). Don't keep a copy here.
 
+## Lifetime pass
+
+A standing rule, shared with the app (its CLAUDE.md "Lifetime pass" has the full text). Never review allocations by eye.
+
+1. **Every acquisition in `src/` names its release point, in the same commit that adds it**: `// lifetime: VERDICT — release point or reason`, on its line or in the comment block right above. `python3 tools/list_lifetimes.py --check` fails without one; it runs in `build.yml` and `release.yml`.
+2. **`tools/list_lifetimes.py` lists every acquisition** (standard library only; it reuses `tools/list_loops.py`'s scanner and call graph, so "Runs on" means the same): heap allocations (`malloc`/`calloc`/`realloc`/`new`/`make_unique`, `queue_init`, `opus_*_create`, the resampler's `Prealloc`), every `std::` container object, every function returning one by value and every call that gets a copy from one, container growth (`push_back`, `assign`, `map[key] =`), timers/alarms (`add_alarm_*`, `add_repeating_timer_*`, BTstack timers) and handler registrations (BTstack, IRQs, core1 launch).
+3. **Verdicts:** **OK** (name where it is freed: a disconnect clears it, reused in place, once per connection), **LEAK** (never freed / grows without bound: state the impact), **WASTE** (work or memory kept after it's no longer needed), **HOT-ALLOC** (heap use per main-loop pass, per report or on core1's frame path: core0's loop and core1 should not touch the heap), **NOT-WORTH** (boot-only and lives until reset by design, or rare and small: say why).
+4. **Re-run the full pass when a release adds allocations, containers or callbacks.** Run the lister, re-check every verdict, and update the firmware tables in the one doc, which lives in the app repo: `../DS5Dongle-OLED-Config-Web/docs/LIFETIME_PASS_2026-10.md` (or its newer `LIFETIME_PASS_<date>.md`). Don't keep a copy here.
+
 ## Git / branch model
 
 - **`master` (origin)** = `MarcelineVPQ/DS5Dongle-OLED-Edition` (this fork's primary branding, what users download).
