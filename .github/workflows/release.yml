@@ -159,6 +159,9 @@ jobs:
           mkdir -p bundle
           cp build/standard/ds5-bridge-oled.uf2 bundle/ds5-bridge-oled.uf2
           printf '{"version":"%s","file":"ds5-bridge-oled.uf2","sha256":"%s"}\n' "$TAG" "$(sha256sum bundle/ds5-bridge-oled.uf2 | cut -d' ' -f1)" > bundle/firmware.json
+          # The app builds this release's firmware CHANGELOG.md into About →
+          # Firmware changes (its firmwareChangelog.config.ts), so that tab needs no network.
+          cp CHANGELOG.md bundle/CHANGELOG.md
 
       # The debug build (ENABLE_SERIAL=ON) comes up as a serial console, not a
       # working bridge: a developer diagnostic, never a release download. The
@@ -214,9 +217,14 @@ jobs:
       - name: Tests must pass before anything ships
         run: npx vitest run
         shell: bash
+        env:
+          DS5_REQUIRE_FIRMWARE_CHANGELOG: "1"
       - name: Build
         run: npx electron-vite build && npx electron-builder ${{ matrix.target }} --publish never
         shell: bash
+        env:
+          # Fail rather than ship the "no firmware changelog in this build" note.
+          DS5_REQUIRE_FIRMWARE_CHANGELOG: "1"
       - uses: actions/upload-artifact@v4
         with:
           name: app-${{ matrix.os }}
