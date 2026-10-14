@@ -339,7 +339,8 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     //   proto 1.7 (when reqlen >= 46): [30..45] board name, ASCII, NUL-padded
     //   proto 1.12 (when reqlen >= 47): [46] feature bits 3, bit0 controller
     //   health & info (0xEB, 0xF6 0x16); bit1 (1.13) the config body's
-    //   1.13 fields; bit2 (1.14) PC sleep options (0xF6 0x17, [47])
+    //   1.13 fields; bit2 (1.14) PC sleep options (0xF6 0x17, [47]);
+    //   bit3 (1.15) timed grip test; bit4 (1.16) the mic level (body 50 bytes)
     //   proto 1.14 (when reqlen >= 48): [47] the PC sleep options' current
     //   bits (POWER_*: bit0 controller off when the PC sleeps, bit1 PS wakes
     //   the PC; 0 when [46] bit2 is clear)
@@ -462,7 +463,8 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         // status pin), read with a GET 0xF7 of sizeof(Config_body).
         // bit2 (proto 1.14): PC sleep options (0xF6 0x17, [47]).
         // bit3 (proto 1.15): timed grip test (0xF6 0x0E [side, tenths]).
-        buffer[46] = (ENABLE_COMPANION_VENDOR ? 0x01 : 0) | 0x02 | 0x04 | 0x08;
+        // bit4 (proto 1.16): the config body's mic_level (byte 49, body 50).
+        buffer[46] = (ENABLE_COMPANION_VENDOR ? 0x01 : 0) | 0x02 | 0x04 | 0x08 | 0x10;
         if (reqlen < 48) return 47;
         buffer[47] = config_power_flags();
         return 48;

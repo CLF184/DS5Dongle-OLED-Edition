@@ -1,7 +1,8 @@
 // The settings the dongle puts on the controller state it sends (protocol
 // 1.13, upstream's batch 3): weaker adaptive triggers, the speaker amp's
-// pre-gain, the microphone choice and the volume lock. Pure, so the host tests
-// check it byte for byte.
+// pre-gain, the microphone choice and the volume lock; and (protocol 1.16) the
+// controller's microphone level. Pure, so the host tests check it byte for
+// byte.
 //
 // Upstream's v0.7.2 latched the whole controller state and re-sent it, every
 // allow bit set, on each game report; adaptive triggers came out weak or gone
@@ -20,7 +21,12 @@ struct StateOverrides {
     uint8_t speaker_gain;    // 0 = the game's own, 1..7
     uint8_t lock_volume;     // bool
     uint8_t mic_select;      // 0 auto, 1 built-in, 2 headset
+    uint8_t mic_level;       // 0 = the PC's level, 1..kMicLevelMax (1.16)
 };
+
+// The controller's VolumeMic tops out at 0x40 (SetStateData [6]); the PC's
+// 48 dB maps onto it (usb.cpp), and a fixed mic level (1.16) is 1..this.
+constexpr uint8_t kMicLevelMax = 0x40;
 
 // The sections the game last set, in the controller's own bytes.
 struct HostAudioBytes {
@@ -43,6 +49,7 @@ constexpr uint8_t kF1AllowMuteLight = 0x01;
 constexpr uint8_t kF1AllowAudioMute = 0x02;
 constexpr uint8_t kF1AllowMotorPowerLevel = 0x40;
 constexpr uint8_t kF1AllowAudioControl2 = 0x80;
+constexpr int kVolumeMic = 6;
 constexpr int kAudioControl = 7;
 constexpr int kMotorPower = 36;
 constexpr int kAudioControl2 = 37;
@@ -77,6 +84,9 @@ inline void stamp_overrides(uint8_t *ss, const StateOverrides &o, const HostAudi
         ss[0] |= kF0AllowAudioControl;
         ss[kAudioControl] = (uint8_t) ((ss[kAudioControl] & ~0x03) | (o.mic_select & 0x03));
     }
+    // A fixed mic level replaces the level in any report that sets one (a
+    // game's, or the connect-time state); the controller keeps it otherwise.
+    if (o.mic_level && (ss[0] & kF0AllowMicVolume)) ss[kVolumeMic] = o.mic_level;
     if (from_host && o.lock_volume) {
         ss[0] &= (uint8_t) ~(kF0AllowHeadphoneVolume | kF0AllowSpeakerVolume | kF0AllowMicVolume);
         ss[1] &= (uint8_t) ~(kF1AllowAudioMute | kF1AllowMuteLight);
@@ -86,7 +96,10 @@ inline void stamp_overrides(uint8_t *ss, const StateOverrides &o, const HostAudi
 // A report of only the sections whose setting changed, to apply it now
 // instead of at the next game report. A setting back at 0 ("the game's own")
 // puts back what the game last set (or the controller's default).
-inline void build_override_push(uint8_t *ss, const StateOverrides &o, const HostAudioBytes &h, bool trigger, bool gain, bool mic) {
+// level: the mic level changed (1.16); back at 0 the controller gets pc_mic,
+// the PC's mic volume as VolumeMic (state_set_mic_volume), again.
+inline void build_override_push(uint8_t *ss, const StateOverrides &o, const HostAudioBytes &h, bool trigger, bool gain, bool mic,
+                                bool level = false, uint8_t pc_mic = kMicLevelMax) {
     using namespace state_bits;
     if (trigger) {
         ss[1] |= kF1AllowMotorPowerLevel;
@@ -99,6 +112,10 @@ inline void build_override_push(uint8_t *ss, const StateOverrides &o, const Host
     if (mic) {
         ss[0] |= kF0AllowAudioControl;
         ss[kAudioControl] = o.mic_select ? (uint8_t) ((h.audio_control & ~0x03) | (o.mic_select & 0x03)) : h.audio_control;
+    }
+    if (level) {
+        ss[0] |= kF0AllowMicVolume;
+        ss[kVolumeMic] = o.mic_level ? o.mic_level : pc_mic;
     }
 }
 

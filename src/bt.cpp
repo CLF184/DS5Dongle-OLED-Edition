@@ -771,7 +771,7 @@ void bt_send_state() {
     report32[3] = 0x3f; // 63 bytes
     state_set(report32 + 4,sizeof(SetStateData));
     state_stamp_host_rumble(report32 + 4);
-    state_stamp_config(report32 + 4, false);  // trigger reduction, speaker pre-gain, mic choice (1.13)
+    state_stamp_config(report32 + 4, false);  // trigger reduction, speaker pre-gain, mic choice (1.13), mic level (1.16)
     bt_write(report32, sizeof(report32));
 }
 

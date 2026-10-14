@@ -9,6 +9,7 @@
 
 #include "utils.h"
 #include "status_gpio.h"
+#include "state_override.h"
 #include "hardware/flash.h"
 #include "flash_safe.h"
 #include "flash_layout.h"
@@ -138,6 +139,7 @@ void config_valid() {
     if (body->speaker_select > 3) body->speaker_select = 0;     // auto
     if (!status_gpio_pin_valid(body->status_gpio_pin)) body->status_gpio_pin = kStatusGpioOff;
     if (body->status_gpio_mode > 1) body->status_gpio_mode = 0;
+    if (body->mic_level > kMicLevelMax) body->mic_level = 0;    // protocol 1.16: follow the PC
     if (config.power_flags & ~POWER_FLAGS_MASK) config.power_flags = POWER_FLAGS_DEFAULT; // 0xFF erased / older firmware
     if (body->config_version != CONFIG_VERSION) {
         body->config_version = CONFIG_VERSION;

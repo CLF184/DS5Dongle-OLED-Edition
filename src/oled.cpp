@@ -9,6 +9,7 @@
 #include "audio.h"
 #include "config.h"
 #include "state_mgr.h"
+#include "state_override.h"
 
 #include <cstdio>
 #include <cstring>
@@ -134,7 +135,7 @@ constexpr int kLbModeHost = 8;
 constexpr int kNumLbModes = 9;
 
 // Settings screen state
-constexpr int kNumSettingsItems = 24; // 8 fields + 3 auto-haptic + 2 screen-timeout + BT mic + Ctrl-wake + 5 audio/trigger (1.13) + 2 PC sleep (1.14) + Reset + Wipe
+constexpr int kNumSettingsItems = 25; // 8 fields + 3 auto-haptic + 2 screen-timeout + BT mic + Ctrl-wake + 5 audio/trigger (1.13) + mic level (1.16) + 2 PC sleep (1.14) + Reset + Wipe
 constexpr int kSettingsAutoHapEnaIdx  = 8;
 constexpr int kSettingsAutoHapGainIdx = 9;
 constexpr int kSettingsAutoHapLpIdx   = 10;
@@ -147,10 +148,11 @@ constexpr int kSettingsSpkBoostIdx    = 16;
 constexpr int kSettingsVolLockIdx     = 17;
 constexpr int kSettingsSpkOutIdx      = 18;
 constexpr int kSettingsMicInIdx       = 19;
-constexpr int kSettingsSleepOffIdx    = 20; // protocol 1.14 (Config::power_flags)
-constexpr int kSettingsPsWakeIdx      = 21;
-constexpr int kSettingsResetIdx       = 22;
-constexpr int kSettingsWipeSlotsIdx   = 23;
+constexpr int kSettingsMicLvlIdx      = 20; // protocol 1.16
+constexpr int kSettingsSleepOffIdx    = 21; // protocol 1.14 (Config::power_flags)
+constexpr int kSettingsPsWakeIdx      = 22;
+constexpr int kSettingsResetIdx       = 23;
+constexpr int kSettingsWipeSlotsIdx   = 24;
 Config_body settings_local{};
 uint8_t settings_power = POWER_FLAGS_DEFAULT;  // PC sleep options (Config::power_flags, not in the body)
 int settings_sel = 0;
@@ -1624,6 +1626,12 @@ void settings_adjust(int delta) {
             c.mic_select = (uint8_t)v;
             break;
         }
+        case kSettingsMicLvlIdx: { // mic_level  0 (the PC's) .. 64, in steps of 4
+            int v = (int)c.mic_level + delta * 4;
+            if (v < 0) v = 0; if (v > kMicLevelMax) v = kMicLevelMax;
+            c.mic_level = (uint8_t)v;
+            break;
+        }
         case kSettingsSleepOffIdx: settings_power ^= POWER_SLEEP_CONTROLLER_OFF; break;
         case kSettingsPsWakeIdx: settings_power ^= POWER_PS_WAKES_PC; break;
     }
@@ -1751,6 +1759,10 @@ __attribute__((noinline)) void format_settings_item(int idx, char* line, size_t 
             snprintf(line, n, "%s Mic In %s", cur, names[c.mic_select % 3]);
             break;
         }
+        case kSettingsMicLvlIdx:
+            if (c.mic_level == 0) snprintf(line, n, "%s Mic Lvl PC", cur);
+            else snprintf(line, n, "%s Mic Lvl %u", cur, c.mic_level);
+            break;
         case kSettingsSleepOffIdx:
             snprintf(line, n, "%s Sleep CtrlOff %s", cur, (settings_power & POWER_SLEEP_CONTROLLER_OFF) ? "on" : "off");
             break;

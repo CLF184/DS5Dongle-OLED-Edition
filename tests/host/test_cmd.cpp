@@ -35,17 +35,18 @@ void settle() {  // let a deferred command run (reboot/BOOTSEL wait 50 ms)
 }
 }  // namespace
 
-TEST(cmd_identity_reports_protocol_1_15) {
+TEST(cmd_identity_reports_protocol_1_16) {
     fresh();
     uint8_t id[47]{};
     CHECK_EQ(pico_cmd_get(PICO_CMD_IDENTITY, id, sizeof(id)), 47);
     CHECK(std::memcmp(id, "DS5O", 4) == 0);
     CHECK_EQ(id[4], 1);
-    CHECK_EQ(id[5], 15);
-    CHECK_EQ(id[6], 49);
+    CHECK_EQ(id[5], 16);
+    CHECK_EQ(id[6], 50);
     CHECK(id[46] & 0x02);  // the 1.13 config fields
     CHECK(id[46] & 0x04);  // the 1.14 PC sleep options
     CHECK(id[46] & 0x08);  // the 1.15 timed grip test
+    CHECK(id[46] & 0x10);  // the 1.16 mic level
     CHECK_EQ(id[6], sizeof(Config_body));
     CHECK(id[29] & 0x80);  // timings in 0xFC
     CHECK(std::memcmp(id + 30, "Host", 5) == 0);
@@ -98,11 +99,12 @@ TEST(cmd_config_get_layouts) {
     CHECK_EQ(r[42], 6);
     CHECK_EQ(r[47], 4);
     CHECK_EQ(pico_cmd_get(0xF7, r, 62), sizeof(Config_body));
+    CHECK_EQ(pico_cmd_get(0xF7, r, 49), 49);                            // what 1.13..1.15 apps ask for: no mic level
     CHECK_EQ(pico_cmd_get(0xF7, r, kConfigBodyV16), kConfigBodyV16);  // what apps before 1.13 ask for
     CHECK_EQ(pico_cmd_get(0xF7, r, 38), 38);                            // the narrator read
 }
 
-// The app's config write (0x01) carries the whole 49-byte body.
+// The app's config write (0x01) carries the whole 50-byte body.
 TEST(cmd_config_set_takes_the_whole_body) {
     fresh();
     Config_body b = get_config();
@@ -115,6 +117,30 @@ TEST(cmd_config_set_takes_the_whole_body) {
     CHECK_EQ(last_result(), CMD_RESULT_OK);
     CHECK_EQ(get_config().lock_volume, 1);
     CHECK_EQ(get_config().speaker_select, 2);
+}
+
+// Protocol 1.16: a 50-byte write sets the mic level; a 1.13..1.15 app's
+// 49-byte write leaves it as it is.
+TEST(cmd_config_set_mic_level_both_ways) {
+    fresh();
+    Config_body b = get_config();
+    b.mic_level = 40;
+    uint8_t msg[1 + sizeof(Config_body)];
+    msg[0] = 0x01;
+    std::memcpy(msg + 1, &b, sizeof(b));
+    pico_cmd_set(PICO_CMD_SET, msg, sizeof(msg));
+    CHECK_EQ(last_result(), CMD_RESULT_OK);
+    CHECK_EQ(get_config().mic_level, 40);
+    uint8_t r[63]{};
+    CHECK_EQ(pico_cmd_get(0xF7, r, sizeof(Config_body)), sizeof(Config_body));
+    CHECK_EQ(r[49], 40);
+    b.mic_level = 0;
+    b.lock_volume = 1;
+    std::memcpy(msg + 1, &b, sizeof(b));
+    pico_cmd_set(PICO_CMD_SET, msg, 1 + 49);  // an older app's body
+    CHECK_EQ(last_result(), CMD_RESULT_OK);
+    CHECK_EQ(get_config().lock_volume, 1);
+    CHECK_EQ(get_config().mic_level, 40);
 }
 
 TEST(cmd_fc_timings_layout_and_reset) {

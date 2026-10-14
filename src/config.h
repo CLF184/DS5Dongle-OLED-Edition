@@ -89,6 +89,14 @@ struct __attribute__((packed)) Config_body {
     // while connected, 1 = a 200 ms high pulse when a controller connects.
     uint8_t status_gpio_pin;
     uint8_t status_gpio_mode;
+    // Protocol 1.16: the controller's microphone level (SetStateData
+    // VolumeMic, the only mic level the controller has: one absolute,
+    // non-linear byte that tops out at 0x40). 0 = follow the PC's mic level
+    // (default, as before: the USB mic feature unit's 0..48 dB maps onto
+    // 0..0x40), 1..64 = this level, whatever the PC's slider says (its mute
+    // still works). Appended like the 1.13 fields: 0xFF from older firmware
+    // reads as invalid and takes the default.
+    uint8_t mic_level;
 };
 
 // The body as protocol 1.6 to 1.12 sent it. A config GET (0xF7) for the
@@ -97,7 +105,8 @@ struct __attribute__((packed)) Config_body {
 // app asks for sizeof(Config_body) from protocol 1.13 on).
 constexpr unsigned kConfigBodyV16 = 42;
 static_assert(__builtin_offsetof(Config_body, trigger_reduce) == kConfigBodyV16, "protocol 1.13 fields start after the 1.6 body");
-static_assert(sizeof(Config_body) == 49, "update cmd.cpp, the app's config.ts and CLAUDE.md with the body");
+static_assert(__builtin_offsetof(Config_body, mic_level) == 49, "protocol 1.16's mic level follows the 49-byte 1.13 body");
+static_assert(sizeof(Config_body) == 50, "update cmd.cpp, the app's config.ts and CLAUDE.md with the body");
 
 // What the dongle does when the PC sleeps (protocol 1.14, src/usb_power.h).
 // Kept after the body, not in it: set and saved on its own (0xF6 0x17, like

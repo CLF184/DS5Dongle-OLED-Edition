@@ -105,7 +105,11 @@ void state_set_audio_mute(bool mic, bool speaker) {
 }
 
 void state_set_mic_volume(uint8_t volume) {
+    // Kept as the PC's level (the connect-time state carries it, stamped with
+    // a fixed mic level when one is set), but with a fixed level (1.16) the
+    // controller keeps that one; Auto puts this back (state_config_task).
     state[offsetof(SetStateData, VolumeMic)] = volume;
+    if (get_config().mic_level) return;
     uint8_t ss[sizeof(SetStateData)]{};
     ss[0] = 0x40;  // AllowMicVolume
     ss[offsetof(SetStateData, VolumeMic)] = volume;
@@ -114,7 +118,7 @@ void state_set_mic_volume(uint8_t volume) {
 
 static StateOverrides overrides_from_config() {
     const Config_body &c = get_config();
-    return {c.trigger_reduce, c.speaker_gain, c.lock_volume, c.mic_select};
+    return {c.trigger_reduce, c.speaker_gain, c.lock_volume, c.mic_select, c.mic_level};
 }
 
 void state_stamp_config(uint8_t *ss, bool from_host) {
@@ -141,10 +145,11 @@ void state_config_task() {
     const bool trigger = now.trigger_reduce != s_sent.trigger_reduce;
     const bool gain = now.speaker_gain != s_sent.speaker_gain;
     const bool mic = now.mic_select != s_sent.mic_select;
+    const bool level = now.mic_level != s_sent.mic_level;
     s_sent = now;
-    if (trigger || gain || mic) {
+    if (trigger || gain || mic || level) {
         uint8_t ss[sizeof(SetStateData)]{};
-        build_override_push(ss, now, s_host_audio, trigger, gain, mic);
+        build_override_push(ss, now, s_host_audio, trigger, gain, mic, level, state[offsetof(SetStateData, VolumeMic)]);
         send_state_report(ss);
     }
     // The mute button's light follows the controller's mic mute (input report

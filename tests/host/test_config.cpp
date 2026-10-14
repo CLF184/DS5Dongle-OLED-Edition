@@ -32,6 +32,7 @@ TEST(config_erased_flash_gives_documented_defaults) {
     CHECK_EQ(c.speaker_select, 0);
     CHECK_EQ(c.status_gpio_pin, kStatusGpioOff);
     CHECK_EQ(c.status_gpio_mode, 0);
+    CHECK_EQ(c.mic_level, 0);  // follow the PC (1.16)
     CHECK(config_unsaved());  // nothing valid saved yet
 }
 
@@ -96,6 +97,44 @@ TEST(config_clamps_the_1_13_fields) {
     CHECK_EQ(get_config().speaker_select, 0);
     CHECK_EQ(get_config().status_gpio_pin, kStatusGpioOff);
     CHECK_EQ(get_config().status_gpio_mode, 0);
+}
+
+// A config saved by 1.13..1.15 firmware: a 49-byte body, 0xFF after it. Its
+// 1.13 settings stay, the 1.16 mic level follows the PC.
+TEST(config_1_13_body_keeps_settings_and_defaults_the_mic_level) {
+    fake_flash_erase_all();
+    g_fake_flash_fail = false;
+    config_load();
+    Config_body b = get_config();
+    b.trigger_reduce = 3;
+    b.status_gpio_mode = 1;
+    set_config(b);
+    CHECK(config_save());
+    uint8_t *raw = g_fake_flash + CONFIG_FLASH_OFFSET;
+    raw[offsetof(Config, body) + offsetof(Config_body, mic_level)] = 0xFF;
+    const uint16_t size = 49;
+    std::memcpy(raw + offsetof(Config, size), &size, sizeof(size));
+    config_default();
+    config_load();
+    CHECK_EQ(get_config().trigger_reduce, 3);
+    CHECK_EQ(get_config().status_gpio_mode, 1);
+    CHECK_EQ(get_config().mic_level, 0);
+}
+
+TEST(config_clamps_the_mic_level) {
+    fake_flash_erase_all();
+    config_load();
+    Config_body b = get_config();
+    for (int v : {0, 1, 32, 64}) {
+        b.mic_level = (uint8_t) v;
+        set_config(b);
+        CHECK_EQ(get_config().mic_level, v);
+    }
+    for (int v : {65, 128, 0xFF}) {
+        b.mic_level = (uint8_t) v;
+        set_config(b);
+        CHECK_EQ(get_config().mic_level, 0);
+    }
 }
 
 // An older app writes the 42-byte body: the 1.13 fields stay as they are.

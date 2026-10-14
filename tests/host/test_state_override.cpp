@@ -1,4 +1,4 @@
-// src/state_override.h: the protocol 1.13 settings on the controller state.
+// src/state_override.h: the protocol 1.13 settings (and 1.16's mic level) on the controller state.
 // With every setting at "the game's own" a game report passes untouched (the
 // upstream #228 regression was the dongle changing the game's trigger state).
 #include <cstring>
@@ -91,4 +91,59 @@ TEST(override_push_puts_back_the_game_values) {
     CHECK_EQ(ss[kAudioControl], 0x09);
     CHECK_EQ(ss[1], kF1AllowMotorPowerLevel | kF1AllowAudioControl2);
     CHECK_EQ(ss[0], kF0AllowAudioControl);
+}
+
+// Protocol 1.16: a fixed mic level replaces the level in a report that sets
+// one and adds nothing to one that doesn't; at 0 the report keeps its own.
+TEST(override_mic_level_replaces_only_a_set_level) {
+    uint8_t ss[47];
+    game_report(ss);
+    ss[0] = kF0AllowMicVolume;
+    uint8_t before[47];
+    std::memcpy(before, ss, sizeof(ss));
+    stamp_overrides(ss, {0, 0, 0, 0, 24}, kHostAudioDefaults, true);
+    CHECK_EQ(ss[kVolumeMic], 24);
+    CHECK_EQ(ss[0], kF0AllowMicVolume);
+    before[kVolumeMic] = 24;
+    CHECK(std::memcmp(ss, before, sizeof(ss)) == 0);  // nothing else changed
+    // A report without the mic volume: untouched.
+    game_report(ss);
+    ss[0] = 0;
+    std::memcpy(before, ss, sizeof(ss));
+    stamp_overrides(ss, {0, 0, 0, 0, 24}, kHostAudioDefaults, true);
+    CHECK(std::memcmp(ss, before, sizeof(ss)) == 0);
+    // The connect-time state (its allow bit set) carries the level too.
+    ss[0] = kF0AllowMicVolume;
+    ss[kVolumeMic] = kMicLevelMax;
+    stamp_overrides(ss, {0, 0, 0, 0, 9}, kHostAudioDefaults, false);
+    CHECK_EQ(ss[kVolumeMic], 9);
+    // At 0 the game's level passes.
+    ss[kVolumeMic] = 33;
+    stamp_overrides(ss, kNone, kHostAudioDefaults, true);
+    CHECK_EQ(ss[kVolumeMic], 33);
+}
+
+TEST(override_mic_level_with_volume_lock_still_drops_the_game_bit) {
+    uint8_t ss[47]{};
+    ss[0] = kF0AllowMicVolume;
+    ss[kVolumeMic] = 5;
+    stamp_overrides(ss, {0, 0, 1, 0, 24}, kHostAudioDefaults, true);
+    CHECK_EQ(ss[0] & kF0AllowMicVolume, 0);  // the lock wins: the controller keeps our pushed level
+}
+
+TEST(override_push_mic_level_and_back_to_the_pc) {
+    uint8_t ss[47]{};
+    build_override_push(ss, {0, 0, 0, 0, 48}, kHostAudioDefaults, false, false, false, true, 30);
+    CHECK_EQ(ss[0], kF0AllowMicVolume);
+    CHECK_EQ(ss[1], 0);
+    CHECK_EQ(ss[kVolumeMic], 48);
+    std::memset(ss, 0, sizeof(ss));
+    build_override_push(ss, kNone, kHostAudioDefaults, false, false, false, true, 30);  // Auto: the PC's level
+    CHECK_EQ(ss[0], kF0AllowMicVolume);
+    CHECK_EQ(ss[kVolumeMic], 30);
+    // Not changed: no mic bytes.
+    std::memset(ss, 0, sizeof(ss));
+    build_override_push(ss, {0, 0, 0, 0, 48}, kHostAudioDefaults, false, false, false);
+    CHECK_EQ(ss[0], 0);
+    CHECK_EQ(ss[kVolumeMic], 0);
 }
