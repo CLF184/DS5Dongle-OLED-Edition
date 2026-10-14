@@ -119,10 +119,13 @@ bool take_reply(const std::vector<uint8_t> &r) {
 }  // namespace
 
 uint8_t ctrl_test_start(const uint8_t *args, uint16_t len) {
+    // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: a test the dongle doesn't allow, the app's command error
     if (len < 3 || !allowed(args[0], args[1], args[2])) return CMD_RESULT_INVALID;
     // Not before ctrl_test_task has seen the connection: its connect edge
     // would turn this request into NO_CONTROLLER in the same loop pass.
+    // error: SHOWN — CMD_RESULT_FAILED in the 0xF1 result byte: no controller, the app's command error
     if (!bt_is_connected() || !s_was_connected) return CMD_RESULT_FAILED;
+    // error: SHOWN — CMD_RESULT_BUSY in the 0xF1 result byte: a test is running, the app's command error
     if (s_req.state == CTRL_TEST_RUNNING) return CMD_RESULT_BUSY;
     const uint8_t number = (uint8_t) (s_req.number + 1);
     s_req = Request{};
@@ -165,6 +168,7 @@ void ctrl_test_task(bool may_send) {
         return;
     }
     if (!s_req.sent) {
+        // error: NOT-WORTH — nothing; scheduling (test slot busy / reply taken); the request's deadline ends it as NO_ANSWER, which GET 0xEB reports and the app shows
         if (!may_send) return;
         uint8_t cmd[63] = {s_req.dev, s_req.action};  // the crc32 is added by set_feature_data
         bt_drop_feature(0x81);
@@ -179,6 +183,7 @@ void ctrl_test_task(bool may_send) {
         bt_drop_feature(0x81);  // each reply is one page: never read it twice
         s_req.asking = false;
         s_req.next_ask_us = now + kPollGapUs;
+        // error: NOT-WORTH — nothing; scheduling (test slot busy / reply taken); the request's deadline ends it as NO_ANSWER, which GET 0xEB reports and the app shows
         if (take_reply(r)) return;
     } else if (!r.empty() && s_req.pages > 0) {  // header cleared after the last page
         finish(CTRL_TEST_DONE);

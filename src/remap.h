@@ -27,8 +27,11 @@ constexpr uint8_t kRemapProtoVer = 1;
 // or kRemapExtraSelf (the button itself, the default; erased flash reads so).
 constexpr int kRemapExtraCount = 4;
 constexpr uint8_t kRemapExtraSelf = 0xFF, kRemapExtraOff = 0xFE;
+// Ok / Invalid (a bad entry, nothing changed) / NotSaved (applied, but the
+// flash write failed, so it's lost at power-off).
+enum class RemapSet : uint8_t { Ok, Invalid, NotSaved };
 // Set the four entries, saved (temporary = false) or for now only.
-bool remap_set_extra(const uint8_t *extra, bool temporary);
+RemapSet remap_set_extra(const uint8_t *extra, bool temporary);
 void remap_get_extra(uint8_t out[kRemapExtraCount]);
 
 // Load the table from its dedicated flash sector. Call once at boot, after
@@ -42,7 +45,6 @@ void remap_apply(uint8_t *report);
 
 // Validate + store + persist a new 16-entry table (each entry < 16, or 0xFF =
 // disabled). Bumps the revision whenever the table is applied.
-enum class RemapSet : uint8_t { Ok, Invalid, NotSaved };
 // Applies a table (in RAM at once) and saves it. NotSaved: applied, but the
 // flash write failed, so it's lost at power-off.
 RemapSet remap_set(const uint8_t *table);

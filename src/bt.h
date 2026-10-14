@@ -44,9 +44,11 @@ uint32_t bt_hci_err_count();
 
 // Multi-slot persistent pairing (Phase G). Modeled on zurce/DS5Dongle-OLED.
 int  bt_get_slot();
-void bt_set_slot(int slot);
-void bt_forget_slot(int slot);
-void bt_wipe_all_slots();
+// false = the change is made but not saved (flash write failed): the caller
+// tells the user (0xF1 CMD_RESULT_FAILED, the OLED's "Save FAIL").
+bool bt_set_slot(int slot);
+bool bt_forget_slot(int slot);
+bool bt_wipe_all_slots();
 bool bt_slot_occupied(int slot);
 void bt_slot_get_addr(int slot, uint8_t out[6]);
 

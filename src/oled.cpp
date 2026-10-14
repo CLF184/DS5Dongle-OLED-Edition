@@ -617,6 +617,7 @@ void handle_buttons() {
             Config_body b = get_config();
             b.screen_brightness = (uint8_t)bright_idx;
             set_config(b);
+            // error: SILENT-BUG — nothing; the long-press screen brightness applies now but a failed save loses it at power-off Change: show "Save FAIL" on whichever screen is up (batch: an OLED toast on every screen)
             config_save();
             settings_local.screen_brightness = (uint8_t)bright_idx;
         } else {
@@ -996,6 +997,7 @@ void format_diag_row(int idx, char* line, size_t n) {
 }
 
 void diag_handle_input(int visible) {
+    // error: NOT-WORTH — nothing; input comes from the controller, so with none connected there's no button press to handle
     if (!bt_is_connected()) return;
     const uint8_t dpad = (uint8_t)(interrupt_in_data[7] & 0x0F);
     if (dpad != diag_last_dpad && dpad != 8) {
@@ -1519,6 +1521,7 @@ void lightbar_save_config() {
         b.lb_fav_b[i] = lb_fav_b[i];
     }
     set_config(b);
+    // error: SILENT-BUG — nothing; the Lightbar screen's mode/favorites apply now but a failed save on leaving the screen loses them at power-off Change: show "Save FAIL" (batch: an OLED toast on every screen)
     config_save();
     lb_dirty = false;
 }
@@ -1670,6 +1673,7 @@ void settings_adjust(int delta) {
 }
 
 void settings_handle_input() {
+    // error: NOT-WORTH — nothing; input comes from the controller, so with none connected there's no button press to handle
     if (!bt_is_connected()) return;
     const uint8_t dpad = (uint8_t)(interrupt_in_data[7] & 0x0F);
     const uint8_t face = (uint8_t)(interrupt_in_data[7] & 0xF0);
@@ -1698,6 +1702,7 @@ void settings_handle_input() {
         settings_reset_triggered = true;
         if (settings_sel == kSettingsResetIdx) {
             config_default();
+            // error: SHOWN — OLED footer "Reset FAIL" / "Save FAIL"
             if (config_save()) {
                 settings_local = get_config();
                 settings_power = config_power_flags();
@@ -1708,14 +1713,15 @@ void settings_handle_input() {
                 settings_show_status("Reset FAIL");
             }
         } else {
-            bt_wipe_all_slots();
-            settings_show_status("Slots wiped!");
+            // error: SHOWN — OLED footer "Wipe FAIL" (fixed in this pass: always said "Slots wiped!")
+            settings_show_status(bt_wipe_all_slots() ? "Slots wiped!" : "Wipe FAIL");
         }
     }
     if (!tri_now && tri_prev) {
         if (!is_hold_item && !settings_reset_triggered) {
             set_config(settings_local);
             config_set_power_flags(settings_power);
+            // error: SHOWN — OLED footer "Reset FAIL" / "Save FAIL"
             const bool saved = config_save();
             settings_show_status(saved ? "Saved!" : "Save FAIL");
             if (saved) settings_dirty = false;  // a failed save keeps the (*) marker
@@ -1874,8 +1880,8 @@ void slots_handle_input() {
     const bool tri_prev = (slots_last_face & 0x80) != 0;
     if (tri_now && !tri_prev) {
         if (slots_cursor != bt_get_slot()) {
-            bt_set_slot(slots_cursor);
-            slots_status = "Switched!";
+            // error: SHOWN — OLED Slots status "Save FAIL" / "Wipe FAIL" (fixed in this pass: always said done)
+            slots_status = bt_set_slot(slots_cursor) ? "Switched!" : "Save FAIL";
             slots_status_until_us = (uint32_t)time_us_32() + 1500000;
         }
     }
@@ -1890,8 +1896,8 @@ void slots_handle_input() {
     if (sq_now && !slots_wipe_triggered
         && ((uint32_t)time_us_32() - slots_sq_press_us) >= kSlotsWipeHoldUs) {
         slots_wipe_triggered = true;
-        bt_forget_slot(slots_cursor);
-        slots_status = "Wiped!";
+        // error: SHOWN — OLED Slots status "Save FAIL" / "Wipe FAIL" (fixed in this pass: always said done)
+        slots_status = bt_forget_slot(slots_cursor) ? "Wiped!" : "Wipe FAIL";
         slots_status_until_us = (uint32_t)time_us_32() + 1500000;
     }
     if (!sq_now && sq_prev) slots_wipe_triggered = false;

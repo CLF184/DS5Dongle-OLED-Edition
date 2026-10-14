@@ -104,6 +104,7 @@ void dse_task(bool may_use_test_slot) {
         case Phase::Idle:
             return;
         case Phase::Unlock: {
+            // error: NOT-WORTH — nothing; scheduling of the Edge profile unlock/fetch (test slot busy, settle and gap timers), retried next pass
             if (!may_use_test_slot) return;
             // SET 0x65: the firmware report's body as is, like a native host.
             const std::vector<uint8_t> fw = bt_peek_feature(0x20);  // [0x20, data..., crc32]
@@ -125,6 +126,7 @@ void dse_task(bool may_use_test_slot) {
             if (now - s_t0_us >= kUnlockWaitUs) start_fetch(true, now);
             return;
         case Phase::SaveSettle:
+            // error: NOT-WORTH — nothing; scheduling of the Edge profile unlock/fetch (test slot busy, settle and gap timers), retried next pass
             if (now - s_written_us < kSaveSettleUs || !may_use_test_slot) return;
             send_unlock();
             s_t0_us = now;
@@ -142,6 +144,7 @@ void dse_task(bool may_use_test_slot) {
             if (now - s_t0_us >= kSaveRefetchUs) start_fetch(false, now);
             return;
         case Phase::Fetch:
+            // error: NOT-WORTH — nothing; scheduling of the Edge profile unlock/fetch (test slot busy, settle and gap timers), retried next pass
             if (now - s_last_get_us < kFetchGapUs) return;
             s_last_get_us = now;
             if (s_next <= kLastProfile) {

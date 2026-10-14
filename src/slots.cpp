@@ -33,8 +33,10 @@ static bool save_slots_to_flash() {
     memset(page, 0xff, sizeof(page));
     memcpy(page, &g_slots, sizeof(g_slots));
 
+    // error: SHOWN — printf + returned to the slot changes, which report it (0xF1 CMD_RESULT_FAILED, the OLED's "Save FAIL"/"Wipe FAIL")
     if (!flash_sector_write(SLOTS_FLASH_OFFSET, page)) {
         printf("[Flash] core1 lockout timed out, write skipped\n");
+        // error: SHOWN — printf + returned to the slot changes, which report it (0xF1 CMD_RESULT_FAILED, the OLED's "Save FAIL"/"Wipe FAIL")
         return false;
     }
 
@@ -45,15 +47,18 @@ static bool save_slots_to_flash() {
         return true;
     }
     printf("[Slots] flash write VERIFY FAILED\n");
+    // error: SHOWN — printf + returned to the slot changes, which report it (0xF1 CMD_RESULT_FAILED, the OLED's "Save FAIL"/"Wipe FAIL")
     return false;
 }
 
 void slots_load() {
     memcpy(&g_slots, flash_slots(), sizeof(g_slots));
+    // error: LOGGED-OK — printf; first boot / erased sector: no paired controllers, which the app and OLED show as empty slots
     if (g_slots.magic != SLOTS_MAGIC) {
         printf("[Slots] flash sector empty/invalid, initializing\n");
         memset(&g_slots, 0, sizeof(g_slots));
         g_slots.magic = SLOTS_MAGIC;
+        // error: LOGGED-OK — printf; boot-time init save of a blank sector: the RAM copy works now and the next boot retries the save
         save_slots_to_flash();
     }
     // loop: NOT-WORTH — boot-only print of 4 slots
@@ -86,30 +91,36 @@ int slot_owner_of(const uint8_t addr[6]) {
     for (int i = 0; i < kNumSlots; i++) {
         if (g_slots.occupied[i] && memcmp(g_slots.addrs[i], addr, 6) == 0) return i;
     }
+    // error: NOT-WORTH — nothing; -1 = no slot owns this address (a lookup), not an error
     return -1;
 }
 
-void slot_assign(int slot, const uint8_t addr[6]) {
-    if (slot < 0 || slot >= kNumSlots) return;
+bool slot_assign(int slot, const uint8_t addr[6]) {
+    // error: NOT-WORTH — false for a slot outside 0..3; every caller passes a checked slot
+    if (slot < 0 || slot >= kNumSlots) return false;
     memcpy(g_slots.addrs[slot], addr, 6);
     g_slots.occupied[slot] = 1;
-    save_slots_to_flash();
+    // error: SHOWN — returned: the callers report a failed save (fixed in this pass: was dropped)
+    return save_slots_to_flash();
 }
 
-void slot_forget(int slot) {
-    if (slot < 0 || slot >= kNumSlots) return;
+bool slot_forget(int slot) {
+    // error: NOT-WORTH — false for a slot outside 0..3; every caller passes a checked slot
+    if (slot < 0 || slot >= kNumSlots) return false;
     memset(g_slots.addrs[slot], 0, 6);
     g_slots.occupied[slot] = 0;
-    save_slots_to_flash();
+    // error: SHOWN — returned: the callers report a failed save (fixed in this pass: was dropped)
+    return save_slots_to_flash();
 }
 
-void slots_wipe_all() {
+bool slots_wipe_all() {
     // loop: NOT-WORTH — 4 slots, on a user wipe (then one flash save)
     for (int i = 0; i < kNumSlots; i++) {
         memset(g_slots.addrs[i], 0, 6);
         g_slots.occupied[i] = 0;
     }
-    save_slots_to_flash();
+    // error: SHOWN — returned: the callers report a failed save (fixed in this pass: was dropped)
+    return save_slots_to_flash();
 }
 
 bool slots_any_empty() {

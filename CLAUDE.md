@@ -168,6 +168,16 @@ A standing rule, shared with the app (its CLAUDE.md "Loop pass" has the full tex
    - **PARALLELIZE**: rare here (one core per job).
 4. **Re-run the full pass when a release touches a hot path** (core0's loop, core1, the BT/USB callbacks). Run the lister, re-check every verdict, and update the firmware tables in the one doc, which lives in the app repo: `../DS5Dongle-OLED-Config-Web/docs/LOOP_PASS_2026-10.md` (or its newer `LOOP_PASS_<date>.md`). Don't keep a copy here.
 
+## Error pass
+
+A standing rule, shared with the app (its CLAUDE.md "Error pass" has the full text): **no silent failure.** Every error a user action can hit (an 0xF6 SET from the app, an OLED button) reaches the user: a result code in 0xF1 (`CMD_RESULT_INVALID` / `FAILED` / `BUSY`, which the app turns into a message), an OLED message (`"Save FAIL"`, `"Wipe FAIL"`), or a flag/counter the app shows. Anything else is deliberately logged or counted, with a one-line reason the user needn't see it.
+
+1. **Every failure path in `src/` carries a verdict comment**, added in the same commit as the code: `// error: VERDICT — <surfaces as>; <why>` (optionally ` Change: <fix>`), on the line or in the comment block above. `python3 tools/list_errors.py --check` fails without one; it runs in `build.yml` and `release.yml`.
+2. **`tools/list_errors.py` lists them mechanically** (standard library; it reuses `list_loops.py`'s scanner and call graph): a fallible call whose result is dropped or checked (BTstack / TinyUSB / flash / queue / Opus / cyw43 status, and `src/`'s own `bool` / `Ok|Invalid|NotSaved` functions), `return false` / `-1` / `nullptr` / an Invalid or NotSaved value, `CMD_RESULT_INVALID|FAILED|BUSY`, a magic/CRC check on stored data, a drop/error counter, and `if (...) return;` in a void user-action handler.
+3. **Verdicts:** SHOWN (cite the result code / OLED string / flag), LOGGED-OK (printf/counter + why the user needn't see it), SILENT-BUG (a user action fails with nothing shown: fix it), SWALLOWED (discarded without a reason: fix or justify), NOT-WORTH (can't fail in practice; say why).
+4. A function that saves to flash returns whether the save worked (`bool` or `...::NotSaved`) and its callers report it: never drop a save's result.
+5. The full table lives once, in the app repo: [`docs/ERROR_PASS_2026-10.md`](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Config-Web/blob/master/docs/ERROR_PASS_2026-10.md). Don't keep a copy here.
+
 ## Git / branch model
 
 - **`master` (origin)** = `MarcelineVPQ/DS5Dongle-OLED-Edition` (this fork's primary branding, what users download).

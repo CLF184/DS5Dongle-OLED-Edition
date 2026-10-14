@@ -102,6 +102,7 @@ bool save() {
     alignas(4) uint8_t page[FLASH_PAGE_SIZE];
     memset(page, 0xff, sizeof(page));
     memcpy(page, &g_cal, sizeof(g_cal));
+    // error: SHOWN — passed up as NotSaved: CMD_RESULT_FAILED in 0xF1 (0x0D/0x14), the app's command error
     if (!flash_sector_write(CALIB_FLASH_OFFSET, page)) return false;
     return memcmp(flash_cal(), &g_cal, sizeof(g_cal)) == 0;
 }
@@ -138,6 +139,7 @@ int slot_now() {
 
 void calib_load() {
     memcpy(&g_cal, flash_cal(), sizeof(g_cal));
+    // error: LOGGED-OK — nothing; boot: a blank/old calibration sector means no calibration yet (identity), which the app shows as not calibrated
     bool ok = g_cal.magic == CALIB_MAGIC && g_cal.ver == kCalibProtoVer;
     // loop: NOT-WORTH — boot-only, kNumSlots = 4
     for (int i = 0; ok && i < kNumSlots; i++) ok = valid(g_cal.body[i]);
@@ -214,12 +216,15 @@ void calib_apply(uint8_t *r) {
 }
 
 CalibSet calib_set(uint8_t slot, const uint8_t *body) {
+    // error: SHOWN — CMD_RESULT_INVALID in 0xF1 (cmd.cpp 0x0D/0x14), the app's command error
     if (slot >= kNumSlots) return CalibSet::Invalid;
     CalibBody b;
     memcpy(&b, body, sizeof(b));
+    // error: SHOWN — CMD_RESULT_INVALID in 0xF1 (cmd.cpp 0x0D/0x14), the app's command error
     if (!valid(b)) return CalibSet::Invalid;
     g_cal.body[slot] = b;
     recompute_active(slot);
+    // error: SHOWN — NotSaved: CMD_RESULT_FAILED in 0xF1, the app's command error
     return save() ? CalibSet::Ok : CalibSet::NotSaved;
 }
 
@@ -228,6 +233,7 @@ void calib_get(uint8_t slot, uint8_t out[kCalibBodySize]) {
 }
 
 CalibSet curves_set(uint8_t slot, const StickCurve *pair, bool temporary) {
+    // error: SHOWN — CMD_RESULT_INVALID in 0xF1 (cmd.cpp 0x0D/0x14), the app's command error
     if (slot >= kNumSlots || !stick_curve_valid(pair[0]) || !stick_curve_valid(pair[1])) return CalibSet::Invalid;
     if (temporary) {
         // RAM only: g_cal (what saves write) keeps the saved pair.
@@ -243,6 +249,7 @@ CalibSet curves_set(uint8_t slot, const StickCurve *pair, bool temporary) {
     g_cal.curve[slot][0] = pair[0];
     g_cal.curve[slot][1] = pair[1];
     build_curves(slot);
+    // error: SHOWN — NotSaved: CMD_RESULT_FAILED in 0xF1, the app's command error
     return save() ? CalibSet::Ok : CalibSet::NotSaved;
 }
 

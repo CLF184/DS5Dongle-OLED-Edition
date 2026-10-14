@@ -82,6 +82,7 @@ bool valid_extra(const uint8_t *e) {
 // The extra entries saved in flash (all "itself" if missing or invalid).
 void flash_extra(uint8_t out[kRemapExtraCount]) {
     const RemapData *f = flash_remap();
+    // error: NOT-WORTH — nothing; picks the saved copy when it's valid, else the identity default (not a failure)
     if (f->magic == REMAP_MAGIC && valid_extra(f->extra)) memcpy(out, f->extra, kRemapExtraCount);
     else memset(out, kRemapExtraSelf, kRemapExtraCount);
 }
@@ -105,8 +106,10 @@ bool save_with(const uint8_t *table, const uint8_t *extra) {
     memset(page, 0xff, sizeof(page));
     memcpy(page, &data, sizeof(data));
 
+    // error: SHOWN — passed up as NotSaved: CMD_RESULT_FAILED in 0xF1, the app's command error
     if (!flash_sector_write(REMAP_FLASH_OFFSET, page)) {
         printf("[Flash] core1 lockout timed out, write skipped\n");
+        // error: SHOWN — passed up as NotSaved: CMD_RESULT_FAILED in 0xF1, the app's command error
         return false;
     }
 
@@ -117,9 +120,11 @@ bool save_with(const uint8_t *table, const uint8_t *extra) {
         return true;
     }
     printf("[Remap] flash write VERIFY FAILED\n");
+    // error: SHOWN — passed up as NotSaved: CMD_RESULT_FAILED in 0xF1, the app's command error
     return false;
 }
 
+// error: SHOWN — passed up as NotSaved: CMD_RESULT_FAILED in 0xF1, the app's command error
 bool save_to_flash() { return save_with(g_remap.table, g_remap.extra); }
 
 bool dpad_has(uint8_t dir, RemapButton b) {
@@ -148,11 +153,13 @@ uint8_t dpad_from(bool up, bool right, bool down, bool left) {
 
 void remap_load() {
     memcpy(&g_remap, flash_remap(), sizeof(g_remap));
+    // error: LOGGED-OK — printf; a blank/invalid remap sector means no remap (identity), the app shows the default layout
     if (g_remap.magic != REMAP_MAGIC || !valid_table(g_remap.table)) {
         printf("[Remap] flash sector empty/invalid, defaulting to identity\n");
         g_remap.magic = REMAP_MAGIC;
         set_identity();
         memset(g_remap.extra, kRemapExtraSelf, kRemapExtraCount);
+        // error: LOGGED-OK — printf; boot-time init save of a blank sector: the RAM copy works now and the next boot retries the save
         save_to_flash();
     }
     if (!valid_extra(g_remap.extra)) memset(g_remap.extra, kRemapExtraSelf, kRemapExtraCount);
@@ -176,6 +183,7 @@ bool remap_set_temporary(const uint8_t *table) {
 
 void remap_revert() {
     const RemapData *saved = flash_remap();
+    // error: NOT-WORTH — nothing; picks the saved copy when it's valid, else the identity default (not a failure)
     if (saved->magic == REMAP_MAGIC && valid_table(saved->table)) memcpy(g_remap.table, saved->table, kRemapCount);
     else set_identity();
     flash_extra(g_remap.extra);
@@ -187,32 +195,37 @@ void remap_revert() {
 
 bool remap_temporary() { return g_temporary; }
 
-bool remap_set_extra(const uint8_t *extra, bool temporary) {
-    if (!valid_extra(extra)) return false;
+RemapSet remap_set_extra(const uint8_t *extra, bool temporary) {
+    // error: SHOWN — CMD_RESULT_INVALID in 0xF1, the app's command error
+    if (!valid_extra(extra)) return RemapSet::Invalid;
     memcpy(g_remap.extra, extra, kRemapExtraCount);
     g_remap.magic = REMAP_MAGIC;
     recompute_active();
     g_revision++;
     if (temporary) {
         g_temporary = true;
-        return true;
+        return RemapSet::Ok;
     }
     // Saved: while a game's table is on (temporary), keep the saved table in
     // flash, never the temporary one.
     if (g_temporary) {
         alignas(4) uint8_t saved_table[kRemapCount];
         const RemapData *f = flash_remap();
+        // error: NOT-WORTH — nothing; picks the saved copy when it's valid, else the identity default (not a failure)
         if (f->magic == REMAP_MAGIC && valid_table(f->table)) memcpy(saved_table, f->table, kRemapCount);
         // loop: NOT-WORTH — 16 entries, a host extra-button set while temporary
         else for (int i = 0; i < kRemapCount; i++) saved_table[i] = (uint8_t) i;
-        return save_with(saved_table, g_remap.extra);
+        // error: SHOWN — passed up as NotSaved: CMD_RESULT_FAILED in 0xF1, the app's command error
+        return save_with(saved_table, g_remap.extra) ? RemapSet::Ok : RemapSet::NotSaved;
     }
-    return save_to_flash();
+    // error: SHOWN — passed up as NotSaved: CMD_RESULT_FAILED in 0xF1, the app's command error
+    return save_to_flash() ? RemapSet::Ok : RemapSet::NotSaved;
 }
 
 void remap_get_extra(uint8_t out[kRemapExtraCount]) { memcpy(out, g_remap.extra, kRemapExtraCount); }
 
 RemapSet remap_set(const uint8_t *table) {
+    // error: SHOWN — CMD_RESULT_INVALID in 0xF1, the app's command error
     if (!valid_table(table)) return RemapSet::Invalid;
     memcpy(g_remap.table, table, kRemapCount);
     // A game's extra-button entries end with its temporary state too.
@@ -221,6 +234,7 @@ RemapSet remap_set(const uint8_t *table) {
     g_remap.magic = REMAP_MAGIC;
     recompute_active();
     g_revision++;
+    // error: SHOWN — NotSaved: CMD_RESULT_FAILED in 0xF1, the app's command error
     return save_to_flash() ? RemapSet::Ok : RemapSet::NotSaved;
 }
 

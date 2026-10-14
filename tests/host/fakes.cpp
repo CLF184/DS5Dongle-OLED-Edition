@@ -81,9 +81,10 @@ void set_feature_data(uint8_t id, uint8_t *data, uint16_t len) {
 std::vector<std::vector<uint8_t>> g_fake_control_sends;
 void bt_send_control(uint8_t *data, uint16_t len) { g_fake_control_sends.emplace_back(data, data + len); }
 int bt_get_slot() { return g_fake_slot; }
-void bt_set_slot(int slot) { g_fake_slot = slot; }
-void bt_forget_slot(int) {}
-void bt_wipe_all_slots() {}
+// Like bt.cpp: the change is made, then saved (false = the flash write failed).
+bool bt_set_slot(int slot) { g_fake_slot = slot; return !g_fake_flash_fail; }
+bool bt_forget_slot(int) { return !g_fake_flash_fail; }
+bool bt_wipe_all_slots() { return !g_fake_flash_fail; }
 bool bt_slot_occupied(int slot) { return slot == 0; }
 void bt_slot_get_addr(int, uint8_t out[6]) { std::memset(out, 0, 6); }
 

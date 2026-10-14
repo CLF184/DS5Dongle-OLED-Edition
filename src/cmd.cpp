@@ -153,9 +153,11 @@ void controller_info_task(bool may_start) {
         // the next one's state (0xF0, battery in 0xF1) before it sends its own.
         if (!connected) memset(interrupt_in_data, 0, sizeof(interrupt_in_data));
     }
+    // error: NOT-WORTH — nothing; scheduling of the colorway read (not connected / not due / test slot busy); a read that never answers leaves the colorway unknown, the app draws the default
     if (!connected) return;
     switch (s_color_state) {
         case ColorRead::Waiting: {
+            // error: NOT-WORTH — nothing; scheduling of the colorway read (not connected / not due / test slot busy); a read that never answers leaves the colorway unknown, the app draws the default
             if (now < s_color_due_us || !may_start) return;
             uint8_t cmd[63] = {0x01, 0x13};  // SYSTEM, READ_SERIAL_NUMBER (checksum added by set_feature_data)
             set_feature_data(0x80, cmd, sizeof(cmd));
@@ -165,6 +167,7 @@ void controller_info_task(bool may_start) {
             return;
         }
         case ColorRead::Polling: {
+            // error: NOT-WORTH — nothing; scheduling of the colorway read (not connected / not due / test slot busy); a read that never answers leaves the colorway unknown, the app draws the default
             if (now < s_color_due_us) return;
             const std::vector<uint8_t> r = bt_peek_feature(0x81);  // [0x81, device, action, status, data...]
             if (r.size() >= 4 + 6 && r[1] == 0x01 && r[2] == 0x13 && r[3] == 2) {
@@ -222,22 +225,28 @@ void cmd_task() {
 #else
     dse_task(true);
 #endif
+    // error: NOT-WORTH — nothing; no deferred command due yet (scheduling)
     if (!s_pending || time_us_64() < s_pending_due_us) return;
     s_pending = false;
     uint8_t result = CMD_RESULT_OK;
     switch (s_pending_func) {
         case 0x02:
+            // error: SHOWN — CMD_RESULT_FAILED in the 0xF1 result byte, the app's command error (save failed)
             result = config_save() ? CMD_RESULT_OK : CMD_RESULT_FAILED;
             break;
         case 0x04:
-            bt_set_slot(s_pending_arg); // saves current_slot itself
+            // Saves current_slot itself; switched but not saved = FAILED.
+            // error: SHOWN — CMD_RESULT_FAILED in the 0xF1 result byte, the app's command error (fixed in this pass: a failed slot save said OK)
+            result = bt_set_slot(s_pending_arg) ? CMD_RESULT_OK : CMD_RESULT_FAILED;
             s_host_gen++;
             break;
         case 0x05:
-            bt_forget_slot(s_pending_arg);
+            // error: SHOWN — CMD_RESULT_FAILED in the 0xF1 result byte, the app's command error (fixed in this pass: a failed slot save said OK)
+            result = bt_forget_slot(s_pending_arg) ? CMD_RESULT_OK : CMD_RESULT_FAILED;
             break;
         case 0x06:
-            bt_wipe_all_slots();
+            // error: SHOWN — CMD_RESULT_FAILED in the 0xF1 result byte, the app's command error (fixed in this pass: a failed slot save said OK)
+            result = bt_wipe_all_slots() ? CMD_RESULT_OK : CMD_RESULT_FAILED;
             break;
         case 0x07:
             watchdog_reboot(0, 0, 0);
@@ -252,12 +261,14 @@ void cmd_task() {
             Config_body body = get_config();
             body.current_slot = (uint8_t) bt_get_slot();
             set_config((const uint8_t *) &body, sizeof(body));
+            // error: SHOWN — CMD_RESULT_FAILED in the 0xF1 result byte, the app's command error (save failed)
             result = config_save() ? CMD_RESULT_OK : CMD_RESULT_FAILED;
             s_host_gen++;
             break;
         }
         case 0x0A:
             if (bt_is_connected()) oled_send_trigger_preset(s_pending_arg);
+            // error: SHOWN — CMD_RESULT_FAILED in the 0xF1 result byte: no controller connected, the app's command error
             else result = CMD_RESULT_FAILED;
             break;
         case 0x0E: // grip test: 0 left, 1 right, 2 both, held steadily for arg2 tenths at the current strengths
@@ -267,6 +278,7 @@ void cmd_task() {
             }
             if (!bt_is_connected()) {
                 audio_grip_test_stop();
+                // error: SHOWN — CMD_RESULT_FAILED in the 0xF1 result byte: no controller connected, the app's command error
                 result = CMD_RESULT_FAILED;
                 break;
             }
@@ -275,14 +287,17 @@ void cmd_task() {
             audio_grip_test_start(s_pending_arg != 1, s_pending_arg != 0, s_pending_arg2 * kGripSamplesPerTenth);
             break;
         case 0x0B:
+            // error: SHOWN — CMD_RESULT_FAILED in the 0xF1 result byte, the app's command error (save failed)
             result = config_save_narrator(s_pending_arg) ? CMD_RESULT_OK : CMD_RESULT_FAILED;
             s_host_gen++;
             break;
         case 0x17: // PC sleep options (proto 1.14), saved on their own like the narrator
+            // error: SHOWN — CMD_RESULT_FAILED in the 0xF1 result byte, the app's command error (save failed)
             result = config_save_power_flags(s_pending_arg) ? CMD_RESULT_OK : CMD_RESULT_FAILED;
             s_host_gen++;
             break;
         default:
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: unknown function, the app's command error
             result = CMD_RESULT_INVALID;
             break;
     }
@@ -370,6 +385,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     // curve 9 bytes [type, p1x,p1y .. p4x,p4y] (41 bytes).
     if (report_id == PICO_CMD_CURVES) {
         constexpr uint16_t kLen = 5 + 4 * sizeof(StickCurve);
+        // error: NOT-WORTH — USB STALL to the host; a request shorter than the reply (the app always asks the full length, its transport reports a short reply)
         if (reqlen < kLen) return 0;
         const uint8_t slot = (uint8_t) bt_get_slot();
         StickCurve saved[2], active[2];
@@ -385,6 +401,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         return kLen;
     }
     if (report_id == PICO_CMD_REMAP_EXTRA) {
+        // error: NOT-WORTH — USB STALL to the host; a request shorter than the reply (the app always asks the full length, its transport reports a short reply)
         if (reqlen < 5 + kRemapExtraCount) return 0;
         buffer[0] = 'R';
         buffer[1] = 'X';
@@ -396,6 +413,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         return 5 + kRemapExtraCount;
     }
     if (report_id == PICO_CMD_CALIB) {
+        // error: NOT-WORTH — USB STALL to the host; a request shorter than the reply (the app always asks the full length, its transport reports a short reply)
         if (reqlen < 1 + kCalibBodySize) return 0;
         buffer[0] = (uint8_t) bt_get_slot();
         calib_get(buffer[0], buffer + 1);
@@ -417,6 +435,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
             0x20 |  // live input report (0xF0)
             0x40 |  // unsaved-settings flag (identity [19] bit 0)
             0x80;   // narrator firmware lines (0x0B, 0x0C; config narrator_voice)
+        // error: NOT-WORTH — USB STALL to the host; a request shorter than the reply (the app always asks the full length, its transport reports a short reply)
         if (reqlen < 20) return 0;
         memset(buffer, 0, reqlen);
         buffer[0] = 'D'; buffer[1] = 'S'; buffer[2] = '5'; buffer[3] = 'O';
@@ -518,6 +537,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     }
     if (report_id == 0xf9) {
         // [-128,0]
+        // error: NOT-WORTH — USB STALL to the host; a request shorter than the reply (the app always asks the full length, its transport reports a short reply)
         if (reqlen == 0) return 0;  // nothing to answer: don't ask the controller
         int8_t rssi = 0;
         bt_get_signal_strength(&rssi);
@@ -532,6 +552,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         constexpr uint16_t want = 28;
         if (reqlen < want) {
             printf("[HID] 0xfa reqlen=%u too small for slots payload (%u)\n", reqlen, want);
+            // error: NOT-WORTH — USB STALL to the host; a request shorter than the reply (the app always asks the full length, its transport reports a short reply)
             return 0;
         }
         // loop: NOT-WORTH — 4 slot addresses, per 0xFA host GET
@@ -551,6 +572,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         constexpr uint16_t want = 18;
         if (reqlen < want) {
             printf("[HID] 0xfb reqlen=%u too small for diag payload (%u)\n", reqlen, want);
+            // error: NOT-WORTH — USB STALL to the host; a request shorter than the reply (the app always asks the full length, its transport reports a short reply)
             return 0;
         }
         const uint32_t uptime_s   = time_us_32() / 1000000u;
@@ -583,6 +605,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         constexpr uint16_t want = 11;
         if (reqlen < want) {
             printf("[HID] 0xfc reqlen=%u too small for cpu payload (%u)\n", reqlen, want);
+            // error: NOT-WORTH — USB STALL to the host; a request shorter than the reply (the app always asks the full length, its transport reports a short reply)
             return 0;
         }
         const uint32_t set_khz = (uint32_t)SYS_CLOCK_KHZ;
@@ -611,6 +634,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         // [0..3] uint32 total GET_REPORTs, [4] next ring index, then 16 x
         // (report id, bytes answered), oldest first starting at [4].
         const uint32_t c = g_get_count;
+        // error: NOT-WORTH — USB STALL to the host; a request shorter than the reply (the app always asks the full length, its transport reports a short reply)
         if (reqlen < 37) return 0;
         memcpy(buffer, &c, 4);
         buffer[4] = static_cast<uint8_t>(c % 16);
@@ -734,6 +758,7 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         }
         return lim;
     }
+    // error: NOT-WORTH — USB STALL; an unknown report id (the app only asks the ids identity lists)
     return 0;
 }
 
@@ -753,6 +778,7 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     // SET is refused with BUSY (a host must wait for 0xF1 to leave PENDING
     // first); cmd_task() reports the deferred one's result under its own id.
     if (s_pending) {
+        // error: SHOWN — CMD_RESULT_BUSY in the 0xF1 result byte: a deferred command is still pending; the app waits for 0xF1 first and shows a command error if it ever sees BUSY
         s_last_result = CMD_RESULT_BUSY;
         return;
     }
@@ -801,6 +827,7 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
             break;
         case 0x04:
         case 0x05:
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: bad argument or framing, the app's command error
             if (arg >= kNumSlots) s_last_result = CMD_RESULT_INVALID;
             else defer(func, arg, 0);
             break;
@@ -815,6 +842,7 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
             defer(func, 0, 50);
             break;
         case 0x0A:
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: bad argument or framing, the app's command error
             if (arg >= kNumTriggerPresets) s_last_result = CMD_RESULT_INVALID;
             else defer(func, arg, 0);
             break;
@@ -823,6 +851,7 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
             // 0 = stop, else clamped to 0.1..5 s.
             uint8_t tenths = bufsize >= 3 ? buffer[2] : kGripDefaultTenths;
             if (tenths > kGripMaxTenths) tenths = kGripMaxTenths;
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: bad argument or framing, the app's command error
             if (arg > 2) s_last_result = CMD_RESULT_INVALID;
             else {
                 defer(func, arg, 0);
@@ -831,15 +860,19 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
             break;
         }
         case 0x17:
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: bad argument or framing, the app's command error
             if (bufsize < 2 || (arg & ~POWER_FLAGS_MASK)) s_last_result = CMD_RESULT_INVALID;
             else defer(func, arg, 0);
             break;
         case 0x0B:
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: bad argument or framing, the app's command error
             if (arg != 0xFF && (arg < 1 || arg > kVoiceNumLangs)) s_last_result = CMD_RESULT_INVALID;
             else defer(func, arg, 0);
             break;
         case 0x0C:
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: bad argument or framing, the app's command error
             if (bufsize < 3 || arg >= VOICE_NUM_LINES || buffer[2] >= kVoiceNumLangs) s_last_result = CMD_RESULT_INVALID;
+            // error: SHOWN — CMD_RESULT_FAILED in the 0xF1 result byte: no controller connected, the app's command error
             else if (!bt_is_connected()) s_last_result = CMD_RESULT_FAILED;
             else voice_say_lang(static_cast<VoiceLine>(arg), buffer[2]);
             break;
@@ -858,6 +891,7 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
 #if ENABLE_COMPANION_VENDOR
             s_last_result = ctrl_test_start(buffer + 1, bufsize - 1);
 #else
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: controller tests not built in (no vendor interface), the app only offers them when identity [46] bit0 says so
             s_last_result = CMD_RESULT_INVALID;
 #endif
             break;
@@ -866,6 +900,7 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
             curves_revert(); // a game's stick curves end with its layout
             break;
         default:
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: unknown function, the app's command error
             s_last_result = CMD_RESULT_INVALID;
             break;
     }
@@ -881,12 +916,16 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     // CalibBody]. Not config, so it doesn't bump s_host_gen.
     if (buffer[0] == 0x0D) {
         if (bufsize < 5 + kCalibBodySize || buffer[1] != 'C' || buffer[2] != 'L' || buffer[3] != kCalibProtoVer) {
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: bad argument or framing, the app's command error
             s_last_result = CMD_RESULT_INVALID;
             return;
         }
+        // error: SHOWN — mapped to CMD_RESULT_INVALID / FAILED in the 0xF1 result byte on the lines below
         switch (calib_set(buffer[4], buffer + 5)) {
             case CalibSet::Ok: break;
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: an invalid table/curve/calibration, the app's command error
             case CalibSet::Invalid: s_last_result = CMD_RESULT_INVALID; break;
+            // error: SHOWN — CMD_RESULT_FAILED in the 0xF1 result byte: applied but not saved, the app's command error
             case CalibSet::NotSaved: s_last_result = CMD_RESULT_FAILED; break;
         }
         return;
@@ -904,29 +943,46 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     if (buffer[0] == 0x14) {
         constexpr uint16_t kNeed = 5 + 2 * sizeof(StickCurve) + 1;
         if (bufsize < kNeed || buffer[1] != 'C' || buffer[2] != 'V' || buffer[3] != kCurveProtoVer || buffer[kNeed - 1] > 1) {
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: bad argument or framing, the app's command error
             s_last_result = CMD_RESULT_INVALID;
             return;
         }
         StickCurve pair[2];
         memcpy(pair, buffer + 5, sizeof(pair));
+        // error: SHOWN — mapped to CMD_RESULT_INVALID / FAILED in the 0xF1 result byte on the lines below
         switch (curves_set(buffer[4], pair, buffer[kNeed - 1] == 1)) {
             case CalibSet::Ok: break;
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: an invalid table/curve/calibration, the app's command error
             case CalibSet::Invalid: s_last_result = CMD_RESULT_INVALID; break;
+            // error: SHOWN — CMD_RESULT_FAILED in the 0xF1 result byte: applied but not saved, the app's command error
             case CalibSet::NotSaved: s_last_result = CMD_RESULT_FAILED; break;
         }
         return;
     }
     if (buffer[0] == 0x13) {
-        if (bufsize < 4 + kRemapExtraCount + 1 || buffer[1] != 'R' || buffer[2] != 'X' || buffer[3] != 1 || buffer[8] > 1 ||
-            !remap_set_extra(buffer + 4, buffer[8] == 1)) {
-            printf("[CMD] 0x13 extra remap rejected or not saved\n");
+        if (bufsize < 4 + kRemapExtraCount + 1 || buffer[1] != 'R' || buffer[2] != 'X' || buffer[3] != 1 || buffer[8] > 1) {
+            printf("[CMD] 0x13 extra remap rejected\n");
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: bad argument or framing, the app's command error
             s_last_result = CMD_RESULT_INVALID;
+            return;
+        }
+        // error: SHOWN — mapped to CMD_RESULT_INVALID / FAILED in the 0xF1 result byte on the lines below
+        switch (remap_set_extra(buffer + 4, buffer[8] == 1)) {
+            case RemapSet::Ok: break;
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: an invalid table/curve/calibration, the app's command error
+            case RemapSet::Invalid: s_last_result = CMD_RESULT_INVALID; break;
+            case RemapSet::NotSaved:  // active now, but not in flash
+                printf("[CMD] 0x13 extra remap applied, flash save failed\n");
+                // error: SHOWN — CMD_RESULT_FAILED in the 0xF1 result byte: applied but not saved (fixed in this pass: said INVALID, "rejected")
+                s_last_result = CMD_RESULT_FAILED;
+                break;
         }
         return;
     }
     if (buffer[0] == 0x11) {
         if (bufsize < 4 + kRemapCount || buffer[1] != 'R' || buffer[2] != 'M' || buffer[3] != kRemapProtoVer || !remap_set_temporary(buffer + 4)) {
             printf("[CMD] 0x11 temporary remap rejected\n");
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: bad argument or framing, the app's command error
             s_last_result = CMD_RESULT_INVALID;
         }
         return;
@@ -935,24 +991,29 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
         constexpr uint16_t kNeed = 4 + kRemapCount;
         if (bufsize < kNeed) {
             printf("[CMD] 0x10 remap-set too short (%u<%u)\n", bufsize, kNeed);
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: bad argument or framing, the app's command error
             s_last_result = CMD_RESULT_INVALID;
             return;
         }
         if (buffer[1] != 'R' || buffer[2] != 'M' || buffer[3] != kRemapProtoVer) {
             printf("[CMD] 0x10 remap-set bad magic/version\n");
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: bad argument or framing, the app's command error
             s_last_result = CMD_RESULT_INVALID;
             return;
         }
+        // error: SHOWN — mapped to CMD_RESULT_INVALID / FAILED in the 0xF1 result byte on the lines below
         switch (remap_set(buffer + 4)) {
             case RemapSet::Ok:
                 printf("[CMD] remap set ok (rev=%u)\n", remap_revision());
                 break;
             case RemapSet::Invalid:
                 printf("[CMD] remap set rejected (invalid table)\n");
+                // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: an invalid table/curve/calibration, the app's command error
                 s_last_result = CMD_RESULT_INVALID;
                 break;
             case RemapSet::NotSaved:  // active now, but not in flash
                 printf("[CMD] remap applied, flash save failed\n");
+                // error: SHOWN — CMD_RESULT_FAILED in the 0xF1 result byte: applied but not saved, the app's command error
                 s_last_result = CMD_RESULT_FAILED;
                 break;
         }

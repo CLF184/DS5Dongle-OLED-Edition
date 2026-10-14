@@ -104,6 +104,7 @@ inline bool stick_curve_valid(const StickCurve &c) {
 inline void stick_curve_build(const StickCurve &c, StickCurveNodes &out) {
     using namespace stick_curve_detail;
     out.n = 0;
+    // error: NOT-WORTH — nothing; an invalid curve is never stored (curves_set answers INVALID first) and Linear needs no nodes
     if (!stick_curve_valid(c) || c.type == kCurveLinear) return;
     if (c.type == kCurveCustom) {
         out.x[0] = 0;

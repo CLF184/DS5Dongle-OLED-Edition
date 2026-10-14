@@ -975,6 +975,7 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
             }
             case STRID_MANUFACTURER: str = "DS5 Dongle"; break;
             case STRID_PRODUCT: str = "DS5 Dongle Wake Keyboard"; break;
+            // error: NOT-WORTH — USB STALL for a string index we don't have (incl. 0xEE); the OS asks for it and expects that
             default: return nullptr;  // incl. 0xEE: no MS OS descriptor here
         }
         if (str) {
@@ -1043,6 +1044,7 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
             // Note: the 0xEE index string is a Microsoft OS 1.0 Descriptors.
             // https://docs.microsoft.com/en-us/windows-hardware/drivers/usbcon/microsoft-defined-usb-descriptors
 
+            // error: NOT-WORTH — USB STALL for a string index we don't have (incl. 0xEE); the OS asks for it and expects that
             if (!(index < sizeof(string_desc_arr) / sizeof(string_desc_arr[0]))) return NULL;
 
             const char *str = string_desc_arr[index];

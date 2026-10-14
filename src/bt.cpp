@@ -131,48 +131,59 @@ uint32_t bt_hci_err_count() { return 0; }  // stub for OLED Diagnostics
 
 int bt_get_slot() { return g_current_slot; }
 
-void bt_set_slot(int slot) {
-    if (slot < 0 || slot >= kNumSlots) return;
-    if (slot == g_current_slot) return;
+bool bt_set_slot(int slot) {
+    // error: NOT-WORTH — false to the caller; every caller checks the slot first (0xF6 0x04/0x05 answer INVALID, the OLED cursor stays in 0..3)
+    if (slot < 0 || slot >= kNumSlots) return false;
+    if (slot == g_current_slot) return true;
     g_current_slot = slot;
 
     Config_body cfg = get_config();
     cfg.current_slot = (uint8_t)slot;
     set_config(cfg);
-    config_save();
+    // error: SHOWN — returned: 0xF6 0x04/0x05/0x06 answer CMD_RESULT_FAILED (the app's command error), the OLED shows "Save FAIL" / "Wipe FAIL" (fixed in this pass: was dropped)
+    const bool saved = config_save();
 
     if (bt_is_connected()) {
         // The narrator names the new slot first (if she's on); then the drop.
         // DISCONNECTION_COMPLETE will restart inquiry under the new filter.
         voice_say(static_cast<VoiceLine>(VOICE_SLOT_0 + slot));
         if (voice_active()) voice_disconnect_after_line();
+        // error: NOT-WORTH — nothing; false only when there is no ACL, i.e. already disconnected
         else bt_disconnect();
     } else {
+        // error: NOT-WORTH — nothing; gap_inquiry_* only fails while an inquiry is already in the wanted state or the stack is off, and INQUIRY_COMPLETE / the watchdog restart it
         gap_inquiry_stop();
+        // error: NOT-WORTH — nothing; gap_inquiry_* only fails while an inquiry is already in the wanted state or the stack is off, and INQUIRY_COMPLETE / the watchdog restart it
         gap_inquiry_start(30);
     }
     update_discoverable();
+    return saved;
 }
 
 bool bt_slot_occupied(int slot) { return slot_occupied(slot); }
 void bt_slot_get_addr(int slot, uint8_t out[6]) { slot_get_addr(slot, out); }
 
-void bt_forget_slot(int slot) {
-    if (slot < 0 || slot >= kNumSlots) return;
+bool bt_forget_slot(int slot) {
+    // error: NOT-WORTH — false to the caller; every caller checks the slot first (0xF6 0x04/0x05 answer INVALID, the OLED cursor stays in 0..3)
+    if (slot < 0 || slot >= kNumSlots) return false;
     if (slot_occupied(slot)) {
         uint8_t addr[6];
         slot_get_addr(slot, addr);
         gap_drop_link_key_for_bd_addr(addr);
     }
-    slot_forget(slot);
+    // error: SHOWN — returned: 0xF6 0x04/0x05/0x06 answer CMD_RESULT_FAILED (the app's command error), the OLED shows "Save FAIL" / "Wipe FAIL" (fixed in this pass: was dropped)
+    const bool saved = slot_forget(slot);
     update_discoverable();
     if (slot == g_current_slot && bt_is_connected()) {
+        // error: NOT-WORTH — nothing; false only when there is no ACL, i.e. already disconnected
         bt_disconnect();
     }
+    return saved;
 }
 
-void bt_wipe_all_slots() {
+bool bt_wipe_all_slots() {
     btstack_link_key_iterator_t it;
+    // error: NOT-WORTH — nothing; no stored keys = nothing to drop, the slot table is still wiped
     if (gap_link_key_iterator_init(&it)) {
         bd_addr_t snapshot[16];
         int n = 0;
@@ -189,31 +200,38 @@ void bt_wipe_all_slots() {
             gap_drop_link_key_for_bd_addr(snapshot[i]);
         }
     }
-    slots_wipe_all();
+    // error: SHOWN — returned: 0xF6 0x04/0x05/0x06 answer CMD_RESULT_FAILED (the app's command error), the OLED shows "Save FAIL" / "Wipe FAIL" (fixed in this pass: was dropped)
+    const bool saved = slots_wipe_all();
     update_discoverable();
     if (bt_is_connected()) {
+        // error: NOT-WORTH — nothing; false only when there is no ACL, i.e. already disconnected
         bt_disconnect();
     }
+    return saved;
 }
 
 void bt_send_packet(uint8_t *data, uint16_t len) {
     if (hid_interrupt_cid != 0) {
+        // error: NOT-WORTH — unused (no caller); output goes through bt_write's FIFO
         l2cap_send(hid_interrupt_cid, data, len);
     }
 }
 
 void bt_send_control(uint8_t *data, uint16_t len) {
     if (hid_control_cid != 0) {
+        // error: NOT-WORTH — nothing; one write on an open control channel (the Edge unlock handshake), fails only if the link just dropped, and everything restarts on reconnect
         l2cap_send(hid_control_cid, data, len);
     }
 }
 
 bool bt_disconnect() {
     if (acl_handle == HCI_CON_HANDLE_INVALID) {
+        // error: NOT-WORTH — nothing; false only when there is no ACL, i.e. already disconnected
         return false;
     }
 
     // 0x13 = remote user terminated connection
+    // error: LOGGED-OK — printf of the step + BTstack's own event; the connection watchdog (CONNECT_WATCHDOG_TIMEOUT_US) tears a stalled attempt down and inquiry restarts, the OLED shows not connected
     hci_send_cmd(&hci_disconnect, acl_handle, 0x13);
     return true;
 }
@@ -234,13 +252,16 @@ void bt_connection_watchdog_tick() {
     if (acl_handle != HCI_CON_HANDLE_INVALID) {
         // ACL is up but setup stalled (auth/encryption/L2CAP/feature-wait).
         // Route through the proven HCI_EVENT_DISCONNECTION_COMPLETE teardown.
+        // error: NOT-WORTH — nothing; false only when there is no ACL, i.e. already disconnected
         bt_disconnect();
     } else {
         // No ACL yet (stalled before/at create-connection) — reset by hand
         // and kick a fresh inquiry.
         device_found = false;
         new_pair = false;
+        // error: NOT-WORTH — nothing; gap_inquiry_* only fails while an inquiry is already in the wanted state or the stack is off, and INQUIRY_COMPLETE / the watchdog restart it
         gap_inquiry_stop();
+        // error: NOT-WORTH — nothing; gap_inquiry_* only fails while an inquiry is already in the wanted state or the stack is off, and INQUIRY_COMPLETE / the watchdog restart it
         gap_inquiry_start(30);
         gap_connectable_control(1);
         update_discoverable();
@@ -260,6 +281,7 @@ void bt_get_signal_strength(int8_t *rssi) {
     }
     if (acl_handle == HCI_CON_HANDLE_INVALID) return;
     const uint64_t now = time_us_64();
+    // error: NOT-WORTH — the RSSI poll retries after 1 s (rssi_poll.h); the OLED shows the last value
     if (rssi_poll.ready(now) && gap_read_rssi(acl_handle) == 0) rssi_poll.sent(now);
 }
 
@@ -268,7 +290,9 @@ void bt_l2cap_init() {
     l2cap_add_event_handler(&l2cap_event_callback_registration);
     // 修复重连后自动断开的关键点
     sdp_init();
+    // error: NOT-WORTH — boot: two fixed PSMs registered once on a fresh stack; can only fail out of memory, which the build sizes for
     l2cap_register_service(l2cap_packet_handler, PSM_HID_CONTROL, MTU_CONTROL, LEVEL_2);
+    // error: NOT-WORTH — boot: two fixed PSMs registered once on a fresh stack; can only fail out of memory, which the build sizes for
     l2cap_register_service(l2cap_packet_handler, PSM_HID_INTERRUPT, MTU_INTERRUPT, LEVEL_2);
 
     l2cap_init();
@@ -298,6 +322,7 @@ int bt_init() {
     hci_event_callback_registration.callback = &hci_packet_handler;
     hci_add_event_handler(&hci_event_callback_registration);
 
+    // error: NOT-WORTH — boot: power-on of the radio cyw43_arch_init already brought up; BTSTACK_EVENT_STATE never reaching WORKING leaves the OLED on its connecting screen
     hci_power_control(HCI_POWER_ON);
     return 0;
 }
@@ -330,6 +355,7 @@ static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t cha
                 gap_set_page_scan_type(PAGE_SCAN_MODE_INTERLACED);
                 page_scan_fast(true);
                 printf("[BT] Stack ready, start inquiry\n");
+                // error: NOT-WORTH — nothing; gap_inquiry_* only fails while an inquiry is already in the wanted state or the stack is off, and INQUIRY_COMPLETE / the watchdog restart it
                 gap_inquiry_start(30);
             }
             break;
@@ -374,6 +400,7 @@ static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t cha
                 printf("[HCI] Gamepad found: %s (CoD: 0x%06x)\n", bd_addr_to_str(addr), (unsigned int) cod);
                 bd_addr_copy(current_device_addr, addr);
                 device_found = true;
+                // error: NOT-WORTH — nothing; gap_inquiry_* only fails while an inquiry is already in the wanted state or the stack is off, and INQUIRY_COMPLETE / the watchdog restart it
                 gap_inquiry_stop();
             }
             break;
@@ -386,12 +413,14 @@ static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t cha
                 printf("[HCI] Connecting to %s...\n", bd_addr_to_str(current_device_addr));
                 new_pair = true;
                 connect_attempt_started = get_absolute_time(); // arm connection watchdog
+                // error: LOGGED-OK — printf of the step + BTstack's own event; the connection watchdog (CONNECT_WATCHDOG_TIMEOUT_US) tears a stalled attempt down and inquiry restarts, the OLED shows not connected
                 hci_send_cmd(&hci_create_connection, current_device_addr,
                              hci_usable_acl_packet_types(), 0, 0, 0, 1);
                 break;
             }
             if (event_type == HCI_EVENT_INQUIRY_COMPLETE) {
                 printf("[HCI] Restart inquiry\n");
+                // error: NOT-WORTH — nothing; gap_inquiry_* only fails while an inquiry is already in the wanted state or the stack is off, and INQUIRY_COMPLETE / the watchdog restart it
                 gap_inquiry_start(30);
                 gap_connectable_control(1);
                 update_discoverable();
@@ -407,6 +436,7 @@ static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t cha
                 new_pair = false;
                 connect_attempt_started = 0; // disarm; failed before an ACL existed
                 printf("[HCI] Create connection rejected, restart inquiry\n");
+                // error: NOT-WORTH — nothing; gap_inquiry_* only fails while an inquiry is already in the wanted state or the stack is off, and INQUIRY_COMPLETE / the watchdog restart it
                 gap_inquiry_start(30);
             }
             break;
@@ -436,12 +466,14 @@ static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t cha
                 hci_event_connection_complete_get_bd_addr(packet, current_device_addr);
                 printf("[HCI] ACL connected handle=0x%04X\n", handle);
                 printf("[HCI] Request authentication on handle=0x%04X\n", handle);
+                // error: LOGGED-OK — printf of the step + BTstack's own event; the connection watchdog (CONNECT_WATCHDOG_TIMEOUT_US) tears a stalled attempt down and inquiry restarts, the OLED shows not connected
                 hci_send_cmd(&hci_authentication_requested, handle);
             } else {
                 device_found = false;
                 new_pair = false;
                 connect_attempt_started = 0; // disarm; no ACL was established
                 printf("[HCI] ACL connect failed status=0x%02X, restart inquiry\n", status);
+                // error: NOT-WORTH — nothing; gap_inquiry_* only fails while an inquiry is already in the wanted state or the stack is off, and INQUIRY_COMPLETE / the watchdog restart it
                 gap_inquiry_start(30);
             }
             break;
@@ -462,9 +494,11 @@ static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t cha
             if (link) {
                 printf("[HCI] Link key request from %s, reply stored key type=%u\n", bd_addr_to_str(addr),
                        (unsigned int) link_key_type);
+                // error: LOGGED-OK — printf of the step + BTstack's own event; the connection watchdog (CONNECT_WATCHDOG_TIMEOUT_US) tears a stalled attempt down and inquiry restarts, the OLED shows not connected
                 hci_send_cmd(&hci_link_key_request_reply, addr, link_key);
             } else {
                 printf("[HCI] Link key request from %s, no key, force re-pair\n", bd_addr_to_str(addr));
+                // error: LOGGED-OK — printf of the step + BTstack's own event; the connection watchdog (CONNECT_WATCHDOG_TIMEOUT_US) tears a stalled attempt down and inquiry restarts, the OLED shows not connected
                 hci_send_cmd(&hci_link_key_request_negative_reply, addr);
             }
             break;
@@ -474,6 +508,7 @@ static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t cha
             bd_addr_t addr;
             hci_event_user_confirmation_request_get_bd_addr(packet, addr);
             printf("[HCI] User confirmation request from %s, accept\n", bd_addr_to_str(addr));
+            // error: LOGGED-OK — printf of the step + BTstack's own event; the connection watchdog (CONNECT_WATCHDOG_TIMEOUT_US) tears a stalled attempt down and inquiry restarts, the OLED shows not connected
             hci_send_cmd(&hci_user_confirmation_request_reply, addr);
             break;
         }
@@ -482,6 +517,7 @@ static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t cha
             bd_addr_t addr;
             hci_event_pin_code_request_get_bd_addr(packet, addr);
             printf("[HCI] Legacy pin request from %s, reply 0000\n", bd_addr_to_str(addr));
+            // error: LOGGED-OK — printf of the step + BTstack's own event; the connection watchdog (CONNECT_WATCHDOG_TIMEOUT_US) tears a stalled attempt down and inquiry restarts, the OLED shows not connected
             gap_pin_code_response(addr, "0000");
             break;
         }
@@ -497,8 +533,10 @@ static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t cha
                 // ACL is still up — route through the clean disconnect path
                 // (HCI_EVENT_DISCONNECTION_COMPLETE restarts inquiry) rather
                 // than leaving a half-open ACL.
+                // error: NOT-WORTH — nothing; false only when there is no ACL, i.e. already disconnected
                 bt_disconnect();
             } else {
+                // error: LOGGED-OK — printf of the step + BTstack's own event; the connection watchdog (CONNECT_WATCHDOG_TIMEOUT_US) tears a stalled attempt down and inquiry restarts, the OLED shows not connected
                 hci_send_cmd(&hci_set_connection_encryption, handle, 1);
             }
             break;
@@ -516,6 +554,7 @@ static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t cha
                 // change could stall the pairing until the watchdog retried.
                 // Upstream 83b4df9.
                 if (new_pair && hid_control_cid == 0) {
+                    // error: LOGGED-OK — printf of the step + BTstack's own event; the connection watchdog (CONNECT_WATCHDOG_TIMEOUT_US) tears a stalled attempt down and inquiry restarts, the OLED shows not connected
                     l2cap_create_channel(l2cap_packet_handler, current_device_addr, PSM_HID_CONTROL, MTU_CONTROL,
                                          &hid_control_cid);
                 }
@@ -530,7 +569,9 @@ static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t cha
             printf("[HCI] Incoming ACL request from %s cod=0x%06x\n", bd_addr_to_str(addr), (unsigned int) cod);
             if ((cod & 0x000F00) == 0x000500) {
                 bd_addr_copy(current_device_addr, addr);
+                // error: NOT-WORTH — nothing; gap_inquiry_* only fails while an inquiry is already in the wanted state or the stack is off, and INQUIRY_COMPLETE / the watchdog restart it
                 gap_inquiry_stop();
+                // error: LOGGED-OK — printf of the step + BTstack's own event; the connection watchdog (CONNECT_WATCHDOG_TIMEOUT_US) tears a stalled attempt down and inquiry restarts, the OLED shows not connected
                 hci_send_cmd(&hci_accept_connection_request, addr, 0x01);
                 connect_attempt_started = get_absolute_time(); // arm watchdog (incoming path)
             }
@@ -569,6 +610,7 @@ static void CORE0_RAM_FUNC(hci_packet_handler)(uint8_t packet_type, uint16_t cha
             battery_led_on_disconnect();
 #endif
             printf("[HCI] Disconnected reason=0x%02X, start inquiry\n", reason);
+            // error: NOT-WORTH — nothing; gap_inquiry_* only fails while an inquiry is already in the wanted state or the stack is off, and INQUIRY_COMPLETE / the watchdog restart it
             gap_inquiry_start(30);
             break;
         }
@@ -611,6 +653,7 @@ static void CORE0_RAM_FUNC(l2cap_packet_handler)(uint8_t packet_type, uint16_t c
                        static_cast<int64_t>(get_config().inactive_time) * 60 * 1000 * 1000) {
                 printf("disconnect when inactive\n");
                 inactive_time = get_absolute_time();
+                // error: NOT-WORTH — nothing; false only when there is no ACL, i.e. already disconnected
                 bt_disconnect();
             }
         } else if (channel == hid_control_cid) {
@@ -663,6 +706,7 @@ static void CORE0_RAM_FUNC(l2cap_packet_handler)(uint8_t packet_type, uint16_t c
 
                     // First-time pairing: assign this bd_addr to the current slot.
                     if (!slot_occupied(g_current_slot)) {
+                        // error: SILENT-BUG — nothing; a new controller's pairing works now but a failed slot save loses it at power-off (rare: flash lockout timeout) Change: show "Pair not saved" on the OLED (batch: an OLED toast on every screen)
                         slot_assign(g_current_slot, current_device_addr);
                         printf("[Slots] Assigned %s to slot %d\n",
                                bd_addr_to_str(current_device_addr), g_current_slot);
@@ -674,6 +718,7 @@ static void CORE0_RAM_FUNC(l2cap_packet_handler)(uint8_t packet_type, uint16_t c
 
                     if (new_pair && hid_interrupt_cid == 0) {
                         printf("[L2CAP] Opening interrupt channel\n");
+                        // error: LOGGED-OK — printf of the step + BTstack's own event; the connection watchdog (CONNECT_WATCHDOG_TIMEOUT_US) tears a stalled attempt down and inquiry restarts, the OLED shows not connected
                         l2cap_create_channel(l2cap_packet_handler, current_device_addr, PSM_HID_INTERRUPT,
                                              MTU_INTERRUPT, &hid_interrupt_cid);
                     }
@@ -715,6 +760,7 @@ static void CORE0_RAM_FUNC(l2cap_packet_handler)(uint8_t packet_type, uint16_t c
                 hid_interrupt_cid = 0;
                 device_found = false;
                 printf("[L2CAP] Open failed psm=0x%04X status=0x%02X\n", psm, status);
+                // error: NOT-WORTH — nothing; false only when there is no ACL, i.e. already disconnected
                 bt_disconnect();
             }
             break;
@@ -740,6 +786,7 @@ static void CORE0_RAM_FUNC(l2cap_packet_handler)(uint8_t packet_type, uint16_t c
                 printf("[L2CAP] Channel closed cid=0x%04X\n", local_cid);
             }
             if (hid_control_cid == 0 && hid_interrupt_cid == 0) {
+                // error: NOT-WORTH — nothing; false only when there is no ACL, i.e. already disconnected
                 bt_disconnect();
             }
             break;
@@ -750,12 +797,14 @@ static void CORE0_RAM_FUNC(l2cap_packet_handler)(uint8_t packet_type, uint16_t c
 
             static send_element send_packet{}; // 680 B: keep it off core0's small stack
             if (queue_try_remove(&send_fifo, &send_packet)) {
+                // error: LOGGED-OK — printf of the L2CAP status; one output report lost, the game's next one (sent every frame) replaces it
                 const uint8_t status = l2cap_send(hid_interrupt_cid, send_packet.data, send_packet.len);
                 if (status != 0) {
                     printf("[L2CAP] L2CAP Send Error, Status: 0x%02X\n", status);
                 }
             }
             if (!queue_is_empty(&send_fifo)) {
+                // error: NOT-WORTH — nothing; asking for a CAN_SEND_NOW on an open channel only fails if the channel just closed, and DISCONNECTION clears the FIFO
                 l2cap_request_can_send_now_event(hid_interrupt_cid);
             }
             break;
@@ -780,6 +829,7 @@ void bt_send_state() {
 }
 
 void CORE0_RAM_FUNC(bt_write)(const uint8_t *data, const uint16_t len) {
+    // error: NOT-WORTH — nothing; no controller connected: the PC's output report has nowhere to go (the app and OLED already show no controller)
     if (hid_interrupt_cid == 0) return;
     if (len + 1u > sizeof(send_element::data)) {
         printf("[L2CAP bt_write] Error: %u-byte report exceeds send buffer\n", len);
@@ -793,11 +843,13 @@ void CORE0_RAM_FUNC(bt_write)(const uint8_t *data, const uint16_t len) {
     memcpy(packet.data + 1, data, len);
     fill_output_report_checksum(packet.data + 1, len);
 
+    // error: LOGGED-OK — printf; the output FIFO is full, this report is dropped and the next state write (games send every frame, the app re-sends on change) replaces it
     if (!queue_try_add(&send_fifo, &packet)) {
         printf("[L2CAP bt_write] Error: Failed to add packet to send FIFO\n");
         return;
     }
     if (queue_get_level(&send_fifo) == 1) {
+        // error: NOT-WORTH — nothing; asking for a CAN_SEND_NOW on an open channel only fails if the channel just closed, and DISCONNECTION clears the FIFO
         l2cap_request_can_send_now_event(hid_interrupt_cid);
     }
 }
@@ -821,6 +873,7 @@ vector<uint8_t> get_feature_data(uint8_t reportId, uint16_t len) {
     ) {
         if (hid_control_cid != 0) {
             uint8_t get_feature[] = {0x43, reportId};
+            // error: LOGGED-OK — nothing here; every caller polls for the answer with a deadline: ctrl tests end NO_ANSWER (shown by the app), the colorway read gives up (no color), the 0x09/0x20/0x05 host GETs answer from the cache
             l2cap_send(hid_control_cid, get_feature, sizeof(get_feature));
 #if ENABLE_VERBOSE
             printf("[L2CAP] Requesting Get Feature Report 0x%02X\n", reportId);
@@ -846,6 +899,7 @@ void set_feature_data(uint8_t reportId, uint8_t *data, uint16_t len) {
         get_feature[1] = reportId;
         memcpy(get_feature + 2, data, len);
         fill_feature_report_checksum(get_feature + 1, len + 1);
+        // error: LOGGED-OK — nothing here; every caller polls for the answer with a deadline: ctrl tests end NO_ANSWER (shown by the app), the colorway read gives up (no color), the 0x09/0x20/0x05 host GETs answer from the cache
         l2cap_send(hid_control_cid, get_feature, len + 2);
 #if ENABLE_VERBOSE
         printf("[L2CAP] Requesting Set Feature Report 0x%02X\n", reportId);

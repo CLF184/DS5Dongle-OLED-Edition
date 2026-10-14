@@ -208,6 +208,7 @@ void CORE0_RAM_FUNC(mic_add_queue)(const uint8_t *data) {
     memcpy(packet.data, data, MIC_OPUS_SIZE);
     g_mic_toc = data[0]; // first byte of the Opus packet
     if (queue_is_full(&mic_fifo)) queue_try_remove(&mic_fifo, NULL);
+    // error: LOGGED-OK — counter (mic FIFO level in 0xF5); oldest mic packet is dropped first, so the add cannot fail; a drop is a glitch, not a user action
     queue_try_add(&mic_fifo, &packet);
 }
 
@@ -271,6 +272,7 @@ static void mic_drain() {
                 offset = 0;
             } else {
                 memset(slice, 0, sizeof(slice));
+                // error: LOGGED-OK — g_mic_last_wrote / last_want in OLED Diag + 0xF5; a short USB write is an underrun the PC's audio stack conceals
                 tud_audio_write(slice, MIC_SLICE_BYTES);
                 break;
             }
@@ -281,6 +283,7 @@ static void mic_drain() {
             slice[i * 2]     = s; // mono duplicated to L/R — our UAC1 mic is 2-ch like a real DS5
             slice[i * 2 + 1] = s;
         }
+        // error: LOGGED-OK — g_mic_last_wrote / last_want in OLED Diag + 0xF5; a short USB write is an underrun the PC's audio stack conceals
         g_mic_last_wrote = tud_audio_write(slice, MIC_SLICE_BYTES);
         g_mic_last_want  = MIC_SLICE_BYTES;
         offset += MIC_SLICE_FRAMES;
@@ -534,9 +537,11 @@ void CORE0_RAM_FUNC(audio_loop)() {
                 memcpy(element.data, audio_buf, 512 * 2 * 4);
                 if (queue_is_full(&audio_fifo)) {
                     queue_try_remove(&audio_fifo,NULL);
+                    // error: LOGGED-OK — counter g_drop_raw (0xFB/0xF5, the app's audio counters); realtime audio drops the oldest block, nothing for the user to do
                     g_drop_raw++;
                 }
                 g_raw_push++;
+                // error: LOGGED-OK — printf + g_drop_raw; the FIFO was just made room for, so this can't fail in practice
                 if (!queue_try_add(&audio_fifo, &element)) {
                     printf("[Audio] Warning: audio_fifo add failed\n");
                 }
@@ -593,9 +598,11 @@ void CORE0_RAM_FUNC(audio_loop)() {
         memcpy(element.data, haptic_buf, SAMPLE_SIZE);
         if (queue_is_full(&haptics_fifo)) {
             queue_try_remove(&haptics_fifo, NULL);
+            // error: LOGGED-OK — counter g_drop_hap (0xFB/0xF5); realtime haptics drop the oldest block
             g_drop_hap++;
         }
         g_hap_push++;
+        // error: LOGGED-OK — counter g_drop_hap; room was made on the line above, so the add can't fail
         queue_try_add(&haptics_fifo, &element);
         haptic_buf_pos = 0;
     }
@@ -639,14 +646,17 @@ static void __not_in_flash_func(speaker_proc)() {
     resampler_audio.ResampleOut(out_buf, nframes, 480, 2);
 
     static audio_spk_element spk{};
+    // error: LOGGED-OK — the block is skipped (a 10 ms gap); an encode error needs a broken encoder, which core1 flags at start (g_c1_flags 0x02, shown in the app's Dongle dashboard)
     const int encoded = opus_encode_float(encoder, out_buf, 480, spk.data, SPEAKER_OPUS_SIZE);
     if (encoded <= 0) return;
     g_c1_enc++;
     if (encoded < SPEAKER_OPUS_SIZE) memset(spk.data + encoded, 0, SPEAKER_OPUS_SIZE - encoded);
     if (queue_is_full(&audio_spk_fifo)) {
         queue_try_remove(&audio_spk_fifo, NULL);
+        // error: LOGGED-OK — counter g_drop_enc (0xF5); realtime speaker drops the oldest packet
         g_drop_enc++;
     }
+    // error: LOGGED-OK — counted on the line above; room was just made, so the add can't fail
     queue_try_add(&audio_spk_fifo, &spk);
 }
 #endif
@@ -655,6 +665,7 @@ static OpusDecoder *mic_decoder = nullptr;
 
 static void __not_in_flash_func(mic_push_decoded)(const mic_decoded_element &dec) {
     if (queue_is_full(&mic_decode_fifo)) queue_try_remove(&mic_decode_fifo, NULL);
+    // error: LOGGED-OK — counted on the line above; room was just made, so the add can't fail
     queue_try_add(&mic_decode_fifo, &dec);
 }
 
@@ -668,6 +679,7 @@ static bool __not_in_flash_func(mic_proc)() {
     const uint32_t now = time_us_32();
 
     if (queue_try_remove(&mic_fifo, &pkt)) {
+        // error: LOGGED-OK — g_mic_last_decoded in OLED Diag; a bad packet is one lost 10 ms frame, PLC covers it
         const int n = opus_decode(mic_decoder, pkt.data, MIC_OPUS_SIZE, dec.mono, MIC_FRAMES, 0);
         g_mic_last_decoded = n; // observed in OLED Diag
         if (n > 0) {
@@ -679,14 +691,17 @@ static bool __not_in_flash_func(mic_proc)() {
         }
         return true;
     }
+    // error: NOT-WORTH — nothing; false = no mic frame this pass (session idle), not an error
     if (!g_mic_session) return false;
     if (now - g_mic_last_real_us >= MIC_SESSION_US) {
         g_mic_session = false;
+        // error: NOT-WORTH — nothing; false = no mic frame this pass (session idle), not an error
         return false;
     }
     // Half a frame of slack before concealing, so normal BT jitter isn't
     // mistaken for loss.
     if (now - last_out_us >= MIC_FRAME_US + MIC_FRAME_US / 2) {
+        // error: LOGGED-OK — g_mic_last_decoded in OLED Diag; a bad packet is one lost 10 ms frame, PLC covers it
         const int n = opus_decode(mic_decoder, nullptr, 0, dec.mono, MIC_FRAMES, 0); // PLC
         if (n > 0) {
             mic_push_decoded(dec);
@@ -695,6 +710,7 @@ static bool __not_in_flash_func(mic_proc)() {
         last_out_us += MIC_FRAME_US;
         return true;
     }
+    // error: NOT-WORTH — nothing; false = no mic frame this pass (session idle), not an error
     return false;
 }
 
@@ -717,8 +733,10 @@ void __not_in_flash_func(core1_entry)() {
     // same kind AUDIO sends at these settings, with half the encoder state.
     g_c1_stage = 4;
 #if OPUS_ENCODER_CELT_ONLY
+    // error: SHOWN — g_c1_flags 0x02 (CORE1_SPEAKER_FAILED) in 0xF5, the app's Dongle dashboard says the speaker path failed; printf with free heap
     encoder = opus_encoder_create(48000, 2, OPUS_APPLICATION_RESTRICTED_CELT, &error);
 #else
+    // error: SHOWN — g_c1_flags 0x02 (CORE1_SPEAKER_FAILED) in 0xF5, the app's Dongle dashboard says the speaker path failed; printf with free heap
     encoder = opus_encoder_create(48000, 2, OPUS_APPLICATION_AUDIO, &error);
 #endif
     g_c1_stage = 5;
@@ -727,9 +745,13 @@ void __not_in_flash_func(core1_entry)() {
         encoder = nullptr;
         g_c1_flags |= 0x02;
     } else {
+        // error: NOT-WORTH — nothing; constant, valid encoder settings on an encoder that was just created
         opus_encoder_ctl(encoder,OPUS_SET_EXPERT_FRAME_DURATION(OPUS_FRAMESIZE_10_MS));
+        // error: NOT-WORTH — nothing; constant, valid encoder settings on an encoder that was just created
         opus_encoder_ctl(encoder,OPUS_SET_BITRATE(200 * 8 * 100));
+        // error: NOT-WORTH — nothing; constant, valid encoder settings on an encoder that was just created
         opus_encoder_ctl(encoder,OPUS_SET_VBR(false));
+        // error: NOT-WORTH — nothing; constant, valid encoder settings on an encoder that was just created
         opus_encoder_ctl(encoder,OPUS_SET_COMPLEXITY(0)); // max 4
         resampler_audio.SetMode(true, 0, false);
         resampler_audio.SetRates(51200, 48000);
@@ -740,6 +762,7 @@ void __not_in_flash_func(core1_entry)() {
     g_c1_stage = 6;
 #endif
     g_c1_stage = 7;
+    // error: SHOWN — g_c1_flags 0x04 (CORE1_MIC_FAILED) in 0xF5, the app's Dongle dashboard says the mic path failed; printf
     mic_decoder = opus_decoder_create(48000, MIC_CHANNELS, &error);
     g_c1_stage = 8;
     if (error != 0) {
@@ -763,6 +786,7 @@ void __not_in_flash_func(core1_entry)() {
 #endif
         if (mic_decoder != nullptr) {
             const uint32_t t0 = perf_now();
+            // error: NOT-WORTH — nothing; false = no mic frame this pass (session idle), not an error
             if (mic_proc()) {
                 perf_record(PERF_C1_MIC, perf_now() - t0);
                 work = true;

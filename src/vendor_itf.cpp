@@ -45,6 +45,7 @@ static uint16_t vi_open(uint8_t rhport, tusb_desc_interface_t const *desc, uint1
 
 static bool vi_control(uint8_t rhport, uint8_t stage, tusb_control_request_t const *req) {
     (void) rhport; (void) stage; (void) req;
+    // error: NOT-WORTH — USB STALL for a request this interface doesn't take (wrong direction/recipient/id); the app only sends the documented ones and its transport reports a STALL as an error
     return false;
 }
 
@@ -145,47 +146,58 @@ static void build_ext_props() {
 
 bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const *req) {
     // The wake keyboard has no configurator and no MS OS descriptors.
+    // error: NOT-WORTH — USB STALL for a request this interface doesn't take (wrong direction/recipient/id); the app only sends the documented ones and its transport reports a STALL as an error
     if (usb_wake_keyboard()) return false;
     if (req->bRequest == MS_OS_VENDOR_CODE &&
         req->bmRequestType_bit.direction == TUSB_DIR_IN) {
         if (stage != CONTROL_STAGE_SETUP) return true;
         if (req->wIndex == 0x0004) {
+            // error: NOT-WORTH — returned to TinyUSB (STALL on failure); queueing a ≤ 64-byte reply on endpoint 0 can't fail
             return tud_control_xfer(rhport, req, (void *) kCompatId,
                                     tu_min16(req->wLength, sizeof(kCompatId)));
         }
         if (req->wIndex == 0x0005) {
             build_ext_props();
+            // error: NOT-WORTH — returned to TinyUSB (STALL on failure); queueing a ≤ 64-byte reply on endpoint 0 can't fail
             return tud_control_xfer(rhport, req, kExtProps,
                                     tu_min16(req->wLength, sizeof(kExtProps)));
         }
+        // error: NOT-WORTH — USB STALL for a request this interface doesn't take (wrong direction/recipient/id); the app only sends the documented ones and its transport reports a STALL as an error
         return false;
     }
 
     if (req->bmRequestType_bit.recipient != TUSB_REQ_RCPT_INTERFACE ||
         tu_u16_low(req->wIndex) != VENDOR_ITF_NUM) {
+        // error: NOT-WORTH — USB STALL for a request this interface doesn't take (wrong direction/recipient/id); the app only sends the documented ones and its transport reports a STALL as an error
         return false;
     }
     uint8_t const id = tu_u16_low(req->wValue);
     if (id == PICO_CMD_OLED_MIRROR) {
+        // error: NOT-WORTH — USB STALL for a request this interface doesn't take (wrong direction/recipient/id); the app only sends the documented ones and its transport reports a STALL as an error
         if (req->bRequest != VENDOR_REQ_GET || req->bmRequestType_bit.direction != TUSB_DIR_IN) return false;
         if (stage != CONTROL_STAGE_SETUP) return true;
         uint16_t const n = oled_mirror(s_mirror, sizeof(s_mirror));
+        // error: NOT-WORTH — returned to TinyUSB (STALL on failure); queueing a ≤ 64-byte reply on endpoint 0 can't fail
         return tud_control_xfer(rhport, req, s_mirror, tu_min16(n, req->wLength));
     }
     // Controller health & info (proto 1.12): wValue's high byte picks the
     // header, the firmware info or a result page (ctrl_info.cpp).
     if (id == PICO_CMD_CTRL_INFO) {
+        // error: NOT-WORTH — USB STALL for a request this interface doesn't take (wrong direction/recipient/id); the app only sends the documented ones and its transport reports a STALL as an error
         if (req->bRequest != VENDOR_REQ_GET || req->bmRequestType_bit.direction != TUSB_DIR_IN) return false;
         if (stage != CONTROL_STAGE_SETUP) return true;
         uint16_t const reqlen = tu_min16(req->wLength, VENDOR_MAX_PAYLOAD);
         memset(s_buf, 0, sizeof(s_buf));
         uint16_t const n = ctrl_info_get(tu_u16_high(req->wValue), s_buf, reqlen);
+        // error: NOT-WORTH — returned to TinyUSB (STALL on failure); queueing a ≤ 64-byte reply on endpoint 0 can't fail
         return tud_control_xfer(rhport, req, s_buf, tu_min16(n, reqlen));
     }
     // 0xF0/0xF1 exist only here (not on the HID path), and the 0xF2-0xF4 debug
     // reports only here in release builds; all are GET-only.
     bool const vendor_only = id == PICO_CMD_IDENTITY || id == PICO_CMD_LIVE_INPUT || id == PICO_CMD_CALIB || id == PICO_CMD_REMAP_EXTRA || id == PICO_CMD_CURVES || is_debug_cmd(id);
+    // error: NOT-WORTH — USB STALL for a request this interface doesn't take (wrong direction/recipient/id); the app only sends the documented ones and its transport reports a STALL as an error
     if (!vendor_only && !is_pico_cmd(id)) return false;
+    // error: NOT-WORTH — USB STALL for a request this interface doesn't take (wrong direction/recipient/id); the app only sends the documented ones and its transport reports a STALL as an error
     if (vendor_only && req->bRequest != VENDOR_REQ_GET) return false;
 
     switch (req->bRequest) {
@@ -195,12 +207,14 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
             uint16_t const reqlen = tu_min16(req->wLength, VENDOR_MAX_PAYLOAD);
             memset(s_buf, 0, sizeof(s_buf));
             uint16_t const n = pico_cmd_get(id, s_buf, reqlen);
+            // error: NOT-WORTH — returned to TinyUSB (STALL on failure); queueing a ≤ 64-byte reply on endpoint 0 can't fail
             return tud_control_xfer(rhport, req, s_buf, tu_min16(n, reqlen));
         }
         case VENDOR_REQ_SET: {
             TU_VERIFY(req->bmRequestType_bit.direction == TUSB_DIR_OUT);
             TU_VERIFY(req->wLength >= 1 && req->wLength <= VENDOR_MAX_PAYLOAD);
             if (stage == CONTROL_STAGE_SETUP) {
+                // error: NOT-WORTH — returned to TinyUSB (STALL on failure); queueing a ≤ 64-byte reply on endpoint 0 can't fail
                 return tud_control_xfer(rhport, req, s_buf, req->wLength);
             }
             // Act after the status stage: 0x03 (reconnect) drops the bus, and the
@@ -211,6 +225,7 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
             return true;
         }
         default:
+            // error: NOT-WORTH — USB STALL for a request this interface doesn't take (wrong direction/recipient/id); the app only sends the documented ones and its transport reports a STALL as an error
             return false;
     }
 }

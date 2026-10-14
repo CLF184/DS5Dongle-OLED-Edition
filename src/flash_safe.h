@@ -33,6 +33,7 @@ inline bool flash_sector_write(uint32_t offset, const uint8_t *page) {
     FlashSectorWrite w{offset, page};
     // Writes before core1 registers for lockout are handled inside the
     // flash_safe_execute wrapper (src/main.cpp).
+    // error: SHOWN — returned false to every save (config/remap/calib/slots), which report it; counted in g_fse_fail
     return flash_safe_execute(flash_sector_write_cb, &w, 100) == PICO_OK;
 }
 

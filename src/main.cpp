@@ -146,6 +146,7 @@ void CORE0_RAM_FUNC(interrupt_loop)() {
         memcpy(out, interrupt_in_data, 63);
         calib_apply(out);
         remap_apply(out);
+        // error: LOGGED-OK — printf; the HID IN endpoint is busy, this input frame is skipped and the next one (~1 ms) replaces it
         if (!tud_hid_report(0x01, out, 63)) {
             printf("[USBHID] tud_hid_report error\n");
         }
@@ -173,6 +174,7 @@ void CORE0_RAM_FUNC(interrupt_loop)() {
 
     // Only send to TinyUSB if we actually grabbed fresh data
     if (should_send) {
+        // error: LOGGED-OK — printf; the HID IN endpoint is busy, this input frame is skipped and the next one (~1 ms) replaces it
         if (!tud_hid_report(0x01, safe_report, 63)) {
             printf("[USBHID] tud_hid_report error\n");
 
@@ -282,6 +284,7 @@ volatile uint32_t g_get_count = 0;
 uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer,
                                uint16_t reqlen) {
     if (usb_wake_keyboard()) {  // the wake keyboard: no keys down
+        // error: NOT-WORTH — USB STALL; a zero/short GET from the host OS, which retries with the right length
         if (reqlen < 8) return 0;
         memset(buffer, 0, 8);
         return 8;
@@ -319,6 +322,7 @@ static uint16_t get_report_impl(uint8_t itf, uint8_t report_id, hid_report_type_
     // controller isn't linked yet (USB-enumeration probe before the BT link), so the
     // kernel still binds at that moment.
     if (report_id == 0x09 || report_id == 0x20 || report_id == 0x05) {
+        // error: NOT-WORTH — USB STALL; a zero/short GET from the host OS, which retries with the right length
         if (reqlen == 0) return 0;
         std::vector<uint8_t> real = get_feature_data(report_id, reqlen);
         if (report_id == 0x20 && real.size() > 1) {
@@ -337,6 +341,7 @@ static uint16_t get_report_impl(uint8_t itf, uint8_t report_id, hid_report_type_
             if (reqlen >= 6) bt_get_addr(buffer);
             return reqlen;
         }
+        // error: NOT-WORTH — USB STALL; a zero/short GET from the host OS, which retries with the right length
         if (reqlen < 5) return 0;                  // 0x20 / 0x05 stub: zeros + valid crc32
         uint8_t tmp[2 + 64];
         tmp[0] = 0xA3; tmp[1] = report_id;
@@ -354,6 +359,7 @@ static uint16_t get_report_impl(uint8_t itf, uint8_t report_id, hid_report_type_
     }
 
     // The dongle's controller test owns the 0x81 result slot: busy (stall).
+    // error: NOT-WORTH — USB STALL on purpose: the app's controller test owns 0x81 for a few seconds; PC tools retry
     if (report_id == 0x81 && ctrl_test_owns_0x81()) return 0;
 
     // Edge profiles before the connect fetch is done: refused (stall), so PS
@@ -361,6 +367,7 @@ static uint16_t get_report_impl(uint8_t itf, uint8_t report_id, hid_report_type_
     // goes to the controller, as upstream 8a2f576 does.
     if (dse_is_profile_report(report_id) && !dse_profiles_ready()) {
         (void) get_feature_data(report_id, reqlen);
+        // error: NOT-WORTH — USB STALL on purpose until the Edge profiles are cached (PS Accessories retries); the read is started here
         return 0;
     }
 
@@ -419,6 +426,7 @@ extern "C" int __wrap_flash_safe_execute(void (*func)(void *), void *param, uint
         return PICO_OK;
     }
     const int rc = __real_flash_safe_execute(func, param, enter_exit_timeout_ms);
+    // error: LOGGED-OK — counter g_fse_fail (OLED Diag); the failed write itself is reported by its caller
     if (rc != PICO_OK) g_fse_fail++;
     return rc;
 }
@@ -426,10 +434,12 @@ extern "C" int __wrap_flash_safe_execute(void (*func)(void *), void *param, uint
 // A USB output report 0x02 (id at [0]) from the host to the controller as
 // BT 0x31. Main-loop context (TinyUSB callbacks). False: too short, not sent.
 static bool host_out02_forward(const uint8_t *buffer, uint16_t bufsize) {
+    // error: NOT-WORTH — nothing; a malformed/short host report isn't forwarded (counted only when forwarded, g_host_out02_to_bt); games send well-formed ones every frame
     if (bufsize < 2) return false;
     // state[] still tracks the host's state for the OLED (LED readout,
     // trigger screens) and the BT-connect init.
     state_update(buffer + 1, bufsize - 1);
+    // error: NOT-WORTH — nothing; a malformed/short host report isn't forwarded (counted only when forwarded, g_host_out02_to_bt); games send well-formed ones every frame
     if ((size_t) bufsize - 1 < sizeof(SetStateData)) return false;
     // Forward the host's report as-is, every time, as upstream does.
     // Audio frames (0x39) no longer carry state, so this is the only
@@ -495,6 +505,7 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
                     memcpy(g_last_out02, buffer + 1, sizeof(g_last_out02));
                     if (buffer[1] & 0x0C) memcpy(g_last_out02_trig, buffer + 1, sizeof(g_last_out02_trig));
                 }
+                // error: NOT-WORTH — nothing; a malformed/short host report isn't forwarded (counted only when forwarded, g_host_out02_to_bt); games send well-formed ones every frame
                 if (host_out02_forward(buffer, bufsize)) g_host_out02_to_bt++;
                 break;
             }
@@ -538,10 +549,12 @@ int main() {
         .role = TUSB_ROLE_DEVICE,
         .speed = TUSB_SPEED_FULL
     };
+    // error: NOT-WORTH — boot: TinyUSB init with a fixed, valid config; failure would leave no USB device at all (no app to tell), the OLED still runs
     tusb_init(BOARD_TUD_RHPORT, &dev_init);
 #if !ENABLE_SERIAL
     // Give the host a moment to see us before the disconnect (upstream 4f9f485).
     sleep_ms(150);
+    // error: NOT-WORTH — nothing; boot: disconnect of a device that was just initialized
     tud_disconnect();
 #endif
     board_init_after_tusb();
@@ -557,6 +570,7 @@ int main() {
     if (stdio_usb_connected()) sleep_ms(150);
 #endif
 
+    // error: LOGGED-OK — printf and main() returns: no radio, nothing can run; the board shows no OLED/USB activity, a hardware fault
     if (cyw43_arch_init()) {
         printf("Failed to initialize CYW43\n");
         return 1;

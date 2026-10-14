@@ -34,6 +34,7 @@ add_executable(host_tests
         test_rssi_poll.cpp
         test_amp_volume.cpp
         test_voice_cue.cpp
+        test_slots.cpp
         # The firmware sources under test, unmodified.
         ${FW}/src/calib.cpp
         ${FW}/src/remap.cpp
@@ -42,6 +43,7 @@ add_executable(host_tests
         ${FW}/src/perf.cpp
         ${FW}/src/ctrl_info.cpp
         ${FW}/src/dse.cpp
+        ${FW}/src/slots.cpp
         # The reference the haptics decimator is checked against (lib/WDL submodule).
         ${FW}/lib/WDL/WDL/resample.cpp
 )

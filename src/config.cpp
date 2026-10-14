@@ -37,6 +37,7 @@ const Config *flash_config() {
 
 void config_valid() {
     // valid config and set default value
+    // error: LOGGED-OK — printf; a blank or old sector gets defaults; RAM then differs from flash, which the app shows as unsaved settings (identity [19] bit0)
     if (config.magic != CONFIG_MAGIC) {
         config.magic = CONFIG_MAGIC;
         printf("[Config] Config Magic Header is invalid\n");
@@ -153,6 +154,7 @@ void config_valid() {
 // XIP read never races a write.
 bool config_unsaved() {
     const Config *saved = flash_config();
+    // error: NOT-WORTH — nothing; reads which copy to start from (no valid save yet = the RAM copy), not a failure
     return saved->magic != CONFIG_MAGIC || memcmp(&saved->body, &config.body, sizeof(Config_body)) != 0 ||
            saved->power_flags != config.power_flags;
 }
@@ -162,13 +164,16 @@ void config_load() {
 
     // First boot after the sector move: carry saved settings over from the
     // old last-sector location if they're intact (magic + CRC), then persist.
+    // error: LOGGED-OK — printf in config_valid; first boot / erased sector, defaults are the right answer; shown as unsaved settings in the app
     if (config.magic != CONFIG_MAGIC) {
         Config legacy{};
         memcpy(&legacy, reinterpret_cast<const Config *>(XIP_BASE + LEGACY_CONFIG_FLASH_OFFSET), sizeof(Config));
+        // error: LOGGED-OK — printf on migration; a bad legacy copy is ignored (defaults, shown as unsaved settings)
         if (legacy.magic == CONFIG_MAGIC && legacy.crc32 == calc_config_crc(legacy)) {
             printf("[Config] Migrating config from the legacy sector\n");
             config = legacy;
             config_valid();
+            // error: LOGGED-OK — printf; boot-time init save of the migrated settings: the RAM copy works now and the next boot retries the save
             config_save();
             return;
         }
@@ -193,22 +198,27 @@ static bool write_config(Config &con) {
     memset(page, 0xff, sizeof(page));
     memcpy(page, &con, sizeof(Config));
 
+    // error: SHOWN — passed up; the callers report it (0xF1 CMD_RESULT_FAILED to the app, the OLED's "Save FAIL")
     if (!flash_sector_write(CONFIG_FLASH_OFFSET, page)) {
         printf("[Flash] core1 lockout timed out, write skipped\n");
+        // error: SHOWN — passed up; the callers report it (0xF1 CMD_RESULT_FAILED to the app, the OLED's "Save FAIL")
         return false;
     }
 
     Config verify{};
     memcpy(&verify, flash_config(), sizeof(verify));
     const auto verify_crc32 = calc_config_crc(verify);
+    // error: SHOWN — passed up; the callers report it (0xF1 CMD_RESULT_FAILED to the app, the OLED's "Save FAIL")
     if (verify_crc32 == con.crc32) {
         printf("[Config] Config write flash verify success\n");
         return true;
     }
     printf("[Config] Config write flash verify failed\n");
+    // error: SHOWN — passed up; the callers report it (0xF1 CMD_RESULT_FAILED to the app, the OLED's "Save FAIL")
     return false;
 }
 
+// error: SHOWN — passed up; the callers report it (0xF1 CMD_RESULT_FAILED to the app, the OLED's "Save FAIL")
 bool config_save() { return write_config(config); }
 
 bool config_save_narrator(uint8_t value) {
@@ -216,12 +226,14 @@ bool config_save_narrator(uint8_t value) {
     config_valid();
     // Flash's copy with only this byte changed; nothing valid saved yet = RAM.
     const Config *saved = flash_config();
+    // error: NOT-WORTH — nothing; reads which copy to start from (no valid save yet = the RAM copy), not a failure
     Config page = saved->magic == CONFIG_MAGIC ? *saved : config;
     page.magic = CONFIG_MAGIC;
     page.version = CONFIG_VERSION;
     page.size = sizeof(Config_body);  // an older, shorter body grows here
     page.body.narrator_voice = config.body.narrator_voice;
     if (page.power_flags & ~POWER_FLAGS_MASK) page.power_flags = POWER_FLAGS_DEFAULT;
+    // error: SHOWN — passed up; the callers report it (0xF1 CMD_RESULT_FAILED to the app, the OLED's "Save FAIL")
     return write_config(page);
 }
 
@@ -233,15 +245,18 @@ void config_set_power_flags(uint8_t flags) {
 }
 
 bool config_save_power_flags(uint8_t flags) {
+    // error: SHOWN — CMD_RESULT_FAILED in 0xF1 (0x17 also checks the bits first and answers INVALID)
     if (flags & ~POWER_FLAGS_MASK) return false;
     config.power_flags = flags;
     // Flash's copy with only these bits changed; nothing valid saved yet = RAM.
     const Config *saved = flash_config();
+    // error: NOT-WORTH — nothing; reads which copy to start from (no valid save yet = the RAM copy), not a failure
     Config page = saved->magic == CONFIG_MAGIC ? *saved : config;
     page.magic = CONFIG_MAGIC;
     page.version = CONFIG_VERSION;
     page.size = sizeof(Config_body);
     page.power_flags = flags;
+    // error: SHOWN — passed up; the callers report it (0xF1 CMD_RESULT_FAILED to the app, the OLED's "Save FAIL")
     return write_config(page);
 }
 

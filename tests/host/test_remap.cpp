@@ -73,7 +73,7 @@ TEST(remap_disabled_and_analog_triggers) {
 TEST(remap_edge_extras) {
     fresh();
     const uint8_t extra[4] = {Tri, kRemapExtraOff, kRemapExtraSelf, Up};
-    CHECK(remap_set_extra(extra, false));
+    CHECK(remap_set_extra(extra, false) == RemapSet::Ok);
     uint8_t r[63]{};
     r[7] = 0x08;
     r[9] = 0x10 | 0x20 | 0x40 | 0x80;
@@ -81,7 +81,7 @@ TEST(remap_edge_extras) {
     CHECK_EQ(r[9], 0x40);              // only "itself" stays
     CHECK_EQ(r[7], 0x80 | 0x00);       // Triangle + D-pad up (hat 0)
     const uint8_t bad[4] = {16, 0, 0, 0};
-    CHECK(!remap_set_extra(bad, false));
+    CHECK(remap_set_extra(bad, false) == RemapSet::Invalid);
 }
 
 TEST(remap_temporary_and_revert) {
@@ -97,7 +97,7 @@ TEST(remap_temporary_and_revert) {
     CHECK(remap_temporary());
     // A saved extras write while a game's table is on keeps the saved table in flash.
     const uint8_t extra[4] = {kRemapExtraOff, kRemapExtraSelf, kRemapExtraSelf, kRemapExtraSelf};
-    CHECK(remap_set_extra(extra, false));
+    CHECK(remap_set_extra(extra, false) == RemapSet::Ok);
     remap_revert();
     CHECK(!remap_temporary());
     uint8_t got[16];
@@ -106,4 +106,18 @@ TEST(remap_temporary_and_revert) {
     uint8_t ex[4];
     remap_get_extra(ex);
     CHECK_EQ(ex[0], kRemapExtraOff);
+}
+
+// Error pass: a failed flash write is NotSaved (the app says "failed"), not
+// Invalid (the app says "rejected"); the entries still apply for now.
+TEST(remap_edge_extras_not_saved) {
+    fresh();
+    const uint8_t extra[4] = {Tri, kRemapExtraSelf, kRemapExtraSelf, kRemapExtraSelf};
+    g_fake_flash_fail = true;
+    CHECK(remap_set_extra(extra, false) == RemapSet::NotSaved);
+    CHECK(remap_set_extra(extra, true) == RemapSet::Ok);  // temporary: nothing to save
+    g_fake_flash_fail = false;
+    uint8_t ex[4];
+    remap_get_extra(ex);
+    CHECK_EQ(ex[0], Tri);
 }

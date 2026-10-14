@@ -483,3 +483,37 @@ TEST(cmd_grip_test_stop_and_replace) {
     CHECK(!grip_running());
     g_fake_bt_connected = true;
 }
+
+// Error pass: a slot switch, forget or wipe whose flash save fails reports
+// FAILED in 0xF1 (it used to say OK: the change was lost at power-off with
+// nothing shown), and so does an Edge extra-button save (it said INVALID).
+TEST(cmd_slot_ops_report_a_failed_save) {
+    fresh();
+    const uint8_t cmds[][2] = {{0x04, 1}, {0x05, 1}, {0x06, 0}};
+    for (const auto &c : cmds) {
+        g_fake_flash_fail = false;
+        pico_cmd_set(PICO_CMD_SET, c, sizeof(c));
+        settle();
+        CHECK_EQ(last_result(), CMD_RESULT_OK);
+        g_fake_flash_fail = true;
+        pico_cmd_set(PICO_CMD_SET, c, sizeof(c));
+        CHECK_EQ(last_result(), CMD_RESULT_PENDING);
+        settle();
+        CHECK_EQ(last_result(), CMD_RESULT_FAILED);
+    }
+    g_fake_flash_fail = false;
+}
+
+TEST(cmd_extra_remap_failed_save_is_failed_not_invalid) {
+    fresh();
+    const uint8_t set[] = {0x13, 'R', 'X', 1, kRemapExtraSelf, kRemapExtraSelf, kRemapExtraSelf, kRemapExtraSelf, 0};
+    g_fake_flash_fail = true;
+    pico_cmd_set(PICO_CMD_SET, set, sizeof(set));
+    CHECK_EQ(last_result(), CMD_RESULT_FAILED);
+    g_fake_flash_fail = false;
+    pico_cmd_set(PICO_CMD_SET, set, sizeof(set));
+    CHECK_EQ(last_result(), CMD_RESULT_OK);
+    const uint8_t bad[] = {0x13, 'R', 'X', 1, 16, 0, 0, 0, 0};
+    pico_cmd_set(PICO_CMD_SET, bad, sizeof(bad));
+    CHECK_EQ(last_result(), CMD_RESULT_INVALID);
+}

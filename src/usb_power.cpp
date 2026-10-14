@@ -51,6 +51,7 @@ usbpm::Settings settings() {
 
 // Off the bus: whatever the host had open is gone.
 void detach() {
+    // error: NOT-WORTH — nothing; tud_connect/disconnect only fail on a port without D+ pull-up control, which the RP2350 has
     tud_disconnect();
     spk_active = false;
     audio_set_mic_active(false);
@@ -58,6 +59,7 @@ void detach() {
 
 void attach(usbpm::Mode m, uint64_t now) {
     g_usb_wake_keyboard = m == usbpm::Mode::Keyboard;
+    // error: NOT-WORTH — nothing; tud_connect/disconnect only fail on a port without D+ pull-up control, which the RP2350 has
     if (m != usbpm::Mode::Off) tud_connect();
     s_pm.presented(m, now);
     printf("[USB PM] presenting %s\n", m == usbpm::Mode::Full ? "the DualSense" : m == usbpm::Mode::Keyboard ? "the wake keyboard" : "nothing");
@@ -77,6 +79,7 @@ void present(usbpm::Mode m, uint64_t now) {
 
 bool send_key(uint8_t key) {
     uint8_t rpt[8] = {0, 0, key, 0, 0, 0, 0, 0};
+    // error: NOT-WORTH — nothing; the wake state machine (usb_power.h) only sends when the endpoint is ready (hid_ready) and presses the key kKeyPresses times
     return tud_hid_n_report(0, 0, rpt, sizeof(rpt));
 }
 }  // namespace
@@ -99,11 +102,13 @@ void usb_power_controller(bool ready) {
 }
 
 void usb_power_reconnect() {
+    // error: NOT-WORTH — nothing; a reconnect is already under way (0xF6 0x03 asked twice)
     if (s_attach_pending) return;
 #if ENABLE_SERIAL
     // The serial build is always the full device; a reconnect is a plain bounce.
     detach();
     sleep_ms(150);
+    // error: NOT-WORTH — nothing; tud_connect/disconnect only fail on a port without D+ pull-up control, which the RP2350 has
     tud_connect();
     s_pm.presented(usbpm::Mode::Full, time_us_64());
 #else
@@ -129,18 +134,22 @@ void usb_power_task() {
             break;
         case usbpm::Act::PowerOff:
             printf("[USB PM] suspended for 3 s: controller off\n");
+            // error: NOT-WORTH — nothing; false only when there is no ACL, i.e. already disconnected
             bt_disconnect();
             break;
         case usbpm::Act::RemoteWakeup: {
+            // error: LOGGED-OK — printf of the result; the PC didn't allow remote wakeup, the F15 key path follows
             const bool ok = tud_remote_wakeup();
             printf("[USB PM] remote wakeup -> %d\n", (int) ok);
             s_pm.wake_result(ok, now);
             break;
         }
         case usbpm::Act::KeyDown:
+            // error: NOT-WORTH — nothing; the wake state machine (usb_power.h) only sends when the endpoint is ready (hid_ready) and presses the key kKeyPresses times
             send_key(kKeyF15);
             break;
         case usbpm::Act::KeyUp:
+            // error: NOT-WORTH — nothing; the wake state machine (usb_power.h) only sends when the endpoint is ready (hid_ready) and presses the key kKeyPresses times
             send_key(0);
             break;
         case usbpm::Act::Present:

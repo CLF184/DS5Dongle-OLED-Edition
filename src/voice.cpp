@@ -73,12 +73,14 @@ int configured_lang() {
 } // namespace
 
 void voice_say_lang(VoiceLine line, uint8_t lang) {
+    // error: SHOWN — the app's 0x0C preview is refused first with CMD_RESULT_INVALID/FAILED (bad line, no controller); a broken bank (bank_ok) is a build defect the voice tests catch
     if (line >= VOICE_NUM_LINES || lang >= kVoiceNumLangs || !bt_is_connected() || !bank_ok()) return;
     const uint8_t *entry = voice_bank + kHeader + (lang * VOICE_NUM_LINES + line) * 8;
     uint32_t offset;
     uint16_t frames;
     memcpy(&offset, entry, 4);
     memcpy(&frames, entry + 4, 2);
+    // error: NOT-WORTH — nothing; an empty/out-of-range entry is a build defect of voice_bank.bin, checked by tools/build_voice_bank.py
     if (offset >= (uint32_t) (voice_bank_end - voice_bank) || frames == 0) return;
     // Host audio flowing: the path is warm and her frames take the host's
     // place seamlessly. Otherwise the controller has had no speaker audio:
@@ -126,6 +128,7 @@ static bool take_one(uint8_t *frame, uint16_t frame_size) {
     }
     // A valid Opus packet of exactly frame_size bytes (padding, not trailing
     // garbage the decoder would read as audio).
+    // error: NOT-WORTH — the frame is zeroed (silence); padding a valid packet to a larger size can't fail
     if (len < frame_size && opus_packet_pad(frame, len, frame_size) != OPUS_OK) memset(frame, 0, frame_size);
     return true;
 }
@@ -182,6 +185,7 @@ void voice_task() {
         s_disconnect_after = false;
         s_pos = nullptr;
         s_pre = s_post = 0;
+        // error: NOT-WORTH — nothing; false only when there is no ACL, i.e. already disconnected
         bt_disconnect();
         return;
     }

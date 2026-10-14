@@ -71,6 +71,7 @@ static bool audio10_set_req_entity(tusb_control_request_t const *p_request, uint
                         return true;
 
                     default:
+                        // error: NOT-WORTH — USB STALL: the host asked for an audio control we don't have; that's USB's answer, the OS moves on
                         return false; // not supported
                 }
 
@@ -111,16 +112,19 @@ static bool audio10_set_req_entity(tusb_control_request_t const *p_request, uint
                         return true;
 
                     default:
+                        // error: NOT-WORTH — USB STALL: the host asked for an audio control we don't have; that's USB's answer, the OS moves on
                         return false; // not supported
                 }
 
             // Unknown/Unsupported control
             default:
                 TU_BREAKPOINT();
+                // error: NOT-WORTH — USB STALL: the host asked for an audio control we don't have; that's USB's answer, the OS moves on
                 return false;
         }
     }
 
+    // error: NOT-WORTH — USB STALL: the host asked for an audio control we don't have; that's USB's answer, the OS moves on
     return false;
 }
 
@@ -137,6 +141,7 @@ static bool audio10_get_req_entity(uint8_t rhport, tusb_control_request_t const 
                 // Audio control mute cur parameter block consists of only one byte - we thus can send it right away
                 // There does not exist a range parameter block for mute
                 TU_LOG2("    Get Mute of entity: %u\r\n", entityID);
+                // error: NOT-WORTH — returned to TinyUSB (STALL on failure); a 1-2 byte reply into TinyUSB's control buffer can't fail
                 return tud_audio_buffer_and_schedule_control_xfer(rhport, p_request, &mute[index], 1);
 
             case AUDIO10_FU_CTRL_VOLUME:
@@ -149,6 +154,7 @@ static bool audio10_get_req_entity(uint8_t rhport, tusb_control_request_t const 
                                 volume[index] = std::min(get_config().speaker_volume, 0.0f);
                             }
                             int16_t vol = volume[index] * 256; // convert to 1/256 dB units
+                            // error: NOT-WORTH — returned to TinyUSB (STALL on failure); a 1-2 byte reply into TinyUSB's control buffer can't fail
                             return tud_audio_buffer_and_schedule_control_xfer(rhport, p_request, &vol, sizeof(vol));
                         }
 
@@ -162,6 +168,7 @@ static bool audio10_get_req_entity(uint8_t rhport, tusb_control_request_t const 
                                 min[0] = 0x00;
                                 min[1] = 0x00;
                             }
+                            // error: NOT-WORTH — returned to TinyUSB (STALL on failure); a 1-2 byte reply into TinyUSB's control buffer can't fail
                             return tud_audio_buffer_and_schedule_control_xfer(rhport, p_request, &min, sizeof(min));
                         }
 
@@ -175,6 +182,7 @@ static bool audio10_get_req_entity(uint8_t rhport, tusb_control_request_t const 
                                 max[0] = 0x00;
                                 max[1] = 0x30;
                             }
+                            // error: NOT-WORTH — returned to TinyUSB (STALL on failure); a 1-2 byte reply into TinyUSB's control buffer can't fail
                             return tud_audio_buffer_and_schedule_control_xfer(rhport, p_request, &max, sizeof(max));
                         }
 
@@ -188,6 +196,7 @@ static bool audio10_get_req_entity(uint8_t rhport, tusb_control_request_t const 
                                 res[0] = 0x7a;
                                 res[1] = 0x00;
                             }
+                            // error: NOT-WORTH — returned to TinyUSB (STALL on failure); a 1-2 byte reply into TinyUSB's control buffer can't fail
                             return tud_audio_buffer_and_schedule_control_xfer(rhport, p_request, &res, sizeof(res));
                         }
                     // Unknown/Unsupported control
@@ -218,6 +227,7 @@ bool tud_audio_get_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
 bool tud_audio_set_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p_request, uint8_t *buf) {
     (void) rhport;
 
+    // error: NOT-WORTH — USB STALL: the host asked for an audio control we don't have; that's USB's answer, the OS moves on
     return audio10_set_req_entity(p_request, buf);
 }
 
