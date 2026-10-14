@@ -33,6 +33,7 @@ add_executable(host_tests
         test_speaker_mono.cpp
         test_rssi_poll.cpp
         test_amp_volume.cpp
+        test_voice_cue.cpp
         # The firmware sources under test, unmodified.
         ${FW}/src/calib.cpp
         ${FW}/src/remap.cpp

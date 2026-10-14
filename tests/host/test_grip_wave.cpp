@@ -105,7 +105,7 @@ TEST(grip_wave_replace_and_stop) {
 // The test's own reports: two at once, then one per 64 / 3000 s (21333.3 us),
 // exact over time; a late one is caught up, a stall resyncs.
 TEST(grip_report_clock) {
-    GripReportClock c;
+    AudioReportClock c;
     uint64_t now = 1'000'000;
     int sent = 0;
     auto step = [&](uint64_t until) {  // 100 us main-loop passes

@@ -18,6 +18,7 @@
 #include <cstdint>
 
 #include "haptics_decimate.h"
+#include "report_clock.h"
 
 constexpr uint32_t kGripWaveRate = 3000;            // haptic samples per second (per grip)
 constexpr uint32_t kGripSamplesPerTenth = kGripWaveRate / 10;
@@ -67,38 +68,6 @@ struct GripWave {
     }
 };
 
-// The clock for the test's own 0x39 reports while the host streams no audio:
-// one report per `pairs_per_report` samples (64 = 21.33 ms, the rate the
-// host's haptics go out), the first few at once so the controller's buffer
-// has a head start (as the narrator's reports), then a fixed clock that
-// catches up after a late report and resyncs after a stall. Time is kept in
-// thirds of a microsecond so 64 / 3000 s is exact.
-struct GripReportClock {
-    static constexpr uint64_t kPeriod3 = 64ull * 3'000'000 / kGripWaveRate;  // 64000 = 21333.3 us
-    static constexpr uint8_t kLeadReports = 2;
-    bool running = false;
-    uint8_t lead = 0;
-    uint64_t next3 = 0;
-
-    __attribute__((always_inline)) inline void reset() { running = false; }
-    // True when a report is due now; call sent() after sending it.
-    __attribute__((always_inline)) inline bool due(uint64_t now_us) {
-        if (!running) {
-            running = true;
-            lead = kLeadReports;
-            next3 = now_us * 3;
-        }
-        return lead > 0 || now_us * 3 >= next3;
-    }
-    __attribute__((always_inline)) inline void sent(uint64_t now_us) {
-        const uint64_t now3 = now_us * 3;
-        if (lead > 0) {
-            if (--lead == 0) next3 = now3 + kPeriod3;
-            return;
-        }
-        next3 += kPeriod3;
-        if (now3 > next3 + 5 * kPeriod3) next3 = now3 + kPeriod3;  // stalled: resync
-    }
-};
+// The clock for the test's own reports: AudioReportClock (src/report_clock.h).
 
 #endif

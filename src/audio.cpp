@@ -228,6 +228,7 @@ static void update_mic_status(bool enable) {
 
 static volatile bool mic_status_dirty = true;
 void audio_on_bt_connected() { mic_status_dirty = true; }
+bool audio_connect_state_sent() { return bt_is_connected() && !mic_status_dirty; }
 
 static void mic_status_task() {
     static bool sent = false;
@@ -387,7 +388,7 @@ void audio_send_voice_report() {
 // audio_bt_task sends haptics with the speaker off). When the time is up it
 // sends one silent report so the controller's last packet is silence.
 static GripWave s_grip;
-static GripReportClock s_grip_clock;
+static AudioReportClock s_grip_clock;  // two reports of head start
 static bool s_grip_tail = false;  // the silent closing report is still to send
 
 void audio_grip_test_start(bool left, bool right, uint32_t samples) {

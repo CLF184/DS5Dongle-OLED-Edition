@@ -48,6 +48,9 @@ void audio_set_mic_active(bool active);
 bool audio_mic_wanted();
 // New BT link: re-send the mic-stream state to the controller.
 void audio_on_bt_connected();
+// The connect-time state has gone out again since USB came up (voice.cpp
+// waits for it before the connected line).
+bool audio_connect_state_sent();
 
 // The narrator (voice.cpp): is the host streaming audio through us, and
 // send one report carrying only her frames.

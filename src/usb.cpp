@@ -8,11 +8,15 @@
 #include "state_mgr.h"
 #include "amp_volume.h"
 #include <algorithm>
+#include "pico/time.h"
+#include "usb.h"
 
 uint8_t mute[2]; // 0: SPEAKER(0x02) 1: MIC(0x05)
 // The mic starts at its top (48 dB, the controller's full VolumeMic) until the
 // PC sets it (upstream a7824d9 starts it at 48 too).
 float volume[2] = {-100.0f,48.0f}; // 0: SPEAKER(0x02) 1: MIC(0x05)
+static volatile uint64_t s_host_spk_set_us = 0;
+uint64_t usb_host_speaker_set_us() { return s_host_spk_set_us; }
 
 #define UAC1_ENTITY_SPK_FEATURE_UNIT    0x02
 #define UAC1_ENTITY_MIC_FEATURE_UNIT    0x05
@@ -57,6 +61,7 @@ static bool audio10_set_req_entity(tusb_control_request_t const *p_request, uint
                         TU_VERIFY(p_request->wLength == 1);
 
                         mute[index] = pBuff[0];
+                        if (index == 0) s_host_spk_set_us = time_us_64();
                         // The PC's mute switches reach the controller too
                         // (upstream cfca2a5); the speaker's PCM is also zeroed
                         // in audio_loop, as before.
@@ -90,6 +95,7 @@ static bool audio10_set_req_entity(tusb_control_request_t const *p_request, uint
                         // amp's range is 0..0x7F, so it gets the same position
                         // scaled to 127 (amp_volume.h).
                         if (entityID == UAC1_ENTITY_SPK_FEATURE_UNIT) {
+                            s_host_spk_set_us = time_us_64();
                             state_set_volume(headphone_amp_from_db(volume[index]), speaker_amp_from_db(volume[index]));
                         }
                         // The PC's mic volume, 0..48 dB (our range below), as

@@ -85,7 +85,7 @@ CORE0=""
 CORE0_OPTIONAL=""
 [ -n "$CORE0" ] && CORE0_OPTIONAL="_ZN15HapticDecimator4takeEv _Z12haptic_to_s8ff tu_fifo_read tu_fifo_write
   audio.cpp:_ZL14grip_test_taskv _ZN8GripWave4nextEPaff _ZN8GripWave4fillEPaiff _ZNK8GripWave6activeEv
-  _ZN15GripReportClock3dueEy _ZN15GripReportClock4sentEy _ZN15GripReportClock5resetEv
+  _ZN16AudioReportClock3dueEy _ZN16AudioReportClock4sentEy _ZN16AudioReportClock5resetEv
   _ZNK21NativeHapticsPresence6silentEv _ZN21NativeHapticsPresence6recordEt
   _ZNK9AudioPeak5levelEy _ZN9AudioPeak6recordEty"
 # FUNC/OBJECT symbols as "file:name addr" (locals, grouped after their FILE
