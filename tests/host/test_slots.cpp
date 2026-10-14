@@ -4,6 +4,7 @@
 #include <cstring>
 #include "fakes.h"
 #include "slots.h"
+#include "slots_footer.h"
 #include "test.h"
 
 TEST(slots_changes_report_a_failed_save) {
@@ -51,4 +52,29 @@ TEST(slots_one_controller_one_slot) {
     CHECK(slot_for_controller(3, a) == 0);
     CHECK(slot_forget(0));
     CHECK(slot_owner_of(a) == -1);
+}
+
+// The Slots screen footer: with every slot taken and no controller connected
+// it says why a new controller can't pair; a free slot, a connected
+// controller or a live status message keep the old lines.
+TEST(slots_footer_says_when_all_slots_are_full) {
+    using namespace slots_footer;
+    CHECK(std::strcmp(pick(nullptr, false, true), kFull) == 0);
+    CHECK(std::strcmp(pick(nullptr, false, false), kConnect) == 0);
+    CHECK(std::strcmp(pick(nullptr, true, true), kHelp) == 0);
+    CHECK(std::strcmp(pick("Wiped!", false, true), "Wiped!") == 0);
+    CHECK(std::strlen(kFull) <= static_cast<size_t>(kMaxChars));
+    // Real occupancy: full only once all kNumSlots slots hold a controller.
+    fake_flash_erase_all();
+    g_fake_flash_fail = false;
+    slots_load();
+    // loop: NOT-WORTH — 4 slots, host test
+    for (int i = 0; i < kNumSlots; i++) {
+        CHECK(slots_any_empty());
+        const uint8_t addr[6] = {1, 2, 3, 4, 5, static_cast<uint8_t>(i)};
+        CHECK(slot_assign(i, addr));
+    }
+    CHECK(!slots_any_empty());
+    CHECK(slot_forget(2));
+    CHECK(slots_any_empty());
 }
