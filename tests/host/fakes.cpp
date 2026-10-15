@@ -119,6 +119,7 @@ bool audio_grip_test_sending() { return false; }
 #include "state_mgr.h"
 #include "oled.h"
 #include "oled_keys.h"
+#include "oled_vpad.h"
 #include "voice.h"
 void state_get_led(uint8_t *r, uint8_t *g, uint8_t *b) { *r = 1; *g = 2; *b = 3; }
 uint8_t state_get_player_leds() { return 0x04; }
@@ -127,6 +128,9 @@ void oled_send_trigger_preset(int) {}
 // oled.cpp's oled_key_inject is a one-line push onto its injector; this is the same.
 oledkeys::Injector g_fake_key_inject;
 bool oled_key_inject(uint8_t key, bool long_press) { return oledkeys::push(g_fake_key_inject, key, long_press); }
+// oled.cpp's oled_pad_inject is a one-line push onto its injector; this is the same.
+oledvpad::Injector g_fake_pad_inject;
+bool oled_pad_inject(uint8_t button, uint16_t hold_ms) { return oledvpad::push(g_fake_pad_inject, button, hold_ms); }
 void voice_say_lang(VoiceLine, uint8_t) {}
 
 #include "cmd.h"

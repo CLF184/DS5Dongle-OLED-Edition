@@ -35,13 +35,13 @@ void settle() {  // let a deferred command run (reboot/BOOTSEL wait 50 ms)
 }
 }  // namespace
 
-TEST(cmd_identity_reports_protocol_1_18) {
+TEST(cmd_identity_reports_protocol_1_19) {
     fresh();
     uint8_t id[47]{};
     CHECK_EQ(pico_cmd_get(PICO_CMD_IDENTITY, id, sizeof(id)), 47);
     CHECK(std::memcmp(id, "DS5O", 4) == 0);
     CHECK_EQ(id[4], 1);
-    CHECK_EQ(id[5], 18);
+    CHECK_EQ(id[5], 19);
     CHECK_EQ(id[6], 51);
     CHECK(id[46] & 0x02);  // the 1.13 config fields
     CHECK(id[46] & 0x04);  // the 1.14 PC sleep options
@@ -49,6 +49,7 @@ TEST(cmd_identity_reports_protocol_1_18) {
     CHECK(id[46] & 0x10);  // the 1.16 mic level
     CHECK(id[46] & 0x20);  // the 1.17 mic echo cancellation
     CHECK(id[46] & 0x40);  // the 1.18 remote OLED key presses
+    CHECK(id[46] & 0x80);  // the 1.19 virtual controller buttons for the OLED
     uint8_t id49[49]{};
     CHECK_EQ(pico_cmd_get(PICO_CMD_IDENTITY, id49, sizeof(id49)), 49);
     CHECK_EQ(id49[48], 0x15);  // the PC's mic volume (fakes.cpp)

@@ -14,6 +14,14 @@ void oled_send_trigger_preset(int preset); // 0..6, the Trigger Test presets
 // False when four presses are already waiting.
 bool oled_key_inject(uint8_t key, bool long_press);
 
+// The app's virtual controller buttons for the OLED screens (0xF6 0x19,
+// protocol 1.19): queues a press of button (oled_vpad.h: 0 up, 1 down,
+// 2 left, 3 right, 4 triangle, 5 circle, 6 cross, 7 square, 8 R1) held
+// hold_ms (0 = a tap, up to 5000) that only the OLED's input handling sees,
+// never the PC's report. Main loop only. False for a bad button / hold or
+// when four presses are already waiting.
+bool oled_pad_inject(uint8_t button, uint16_t hold_ms);
+
 // Screen mirror for the app (vendor 0xEF, protocol 1.4): a 4-byte header
 // (power state 0 on / 1 dimmed / 2 off, current screen, contrast, frame
 // counter) and the 128x64 image exactly as last sent to the panel, row-major,
