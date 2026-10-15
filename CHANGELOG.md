@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+## [0.9.5-dev.12-oled-edition] - 2026-10-14
+
 ### Changed
 
 - **OLED: the Settings menu is one table, and Diagnostics redraws only the rows that changed** (PR #20, thanks to CLF184). Every setting keeps its label, range, step and storage; adding a setting is now one row instead of three places. Coming back to Diagnostics from another screen or from the dim display redraws it in full. Test-flashed on a real board: Settings, Diagnostics scrolling, screen switching and dim/wake.
