@@ -299,6 +299,10 @@ void cmd_task() {
             result = config_save_power_flags(s_pending_arg) ? CMD_RESULT_OK : CMD_RESULT_FAILED;
             s_host_gen++;
             break;
+        case 0x18: // remote KEY0 / KEY1 press (proto 1.18): bit0 key, bit1 long
+            // error: SHOWN — CMD_RESULT_BUSY in the 0xF1 result byte: four presses already waiting; the app shows a command error
+            result = oled_key_inject(s_pending_arg & 1, (s_pending_arg & 2) != 0) ? CMD_RESULT_OK : CMD_RESULT_BUSY;
+            break;
         default:
             // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: unknown function, the app's command error
             result = CMD_RESULT_INVALID;
@@ -491,7 +495,8 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         // bit3 (proto 1.15): timed grip test (0xF6 0x0E [side, tenths]).
         // bit4 (proto 1.16): the config body's mic_level (byte 49, body 50).
         // bit5 (proto 1.17): the config body's mic_echo_cancel (byte 50, body 51).
-        buffer[46] = (ENABLE_COMPANION_VENDOR ? 0x01 : 0) | 0x02 | 0x04 | 0x08 | 0x10 | 0x20;
+        // bit6 (proto 1.18): remote KEY0 / KEY1 presses (0xF6 0x18 [key, long]).
+        buffer[46] = (ENABLE_COMPANION_VENDOR ? 0x01 : 0) | 0x02 | 0x04 | 0x08 | 0x10 | 0x20 | 0x40;
         if (reqlen < 48) return 47;
         buffer[47] = config_power_flags();
         if (reqlen < 49) return 48;
@@ -785,7 +790,7 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
         s_last_result = CMD_RESULT_BUSY;
         return;
     }
-    const bool deferred = func == 0x02 || (func >= 0x04 && func <= 0x0B) || func == 0x17;
+    const bool deferred = func == 0x02 || (func >= 0x04 && func <= 0x0B) || func == 0x17 || func == 0x18;
 
     //   0x01 update config in RAM          0x02 write config to flash (deferred)
     //   0x03 reconnect tinyusb device      0x04 [slot] switch slot (deferred)
@@ -806,6 +811,10 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     //        ctrl_info.cpp; read the answer with GET 0xEB)
     //   0x17 [flags] PC sleep options (proto 1.14): bit0 controller off when
     //        the PC sleeps, bit1 PS button wakes the PC; saved (deferred)
+    //   0x18 [key][press] remote OLED key press (proto 1.18): key 0 KEY0,
+    //        1 KEY1; press 0 short, 1 long; played through handle_buttons()
+    //        like the board's keys, OLED wired or not (deferred; BUSY when
+    //        four presses are already waiting)
     s_last_result = CMD_RESULT_OK;
     switch (func) {
         case 0x01:
@@ -866,6 +875,11 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
             // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: bad argument or framing, the app's command error
             if (bufsize < 2 || (arg & ~POWER_FLAGS_MASK)) s_last_result = CMD_RESULT_INVALID;
             else defer(func, arg, 0);
+            break;
+        case 0x18:
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: bad argument or framing, the app's command error
+            if (bufsize < 3 || arg > 1 || buffer[2] > 1) s_last_result = CMD_RESULT_INVALID;
+            else defer(func, (uint8_t) (arg | (buffer[2] << 1)), 0);
             break;
         case 0x0B:
             // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: bad argument or framing, the app's command error

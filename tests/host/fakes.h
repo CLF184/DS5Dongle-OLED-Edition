@@ -20,3 +20,7 @@ extern int g_fake_feature_gets;
 extern void (*g_fake_feature_get_hook)(uint8_t id);
 extern std::vector<std::vector<uint8_t>> g_fake_control_sends;  // bt_send_control (raw, e.g. SET 0x65)
 extern GripWave g_fake_grip;  // the audio_grip_test_* fakes play it (cmd 0xF6 0x0E)
+
+// oled_key_inject (0xF6 0x18) pushes onto this injector.
+#include "oled_keys.h"
+extern oledkeys::Injector g_fake_key_inject;

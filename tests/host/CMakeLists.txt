@@ -28,6 +28,7 @@ add_executable(host_tests
         test_haptics_decimate.cpp
         test_grip_wave.cpp
         test_usb_power.cpp
+        test_oled_keys.cpp
         test_state_override.cpp
         test_audio_levels.cpp
         test_speaker_mono.cpp

@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+### Added
+- **Press KEY0 / KEY1 from the app** (protocol 1.18, identity [46] bit 6). 0xF6 function `0x18 [key, press]` (key 0 KEY0, 1 KEY1; press 0 short, 1 long) plays a press through the same logic as the board's keys: it debounces, wakes the screen and navigates exactly like a finger (KEY0 next screen; KEY1 short back, long next brightness level), with or without an OLED wired. It runs from the main loop, never inside the USB request; up to four presses queue, a fifth answers BUSY, and bad arguments answer INVALID. The key logic moved into `src/oled_keys.h` unchanged, so it is host-tested now (`tests/host/test_oled_keys.cpp`).
+
 ## [0.9.5-dev.12-oled-edition] - 2026-10-14
 
 ### Changed

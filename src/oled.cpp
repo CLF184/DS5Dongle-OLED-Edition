@@ -1,6 +1,7 @@
 #include "oled.h"
 #include "oled_font.h"
 #include "oled_flush.h"
+#include "oled_keys.h"
 #include "oled_pad.h"
 #include "title_scroll.h"
 #include "version_label.h"
@@ -66,26 +67,13 @@ uint8_t fb_shown_seq = 0;
 
 uint32_t last_render_us = 0;
 constexpr uint32_t kFrameUs = 100000;
-bool key0_prev = true;
-bool key1_prev = true;
-uint32_t key0_t_us = 0;
-uint32_t key1_t_us = 0;
-constexpr uint32_t kDebounceUs = 20000;
-
-// Single-press latch — armed on rising edge, fired on release. KEY0 was
-// previously a double-click reboot trigger; that gesture moved to the
-// KEY0+KEY1 chord below because rapid forward-navigation kept tripping it.
-bool key0_armed = false;
-
-// KEY1 long-press detection (for brightness cycling)
-uint32_t key1_press_us = 0;
-bool key1_was_pressed = false;
-constexpr uint32_t kLongPressUs = 1500000;
-
-// KEY0 + KEY1 simultaneous hold → watchdog_reboot. 1 s hold is long enough
-// to filter accidental two-button taps but short enough to feel responsive.
-uint32_t chord_held_since_us = 0;
-constexpr uint32_t kChordHoldUs = 1000000;
+// KEY0 / KEY1: the press logic (debounce, short / long, the KEY0+KEY1 reboot
+// chord) is oledkeys::step() in oled_keys.h, shared with the app's remote
+// presses (0xF6 0x18, protocol 1.18) and host-tested. KEY0 was once a
+// double-click reboot; that moved to the chord because rapid forward
+// navigation kept tripping it.
+oledkeys::Buttons g_keys;
+oledkeys::Injector g_key_inject;
 
 // Brightness levels (SH1107 contrast register 0x81). User cycles via KEY1 long-press.
 constexpr uint8_t kBrightLevels[] = {0xFF, 0x7F, 0x3F, 0x10};
@@ -619,72 +607,38 @@ void send_lightbar_color(uint8_t r, uint8_t g, uint8_t b);
 
 void handle_buttons() {
     const uint32_t now = time_us_32();
-    const bool k0 = gpio_get(kPinKey0);
-    const bool k1 = gpio_get(kPinKey1);
-
-    // KEY0 + KEY1 chord — both held >= kChordHoldUs triggers watchdog_reboot.
-    // Pre-empts the per-key handlers so a chord cancels any armed single
-    // press (whichever key gets released first won't also navigate).
-    const bool chord = !k0 && !k1;
-    if (chord) {
-        if (chord_held_since_us == 0) chord_held_since_us = now;
-        key0_armed = false;
-        key1_was_pressed = false;
-        if ((now - chord_held_since_us) >= kChordHoldUs) {
-            watchdog_reboot(0, 0, 0);
-        }
-    } else {
-        chord_held_since_us = 0;
-    }
-
-    // KEY0: arm on debounced rising edge, fire "next screen" on release.
-    // Releasing without a chord during the hold = pure forward-nav.
-    if (!k0 && key0_prev && (now - key0_t_us) > kDebounceUs) {
-        key0_t_us = now;
-        key0_armed = true;
-        last_activity_us = time_us_64();
-    }
-    if (k0 && !key0_prev && key0_armed) {
-        key0_armed = false;
+    // A key is down when its pin is low (pull-up; no OLED wired = released)
+    // or the app's remote press holds it (oled_key_inject).
+    bool v0 = false, v1 = false;
+    oledkeys::levels(g_key_inject, now, v0, v1);
+    const uint8_t ev = oledkeys::step(g_keys, !gpio_get(kPinKey0) || v0, !gpio_get(kPinKey1) || v1, now);
+    // error: NOT-WORTH — nothing; no key event this pass (polling, not a failure)
+    if (ev == 0) return;
+    if (ev & oledkeys::kActivity) last_activity_us = time_us_64();
+    if (ev & oledkeys::kReboot) watchdog_reboot(0, 0, 0);
+    // KEY0 = next screen, KEY1 short = back. Trigger-preset / lightbar-mode
+    // cycling lives on the DualSense triangle (triggers_handle_input(),
+    // lightbar_handle_input()).
+    if (ev & oledkeys::kNext) {
         current_screen = (current_screen + 1) % kNumScreens;
         last_render_us = 0;
-        last_activity_us = time_us_64();
     }
-
-    // KEY1: arm on press, fire on release. Short press = back; long press
-    // = brightness cycle (unchanged). Trigger-preset / lightbar-mode cycle
-    // moved to the DualSense △ button — see triggers_handle_input() and
-    // lightbar_handle_input(). The chord above clears key1_was_pressed so
-    // a released-after-chord K1 doesn't navigate back.
-    if (!k1 && key1_prev && (now - key1_t_us) > kDebounceUs) {
-        key1_t_us = now;
-        key1_press_us = now;
-        key1_was_pressed = true;
-        last_activity_us = time_us_64();
+    if (ev & oledkeys::kBack) {
+        current_screen = (current_screen - 1 + kNumScreens) % kNumScreens;
+        last_render_us = 0;
     }
-    if (k1 && !key1_prev && key1_was_pressed) {
-        key1_was_pressed = false;
-        const uint32_t held = now - key1_press_us;
-        last_activity_us = time_us_64();
-        if (held > kLongPressUs) {
-            bright_idx = (bright_idx + 1) % kNumBrightLevels;
-            // Persist so the choice survives a power cycle (issue #9). Keep
-            // settings_local in sync too, so a later Settings-screen save can't
-            // clobber screen_brightness with its stale snapshot.
-            Config_body b = get_config();
-            b.screen_brightness = (uint8_t)bright_idx;
-            set_config(b);
-            // error: SILENT-BUG — nothing; the long-press screen brightness applies now but a failed save loses it at power-off Change: show "Save FAIL" on whichever screen is up (batch: an OLED toast on every screen)
-            config_save();
-            settings_local.screen_brightness = (uint8_t)bright_idx;
-        } else {
-            current_screen = (current_screen - 1 + kNumScreens) % kNumScreens;
-            last_render_us = 0;
-        }
+    if (ev & oledkeys::kBrightness) {  // KEY1 long press
+        bright_idx = (bright_idx + 1) % kNumBrightLevels;
+        // Persist so the choice survives a power cycle (issue #9). Keep
+        // settings_local in sync too, so a later Settings-screen save can't
+        // clobber screen_brightness with its stale snapshot.
+        Config_body b = get_config();
+        b.screen_brightness = (uint8_t)bright_idx;
+        set_config(b);
+        // error: SILENT-BUG — nothing; the long-press screen brightness applies now but a failed save loses it at power-off Change: show "Save FAIL" on whichever screen is up (batch: an OLED toast on every screen)
+        config_save();
+        settings_local.screen_brightness = (uint8_t)bright_idx;
     }
-
-    key0_prev = k0;
-    key1_prev = k1;
 }
 
 // --- Charge ETA tracker --------------------------------------------------
@@ -1928,6 +1882,11 @@ void screen_input_tick() {
 
 // Configurator trigger preview (0xF6 0x0A): the Trigger Test screen's presets.
 void oled_send_trigger_preset(int preset) { send_trigger_effect(preset); }
+
+bool oled_key_inject(uint8_t key, bool long_press) {
+    // error: SHOWN — CMD_RESULT_BUSY in the 0xF1 result byte (cmd.cpp 0x18): four presses already waiting
+    return oledkeys::push(g_key_inject, key, long_press);
+}
 
 uint16_t oled_mirror(uint8_t *out, uint16_t cap) {
     if (cap < kOledMirrorBytes) return 0;
