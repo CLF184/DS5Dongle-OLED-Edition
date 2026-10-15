@@ -18,6 +18,7 @@
 #include "remap.h"
 #include "calib.h"
 #include "oled.h"
+#include "oled_vpad.h"
 #include "state_mgr.h"
 #include "hardware/clocks.h"
 #include "hardware/adc.h"
@@ -107,6 +108,7 @@ static bool s_pending = false;
 static uint8_t s_pending_func = 0;
 static uint8_t s_pending_arg = 0;
 static uint8_t s_pending_arg2 = 0;  // 0x0E: the duration in tenths (0 = stop)
+static uint16_t s_pending_hold_ms = 0;  // 0x19: how long the virtual button is held
 static uint64_t s_pending_due_us = 0;
 
 uint32_t cmd_host_config_gen() { return s_host_gen; }
@@ -303,6 +305,10 @@ void cmd_task() {
             // error: SHOWN — CMD_RESULT_BUSY in the 0xF1 result byte: four presses already waiting; the app shows a command error
             result = oled_key_inject(s_pending_arg & 1, (s_pending_arg & 2) != 0) ? CMD_RESULT_OK : CMD_RESULT_BUSY;
             break;
+        case 0x19: // virtual controller button for the OLED screens (proto 1.19)
+            // error: SHOWN — CMD_RESULT_BUSY in the 0xF1 result byte: four presses already waiting (button and hold were checked at the SET); the app shows a command error
+            result = oled_pad_inject(s_pending_arg, s_pending_hold_ms) ? CMD_RESULT_OK : CMD_RESULT_BUSY;
+            break;
         default:
             // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: unknown function, the app's command error
             result = CMD_RESULT_INVALID;
@@ -496,7 +502,8 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
         // bit4 (proto 1.16): the config body's mic_level (byte 49, body 50).
         // bit5 (proto 1.17): the config body's mic_echo_cancel (byte 50, body 51).
         // bit6 (proto 1.18): remote KEY0 / KEY1 presses (0xF6 0x18 [key, long]).
-        buffer[46] = (ENABLE_COMPANION_VENDOR ? 0x01 : 0) | 0x02 | 0x04 | 0x08 | 0x10 | 0x20 | 0x40;
+        // bit7 (proto 1.19): virtual controller buttons for the OLED screens (0xF6 0x19).
+        buffer[46] = (ENABLE_COMPANION_VENDOR ? 0x01 : 0) | 0x02 | 0x04 | 0x08 | 0x10 | 0x20 | 0x40 | 0x80;
         if (reqlen < 48) return 47;
         buffer[47] = config_power_flags();
         if (reqlen < 49) return 48;
@@ -790,7 +797,7 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
         s_last_result = CMD_RESULT_BUSY;
         return;
     }
-    const bool deferred = func == 0x02 || (func >= 0x04 && func <= 0x0B) || func == 0x17 || func == 0x18;
+    const bool deferred = func == 0x02 || (func >= 0x04 && func <= 0x0B) || func == 0x17 || func == 0x18 || func == 0x19;
 
     //   0x01 update config in RAM          0x02 write config to flash (deferred)
     //   0x03 reconnect tinyusb device      0x04 [slot] switch slot (deferred)
@@ -815,6 +822,11 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     //        1 KEY1; press 0 short, 1 long; played through handle_buttons()
     //        like the board's keys, OLED wired or not (deferred; BUSY when
     //        four presses are already waiting)
+    //   0x19 [button][hold lo][hold hi] virtual controller button for the
+    //        OLED screens (proto 1.19): button 0 up, 1 down, 2 left, 3 right,
+    //        4 triangle, 5 circle, 6 cross, 7 square, 8 R1; hold in ms, 0 or
+    //        absent = a tap, up to 5000. Only the OLED's input handling sees
+    //        it, never the PC's report (deferred; BUSY when four wait)
     s_last_result = CMD_RESULT_OK;
     switch (func) {
         case 0x01:
@@ -881,6 +893,16 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
             if (bufsize < 3 || arg > 1 || buffer[2] > 1) s_last_result = CMD_RESULT_INVALID;
             else defer(func, (uint8_t) (arg | (buffer[2] << 1)), 0);
             break;
+        case 0x19: {
+            const uint16_t hold = (uint16_t) ((bufsize >= 3 ? buffer[2] : 0) | (bufsize >= 4 ? buffer[3] << 8 : 0));
+            // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: bad argument or framing, the app's command error
+            if (bufsize < 2 || arg >= oledvpad::kNumButtons || hold > oledvpad::kMaxHoldMs) s_last_result = CMD_RESULT_INVALID;
+            else {
+                s_pending_hold_ms = hold;
+                defer(func, arg, 0);
+            }
+            break;
+        }
         case 0x0B:
             // error: SHOWN — CMD_RESULT_INVALID in the 0xF1 result byte: bad argument or framing, the app's command error
             if (arg != 0xFF && (arg < 1 || arg > kVoiceNumLangs)) s_last_result = CMD_RESULT_INVALID;

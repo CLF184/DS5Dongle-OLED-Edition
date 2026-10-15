@@ -24,3 +24,7 @@ extern GripWave g_fake_grip;  // the audio_grip_test_* fakes play it (cmd 0xF6 0
 // oled_key_inject (0xF6 0x18) pushes onto this injector.
 #include "oled_keys.h"
 extern oledkeys::Injector g_fake_key_inject;
+
+// oled_pad_inject (0xF6 0x19) pushes onto this injector.
+#include "oled_vpad.h"
+extern oledvpad::Injector g_fake_pad_inject;

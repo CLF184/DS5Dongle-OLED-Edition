@@ -2,6 +2,7 @@
 #include "oled_font.h"
 #include "oled_flush.h"
 #include "oled_keys.h"
+#include "oled_vpad.h"
 #include "oled_pad.h"
 #include "title_scroll.h"
 #include "version_label.h"
@@ -74,6 +75,13 @@ constexpr uint32_t kFrameUs = 100000;
 // navigation kept tripping it.
 oledkeys::Buttons g_keys;
 oledkeys::Injector g_key_inject;
+
+// The controller buttons the screens read: the controller's own (while one
+// is linked) ORed with the app's virtual presses (0xF6 0x19, protocol 1.19,
+// oled_vpad.h). Refreshed by vpad_tick() every pass; only the OLED reads
+// it, so games never see a virtual press. b7 = D-pad + face, b8 bit 1 = R1.
+oledvpad::Injector g_vpad;
+oledvpad::View g_in{0x08, 0};
 
 // Brightness levels (SH1107 contrast register 0x81). User cycles via KEY1 long-press.
 constexpr uint8_t kBrightLevels[] = {0xFF, 0x7F, 0x3F, 0x10};
@@ -1008,9 +1016,8 @@ void format_diag_row(int idx, char* line, size_t n) {
 }
 
 void diag_handle_input(int visible) {
-    // error: NOT-WORTH — nothing; input comes from the controller, so with none connected there's no button press to handle
-    if (!bt_is_connected()) return;
-    const uint8_t dpad = (uint8_t)(interrupt_in_data[7] & 0x0F);
+    // Controller or the app's virtual D-pad (g_in: released with neither).
+    const uint8_t dpad = (uint8_t)(g_in.b7 & 0x0F);
     if (dpad != diag_last_dpad && dpad != 8) {
         if      (dpad == 0) diag_scroll--; // up
         else if (dpad == 4) diag_scroll++; // down
@@ -1115,8 +1122,9 @@ __attribute__((noinline)) void render_screen_cpu(bool entered) {
 // re-applies the new effect to the paired controller. KEY1 used to do
 // this; moving it to the controller frees K0/K1 for navigation only.
 void triggers_handle_input() {
+    // Needs a controller: the preset goes to its triggers.
     if (!bt_is_connected()) { triggers_last_face = 0; return; }
-    const uint8_t face = interrupt_in_data[7] & 0xF0;
+    const uint8_t face = g_in.b7 & 0xF0;
     const bool tri_now  = (face & 0x80) != 0;
     const bool tri_prev = (triggers_last_face & 0x80) != 0;
     if (tri_now && !tri_prev) {
@@ -1370,8 +1378,9 @@ const char* lb_mode_tag(int mode) {
 // favorite slot 0" (the existing favorite-save UX), so R1 is the next
 // free button that doesn't break a mental model.
 void lightbar_handle_input() {
-    if (!bt_is_connected()) { lb_last_buttons = 0; return; }
-    const uint8_t btns   = interrupt_in_data[8];
+    // Needs a controller: the modes and favorites are its lightbar's colors.
+    if (!bt_is_connected()) { lb_last_buttons = 0; lb_last_face = 0; return; }
+    const uint8_t btns   = g_in.b8;
     const bool r1_now    = (btns & 0x02) != 0;
     const bool r1_prev   = (lb_last_buttons & 0x02) != 0;
     if (r1_now && !r1_prev) {
@@ -1379,6 +1388,24 @@ void lightbar_handle_input() {
         lb_dirty = true; // persisted on leaving the Lightbar screen
     }
     lb_last_buttons = btns;
+
+    // Face button rising edge -> save the current color to favorite 0..3.
+    // Sampled every pass like R1 (it used to be read at the 10 Hz render, so
+    // a tap shorter than a frame could be missed).
+    const uint8_t face = g_in.b7 & 0xF0;
+    const uint8_t pressed = face & ~lb_last_face;
+    lb_last_face = face;
+    int save_slot = -1;
+    if      (pressed & 0x80) save_slot = 0; // Triangle
+    else if (pressed & 0x40) save_slot = 1; // Circle
+    else if (pressed & 0x20) save_slot = 2; // Cross
+    else if (pressed & 0x10) save_slot = 3; // Square
+    if (save_slot >= 0) {
+        lb_fav_r[save_slot] = lb_r;
+        lb_fav_g[save_slot] = lb_g;
+        lb_fav_b[save_slot] = lb_b;
+        lb_dirty = true; // persisted on leaving the Lightbar screen
+    }
 }
 
 __attribute__((noinline)) void render_screen_lightbar() {
@@ -1399,22 +1426,7 @@ __attribute__((noinline)) void render_screen_lightbar() {
         rect_outline(48, by, 38, bh); int gf = (lb_g * 34) / 255; if (gf > 0) rect_filled(50, by + 2, gf, bh - 4);
         rect_outline(90, by, 38, bh); int bf = (lb_b * 34) / 255; if (bf > 0) rect_filled(92, by + 2, bf, bh - 4);
 
-        // Face button rising-edge -> save current color to slot 0..3
-        const uint8_t face = interrupt_in_data[7] & 0xF0;
-        const uint8_t pressed = face & ~lb_last_face;
-        lb_last_face = face;
-        int save_slot = -1;
-        if      (pressed & 0x80) save_slot = 0; // Triangle
-        else if (pressed & 0x40) save_slot = 1; // Circle
-        else if (pressed & 0x20) save_slot = 2; // Cross
-        else if (pressed & 0x10) save_slot = 3; // Square
-        if (save_slot >= 0) {
-            lb_fav_r[save_slot] = lb_r;
-            lb_fav_g[save_slot] = lb_g;
-            lb_fav_b[save_slot] = lb_b;
-            lb_dirty = true; // persisted on leaving the Lightbar screen
-        }
-
+        // Face buttons save to favorites: lightbar_handle_input().
         draw_text(kContentX, 38, "Sv:T=0 C=1 X=2 S=3");
         const char* hint =
             (lb_mode == 0)           ? "Tilt = R/G/B"   :
@@ -1620,10 +1632,9 @@ void settings_adjust(int delta) {
 }
 
 void settings_handle_input() {
-    // error: NOT-WORTH — nothing; input comes from the controller, so with none connected there's no button press to handle
-    if (!bt_is_connected()) return;
-    const uint8_t dpad = (uint8_t)(interrupt_in_data[7] & 0x0F);
-    const uint8_t face = (uint8_t)(interrupt_in_data[7] & 0xF0);
+    // Controller or the app's virtual buttons (g_in: released with neither).
+    const uint8_t dpad = (uint8_t)(g_in.b7 & 0x0F);
+    const uint8_t face = (uint8_t)(g_in.b7 & 0xF0);
 
     // Edge-trigger on D-pad direction CHANGE; only pure N/E/S/W to avoid diagonals
     if (dpad != settings_last_dpad && dpad != 8) {
@@ -1754,16 +1765,12 @@ constexpr uint32_t kSlotsWipeHoldUs = 1500000;  // 1.5 s
 
 void slots_handle_input() {
     if (slots_cursor < 0) slots_cursor = bt_get_slot();
-    if (!bt_is_connected()) {
-        // No controller = no D-pad / face buttons to read (KEY0/KEY1 still
-        // change screens). Pressing PS on a paired controller connects it
-        // and the dongle switches to its slot (bt.cpp, HID Control open).
-        slots_last_dpad = 8;
-        slots_last_face = 0;
-        return;
-    }
-    const uint8_t dpad = (uint8_t)(interrupt_in_data[7] & 0x0F);
-    const uint8_t face = (uint8_t)(interrupt_in_data[7] & 0xF0);
+    // Controller or the app's virtual buttons (g_in: released with neither;
+    // without a controller only the app's presses move the cursor. Pressing
+    // PS on a paired controller connects it and the dongle switches to its
+    // slot, bt.cpp, HID Control open).
+    const uint8_t dpad = (uint8_t)(g_in.b7 & 0x0F);
+    const uint8_t face = (uint8_t)(g_in.b7 & 0xF0);
 
     if (dpad != slots_last_dpad && dpad != 8) {
         if      (dpad == 0) slots_cursor = (slots_cursor - 1 + kNumSlots) % kNumSlots;
@@ -1859,6 +1866,16 @@ void boot_splash() {
 
 // Sample controller edges every main-loop pass, independently of the 10 Hz
 // display cadence. A short press can begin and end between rendered frames.
+// The app's virtual buttons (oled_vpad.h): advance the held press and merge
+// it with the controller's buttons into g_in. A press wakes the screen like a
+// KEY press (always, whatever CtrlWake says) and starts once it's on.
+void vpad_tick() {
+    uint8_t held = oledvpad::kNumButtons;
+    const uint8_t ev = oledvpad::tick(g_vpad, time_us_32(), oled_power_state == OLED_ACTIVE, held);
+    if (ev & oledvpad::kWake) last_activity_us = time_us_64();
+    g_in = oledvpad::view(bt_is_connected(), interrupt_in_data[7], interrupt_in_data[8], held);
+}
+
 void screen_input_tick() {
     if (oled_power_state != OLED_ACTIVE) return;
     switch (current_screen) {
@@ -1886,6 +1903,11 @@ void oled_send_trigger_preset(int preset) { send_trigger_effect(preset); }
 bool oled_key_inject(uint8_t key, bool long_press) {
     // error: SHOWN — CMD_RESULT_BUSY in the 0xF1 result byte (cmd.cpp 0x18): four presses already waiting
     return oledkeys::push(g_key_inject, key, long_press);
+}
+
+bool oled_pad_inject(uint8_t button, uint16_t hold_ms) {
+    // error: SHOWN — CMD_RESULT_BUSY in the 0xF1 result byte (cmd.cpp 0x19): four presses already waiting
+    return oledvpad::push(g_vpad, button, hold_ms);
 }
 
 uint16_t oled_mirror(uint8_t *out, uint16_t cap) {
@@ -1973,6 +1995,7 @@ static void sync_host_config_changes() {
 void oled_loop() {
     sync_host_config_changes();
     handle_buttons();
+    vpad_tick();
     screen_input_tick();
     const uint32_t now = time_us_32();
     rumble_burst_tick(now);
