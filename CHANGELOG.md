@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+## [0.9.5-dev.13-oled-edition] - 2026-10-15
+
 ### Added
 - **Controller buttons for the OLED from the app** (protocol 1.19, identity [46] bit 7). 0xF6 function `0x19 [button, hold ms lo, hi]` presses the D-pad, △ ○ ✕ □ or R1 for the OLED screens only: Settings (▲▼ select, ◀▶ adjust, △ save, △ held 2 s for Reset / Wipe), Slots (▲▼, △ switch, □ held 1.5 s forget), Lightbar (R1 mode, △ ○ ✕ □ save a favorite), Trigger Test (△ next preset) and Diagnostics (▲▼ scroll). A hold lasts as long as asked (up to 5 s), a tap 100 ms; the press wakes the screen and acts once it's on. Games never see these presses: the controller's report to the PC is untouched. Settings, Slots and Diagnostics take them without a controller connected; Lightbar and Trigger Test need one. Up to four presses queue, a fifth answers BUSY, a bad button or hold answers INVALID. Host-tested (`tests/host/test_oled_vpad.cpp`).
 - **Lightbar favorites:** a quick △ ○ ✕ □ tap on the Lightbar screen could fall between two 10 Hz frames and not save; the buttons are now read every pass, like R1.
