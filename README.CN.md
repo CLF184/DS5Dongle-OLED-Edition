@@ -353,6 +353,8 @@ scripts/mic_diag.sh bt-trace
 
 持久化配置编辑器。方向键 ▲▼ 移动选择，▶◀ 调整数值，△ 保存到闪存。包含固件配置字段（振动增益、扬声器音量、空闲超时、轮询率）、音频自动触感控件，以及两个按住确认的操作：
 
+`Hap Left` 和 `Hap Right` 分别调整左右握把强度，按下 △ 应用并保存修改。
+
 <img src="./assets/oled/oled_sc11.jpg" alt="Settings screen on the OLED" width="420">
 
 - **AutoHap Off / Fallback / Mix / Replace** —— 选择音频自动触感模式。默认 `Off`：触感只来自游戏本身。`Fallback` 仅在游戏不发送原生触感数据时（如 Linux 上的《对马岛之魂》）才触发派生震动——注意它也会跟随音乐和桌面音频震动；确实发送原生触感的游戏（《漫威蜘蛛侠：重制版》）则原样通过。`Mix` 在原生之上叠加派生，`Replace` 完全忽略原生。
