@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+### Changed
+- **KEY1 changes brightness as soon as it has been held for more than 1.5 seconds.** It changes one level per hold, before saving the setting. Letting go after a long press no longer waits to apply the change or goes back a page; a short press still goes back.
+
 ### Added
 - **Pair now on the board** (no protocol change). With no controller connected the board is off USB, so once the pairing window has run out the app can't open a new one; now **KEY0 held 2 s on the OLED's Status screen** (only there, only with no controller) opens a 2-minute pairing window for the current slot. It fires while still held and its release doesn't change screens; everywhere else a KEY0 hold is "next screen" as before, the app's remote long press (1.6 s) can't reach it, and the KEY0 + KEY1 reboot chord cancels it (`src/oled_keys.h`, host-tested).
 - **The Status screen without a controller says what to do** (`src/pair_prompt.h`, host-tested; Sony's words per the app's glossary). Outside a pairing window: *Press PS to connect* (*No DualSense paired* when every slot is empty) and *Hold KEY0 for 2 s to pair a DualSense*. Inside one: *Pairing: hold Create + PS*, the time left (*1:59 left*) and a bar; whole seconds, so the screen changes at most once a second (unchanged frames aren't sent to the panel). Boot's single inquiry with a paired slot shows *Press PS*: that controller only needs PS. The old text's "2. Wait for light bar" ran 3 px off the right edge.
